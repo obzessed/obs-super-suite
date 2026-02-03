@@ -2,11 +2,8 @@
 
 ## Introduction
 
-The plugin template is meant to be used as a starting point for OBS Studio plugin development. It includes:
-
-* Boilerplate plugin source code
-* A CMake project file
-* GitHub Actions workflows and repository actions
+This plugin create global asio sources pinned across scenes just like the Aux audio sources.
+The plugin is meant to be used along with obs-asio.
 
 ## Supported Build Environments
 
