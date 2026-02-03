@@ -23,11 +23,18 @@ public:
 	// Update methods called by signal handlers to keep UI in sync
 	void updateSourceSettings(int channel, const QJsonObject &settings);
 	void updateSourceFilters(int channel, const QJsonArray &filters);
+	void updateSourceName(int channel, const QString &name);
+	void updateSourceMuted(int channel, bool muted);
+	void updateSourceVolume(int channel, float volume);
+	void updateSourceBalance(int channel, float balance);
+	void updateSourceMonitoring(int channel, int type);
+	void updateSourceMono(int channel, bool mono);
 
 protected:
 	void showEvent(QShowEvent *event) override;
 	void closeEvent(QCloseEvent *event) override;
 	void hideEvent(QHideEvent *event) override;
+	bool eventFilter(QObject *obj, QEvent *event) override;
 
 private slots:
 	void addSource();
@@ -45,6 +52,7 @@ private:
 	int findNextAvailableChannel() const;
 	bool isChannelOccupied(int channel, int excludeRow = -1) const;
 	void onChannelChanged(int row);
+	void onItemChanged(QTableWidgetItem *item);
 
 	QTableWidget *tableWidget;
 	QPushButton *btnAdd;

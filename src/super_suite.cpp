@@ -23,6 +23,29 @@
 static std::vector<std::pair<int, obs_source_t *>> asio_sources; // (channel, source)
 static AsioSettingsDialog *settings_dialog = nullptr;
 
+// Guard flag to prevent signal handlers from modifying config during createSources()
+static bool creating_sources = false;
+
+// Apply audio control settings to a source
+static void apply_audio_settings(obs_source_t *source, const AsioSourceConfig &cfg)
+{
+	if (!source) return;
+	
+	obs_source_set_muted(source, cfg.muted);
+	obs_source_set_monitoring_type(source, (obs_monitoring_type)cfg.monitoringType);
+	obs_source_set_volume(source, cfg.volume);
+	obs_source_set_balance_value(source, cfg.balance);
+	
+	// Force mono via source flags
+	uint32_t flags = obs_source_get_flags(source);
+	if (cfg.forceMono) {
+		flags |= OBS_SOURCE_FLAG_FORCE_MONO;
+	} else {
+		flags &= ~OBS_SOURCE_FLAG_FORCE_MONO;
+	}
+	obs_source_set_flags(source, flags);
+}
+
 template<typename T> T *calldata_get_pointer(const calldata_t *data, const char *name)
 {
 	void *ptr = nullptr;
@@ -37,6 +60,35 @@ const char *calldata_get_string(const calldata_t *data, const char *name)
 	return value;
 }
 
+// Helper: Find config index by source pointer
+// Uses source name matching which is stable even during createSources()
+static int find_config_index_for_source(obs_source_t *source)
+{
+	if (!source) return -1;
+	
+	const char *sourceName = obs_source_get_name(source);
+	if (!sourceName) return -1;
+	
+	const auto &sources = AsioConfig::get()->getSources();
+	for (int i = 0; i < sources.size(); i++) {
+		if (sources[i].name == QString::fromUtf8(sourceName)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+// Helper: Get channel for a source from asio_sources (for UI updates)
+static int get_channel_for_source(obs_source_t *source)
+{
+	for (const auto &[channel, src] : asio_sources) {
+		if (src == source) {
+			return channel;
+		}
+	}
+	return -1;
+}
+
 // Signal callback: source renamed
 static void on_source_rename(void *data, calldata_t *cd)
 {
@@ -47,16 +99,23 @@ static void on_source_rename(void *data, calldata_t *cd)
 	const char *prev_name = calldata_string(cd, "prev_name");
 
 	if (!source || !new_name || !prev_name) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
 
-	// Find this source in our list and update config
-	for (size_t i = 0; i < asio_sources.size(); i++) {
-		if (asio_sources[i].second == source) {
-			auto &sources = AsioConfig::get()->getSources();
-			if ((int)i < sources.size()) {
-				sources[(int)i].name = QString::fromUtf8(new_name);
-				AsioConfig::get()->save();
-				obs_log(LOG_INFO, "ASIO source renamed: '%s' -> '%s'", prev_name, new_name);
+	// Find config by previous name (source has already been renamed by OBS)
+	auto &sources = AsioConfig::get()->getSources();
+	for (int i = 0; i < sources.size(); i++) {
+		if (sources[i].name == QString::fromUtf8(prev_name)) {
+			sources[i].name = QString::fromUtf8(new_name);
+			AsioConfig::get()->save();
+			
+			// Update UI using the config's channel
+			if (settings_dialog) {
+				settings_dialog->updateSourceName(sources[i].outputChannel, QString::fromUtf8(new_name));
 			}
+			
+			obs_log(LOG_INFO, "ASIO source renamed: '%s' -> '%s'", prev_name, new_name);
 			break;
 		}
 	}
@@ -67,44 +126,47 @@ static void on_source_update(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
 
-	const obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
 	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
 
-	// Find this source in our list and save settings to config
-	for (size_t i = 0; i < asio_sources.size(); i++) {
-		if (asio_sources[i].second == source) {
-			auto &sources = AsioConfig::get()->getSources();
-			if ((int)i < sources.size()) {
-				obs_data_t *settings = obs_source_get_settings(source);
-				if (settings) {
-					const char *json = obs_data_get_json(settings);
-					if (json) {
-						QJsonParseError error;
-						QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json), &error);
-						if (error.error == QJsonParseError::NoError && doc.isObject()) {
-							sources[(int)i].sourceSettings = doc.object();
-							AsioConfig::get()->save();
-							if (settings_dialog) {
-								settings_dialog->updateSourceSettings(asio_sources[i].first, sources[(int)i].sourceSettings);
-							}
-							obs_log(LOG_INFO, "ASIO source settings updated for '%s'",
-								obs_source_get_name(source));
-						}
-					}
-					obs_data_release(settings);
+	// Find config by source name
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+	
+	auto &sources = AsioConfig::get()->getSources();
+	obs_data_t *settings = obs_source_get_settings(source);
+	if (settings) {
+		const char *json = obs_data_get_json(settings);
+		if (json) {
+			QJsonParseError error;
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json), &error);
+			if (error.error == QJsonParseError::NoError && doc.isObject()) {
+				sources[idx].sourceSettings = doc.object();
+				AsioConfig::get()->save();
+				if (settings_dialog) {
+					settings_dialog->updateSourceSettings(sources[idx].outputChannel, sources[idx].sourceSettings);
 				}
+				obs_log(LOG_INFO, "ASIO source settings updated for '%s'",
+					obs_source_get_name(source));
 			}
-			break;
 		}
+		obs_data_release(settings);
 	}
 }
 
 // Helper function to save filter state for a source
-static void save_source_filters(obs_source_t *source, int index)
+static void save_source_filters(obs_source_t *source)
 {
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+	
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+	
 	auto &sources = AsioConfig::get()->getSources();
-	if (index >= sources.size()) return;
-
 	obs_data_array_t *filterArray = obs_source_backup_filters(source);
 	if (filterArray) {
 		// Wrap in object with "filters" key for consistent parsing
@@ -117,10 +179,10 @@ static void save_source_filters(obs_source_t *source, int index)
 			if (error.error == QJsonParseError::NoError && doc.isObject()) {
 				QJsonObject root = doc.object();
 				if (root.contains("filters") && root["filters"].isArray()) {
-					sources[index].sourceFilters = root["filters"].toArray();
+					sources[idx].sourceFilters = root["filters"].toArray();
 					AsioConfig::get()->save();
 					if (settings_dialog) {
-						settings_dialog->updateSourceFilters(asio_sources[index].first, sources[index].sourceFilters);
+						settings_dialog->updateSourceFilters(sources[idx].outputChannel, sources[idx].sourceFilters);
 					}
 					obs_log(LOG_INFO, "Saved filters for '%s'",
 						obs_source_get_name(source));
@@ -139,14 +201,11 @@ static void on_filter_changed(void *data, calldata_t *cd)
 
 	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
 	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
 
-	// Find this source in our list and save filters to config
-	for (size_t i = 0; i < asio_sources.size(); i++) {
-		if (asio_sources[i].second == source) {
-			save_source_filters(source, (int)i);
-			break;
-		}
-	}
+	save_source_filters(source);
 }
 
 // Signal callback: filter settings updated
@@ -157,14 +216,11 @@ static void on_filter_settings_update(void *data, calldata_t *cd)
 	// 'data' is the parent source
 	obs_source_t *parent_source = (obs_source_t *)data;
 	if (!parent_source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
 
-	// Verify parent source is still valid and in our list
-	for (size_t i = 0; i < asio_sources.size(); i++) {
-		if (asio_sources[i].second == parent_source) {
-			save_source_filters(parent_source, (int)i);
-			break;
-		}
-	}
+	save_source_filters(parent_source);
 }
 
 // Signal callback: filter added
@@ -183,12 +239,120 @@ static void on_filter_added(void *data, calldata_t *cd)
 		signal_handler_connect(sh, "update", on_filter_settings_update, source);
 	}
 
-	// Save filters
-	for (size_t i = 0; i < asio_sources.size(); i++) {
-		if (asio_sources[i].second == source) {
-			save_source_filters(source, (int)i);
-			break;
-		}
+	// Skip config update if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	save_source_filters(source);
+}
+
+// Signal callback: mute state changed
+static void on_mute_changed(void *data, calldata_t *cd)
+{
+	UNUSED_PARAMETER(data);
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+
+	bool muted = calldata_bool(cd, "muted");
+	auto &sources = AsioConfig::get()->getSources();
+	sources[idx].muted = muted;
+	AsioConfig::get()->save();
+	if (settings_dialog) {
+		settings_dialog->updateSourceMuted(sources[idx].outputChannel, muted);
+	}
+}
+
+// Signal callback: volume changed
+static void on_volume_changed(void *data, calldata_t *cd)
+{
+	UNUSED_PARAMETER(data);
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+
+	float volume = (float)calldata_float(cd, "volume");
+	auto &sources = AsioConfig::get()->getSources();
+	sources[idx].volume = volume;
+	AsioConfig::get()->save();
+	if (settings_dialog) {
+		settings_dialog->updateSourceVolume(sources[idx].outputChannel, volume);
+	}
+}
+
+// Signal callback: audio monitoring type changed
+static void on_audio_monitoring_changed(void *data, calldata_t *cd)
+{
+	UNUSED_PARAMETER(data);
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+
+	int monitoringType = (int)calldata_int(cd, "type");
+	auto &sources = AsioConfig::get()->getSources();
+	sources[idx].monitoringType = monitoringType;
+	AsioConfig::get()->save();
+	if (settings_dialog) {
+		settings_dialog->updateSourceMonitoring(sources[idx].outputChannel, monitoringType);
+	}
+}
+
+// Signal callback: audio balance changed
+static void on_audio_balance_changed(void *data, calldata_t *cd)
+{
+	UNUSED_PARAMETER(data);
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+
+	float balance = (float)calldata_float(cd, "balance");
+	auto &sources = AsioConfig::get()->getSources();
+	sources[idx].balance = balance;
+	AsioConfig::get()->save();
+	if (settings_dialog) {
+		settings_dialog->updateSourceBalance(sources[idx].outputChannel, balance);
+	}
+}
+
+// Signal callback: source flags updated (for mono)
+static void on_update_flags(void *data, calldata_t *cd)
+{
+	UNUSED_PARAMETER(data);
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+
+	uint32_t flags = (uint32_t)calldata_int(cd, "flags");
+	bool forceMono = (flags & OBS_SOURCE_FLAG_FORCE_MONO) != 0;
+	auto &sources = AsioConfig::get()->getSources();
+	sources[idx].forceMono = forceMono;
+	AsioConfig::get()->save();
+	if (settings_dialog) {
+		settings_dialog->updateSourceMono(sources[idx].outputChannel, forceMono);
 	}
 }
 
@@ -224,6 +388,13 @@ static void connect_source_signals(obs_source_t *source)
 		signal_handler_connect(sh, "filter_add", on_filter_added, nullptr);
 		signal_handler_connect(sh, "filter_remove", on_filter_changed, nullptr);
 		signal_handler_connect(sh, "reorder_filters", on_filter_changed, nullptr);
+		
+		// Audio signals
+		signal_handler_connect(sh, "mute", on_mute_changed, nullptr);
+		signal_handler_connect(sh, "volume", on_volume_changed, nullptr);
+		signal_handler_connect(sh, "audio_monitoring", on_audio_monitoring_changed, nullptr);
+		signal_handler_connect(sh, "audio_balance", on_audio_balance_changed, nullptr);
+		signal_handler_connect(sh, "update_flags", on_update_flags, nullptr);
 	}
 	
 	// Also connect to any existing filters (restored from config)
@@ -240,6 +411,13 @@ static void disconnect_source_signals(obs_source_t *source)
 		signal_handler_disconnect(sh, "filter_add", on_filter_added, nullptr);
 		signal_handler_disconnect(sh, "filter_remove", on_filter_changed, nullptr);
 		signal_handler_disconnect(sh, "reorder_filters", on_filter_changed, nullptr);
+		
+		// Audio signals
+		signal_handler_disconnect(sh, "mute", on_mute_changed, nullptr);
+		signal_handler_disconnect(sh, "volume", on_volume_changed, nullptr);
+		signal_handler_disconnect(sh, "audio_monitoring", on_audio_monitoring_changed, nullptr);
+		signal_handler_disconnect(sh, "audio_balance", on_audio_balance_changed, nullptr);
+		signal_handler_disconnect(sh, "update_flags", on_update_flags, nullptr);
 	}
 	
 	// Disconnect from filters
@@ -268,6 +446,9 @@ static obs_source_t* find_managed_source_by_name(const char* name) {
 
 void createSources()
 {
+	// Set guard flag to prevent signal handlers from modifying config
+	creating_sources = true;
+
 	// 1. Detach all current sources from their output channels
 	// We do this first so that channels are free to be reassigned
 	for (auto &[channel, src] : asio_sources) {
@@ -276,12 +457,12 @@ void createSources()
 		}
 	}
 
-	// 2. Build map of existing managed sources for reuse
-	std::map<std::string, obs_source_t*> reusable_sources;
+	// 2. Build map of existing managed sources by CHANNEL for reuse
+	// Using channel as the stable identifier allows name changes to work
+	std::map<int, obs_source_t*> reusable_sources;
 	for (auto &[channel, src] : asio_sources) {
 		if (src) {
-			const char* name = obs_source_get_name(src);
-			if (name) reusable_sources[name] = src;
+			reusable_sources[channel] = src;
 		}
 	}
 
@@ -295,19 +476,41 @@ void createSources()
 		}
 
 		obs_source_t *source = nullptr;
-		std::string name = cfg.name.toUtf8().constData();
+		std::string configName = cfg.name.toUtf8().constData();
+		int channel = cfg.outputChannel;
+		
+		if (channel < ASIO_START_CHANNEL || channel > ASIO_END_CHANNEL) {
+			channel = ASIO_START_CHANNEL;
+		}
 
-		// Try to reuse existing source
-		auto it = reusable_sources.find(name);
+		// Try to reuse existing source by channel
+		auto it = reusable_sources.find(channel);
 		if (it != reusable_sources.end()) {
 			source = it->second;
 			reusable_sources.erase(it); // Mark as used
 			
-			// Update settings if needed (optional, or we assume config matches)
-			// For now, simpler to leave settings as is on the running source, 
-			// unless we explicitly want to force config over current state.
-			// Given we listen to updates, they should be in sync.
+			// Sync name: if config name differs from source name, update source
+			const char* currentName = obs_source_get_name(source);
+			if (currentName && configName != currentName) {
+				obs_source_set_name(source, configName.c_str());
+				obs_log(LOG_INFO, "Renamed source '%s' -> '%s'", currentName, configName.c_str());
+			}
 		} else {
+			// Fallback: Try to find by NAME in remaining reusable sources
+			// This handles cases where channel might have changed or been mismatched
+			for (auto rit = reusable_sources.begin(); rit != reusable_sources.end(); ++rit) {
+				const char *rName = obs_source_get_name(rit->second);
+				if (rName && configName == rName) {
+					source = rit->second;
+					obs_log(LOG_INFO, "Reused source '%s' by name match (channel %d -> %d)", 
+						rName, rit->first, channel);
+					reusable_sources.erase(rit);
+					break;
+				}
+			}
+		}
+
+		if (!source) {
 			// Create new source
 			// Parse stored settings from JSON
 			QJsonDocument doc(cfg.sourceSettings);
@@ -317,7 +520,7 @@ void createSources()
 
 			source = obs_source_create(
 				"asio_input_capture",
-				name.c_str(),
+				configName.c_str(),
 				settings, nullptr
 			);
 			
@@ -340,7 +543,7 @@ void createSources()
 						if (filterArray) {
 							obs_source_restore_filters(source, filterArray);
 							obs_data_array_release(filterArray);
-							obs_log(LOG_INFO, "Restored filters for '%s'", name.c_str());
+							obs_log(LOG_INFO, "Restored filters for '%s'", configName.c_str());
 						}
 						obs_data_release(filterData);
 					}
@@ -352,32 +555,32 @@ void createSources()
 		}
 
 		if (source) {
-			// Validate channel range
-			int channel = cfg.outputChannel;
-			if (channel < ASIO_START_CHANNEL || channel > ASIO_END_CHANNEL) {
-				channel = ASIO_START_CHANNEL;
-			}
-
-			// Assign to new channel
+			// Apply audio settings from config
+			apply_audio_settings(source, cfg);
+			
+			// Assign to channel
 			obs_set_output_source(channel, source);
 			new_asio_sources.emplace_back(channel, source);
 
 			obs_log(LOG_INFO, "ASIO source '%s' assigned to channel %d",
-				name.c_str(), channel);
+				configName.c_str(), channel);
 		} else {
 			obs_log(LOG_ERROR, "Failed to get/create ASIO source '%s'.",
-				name.c_str());
+				configName.c_str());
 		}
 	}
 
 	// 4. Clean up unused sources
-	for (auto &[name, src] : reusable_sources) {
+	for (auto &[channel, src] : reusable_sources) {
 		disconnect_source_signals(src);
 		obs_source_release(src);
-		obs_log(LOG_INFO, "Released unused ASIO source '%s'", name.c_str());
+		obs_log(LOG_INFO, "Released unused ASIO source on channel %d", channel);
 	}
 	
 	asio_sources = std::move(new_asio_sources);
+
+	// Clear guard flag - signal handlers can now modify config safely
+	creating_sources = false;
 
 	// Show error if no sources were created but there are configs
 	if (asio_sources.empty() && !configs.isEmpty()) {

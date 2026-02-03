@@ -20,13 +20,25 @@ struct AsioSourceConfig {
 	bool enabled;	       // Whether source is active
 	QJsonObject sourceSettings; // obs_data settings for asio_input_capture
 	QJsonArray sourceFilters;   // Filter data array (from obs_source_backup_filters)
+	
+	// Audio control settings
+	bool muted;            // Mute state
+	int monitoringType;    // 0=off, 1=monitor only, 2=monitor and output
+	float volume;          // Volume multiplier (0.0 to 1.0+, 1.0 = 0dB)
+	float balance;         // Balance/pan (0.0=left, 0.5=center, 1.0=right)
+	bool forceMono;        // Force mono downmix
 
 	AsioSourceConfig()
 		: name("ASIO Audio"),
 		  outputChannel(ASIO_START_CHANNEL),
 		  enabled(true),
 		  sourceSettings(QJsonObject()),
-		  sourceFilters(QJsonArray())
+		  sourceFilters(QJsonArray()),
+		  muted(false),
+		  monitoringType(0),
+		  volume(1.0f),
+		  balance(0.5f),
+		  forceMono(false)
 	{
 	}
 };

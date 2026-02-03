@@ -98,6 +98,13 @@ void AsioConfig::load()
 		src.enabled = obj["enabled"].toBool(true);
 		src.sourceSettings = obj["sourceSettings"].toObject();
 		src.sourceFilters = obj["sourceFilters"].toArray();
+		
+		// Audio control settings
+		src.muted = obj["muted"].toBool(false);
+		src.monitoringType = obj["monitoringType"].toInt(0);
+		src.volume = (float)obj["volume"].toDouble(1.0);
+		src.balance = (float)obj["balance"].toDouble(0.5);
+		src.forceMono = obj["forceMono"].toBool(false);
 
 		if (src.name.isEmpty()) {
 			src.name = QString("Audio %1 (ASIO)").arg(sources.size() + 1);
@@ -129,6 +136,14 @@ void AsioConfig::save()
 		obj["enabled"] = src.enabled;
 		obj["sourceSettings"] = src.sourceSettings;
 		obj["sourceFilters"] = src.sourceFilters;
+		
+		// Audio control settings
+		obj["muted"] = src.muted;
+		obj["monitoringType"] = src.monitoringType;
+		obj["volume"] = src.volume;
+		obj["balance"] = src.balance;
+		obj["forceMono"] = src.forceMono;
+		
 		sourcesArray.append(obj);
 	}
 
