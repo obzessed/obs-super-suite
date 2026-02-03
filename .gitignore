@@ -5,11 +5,13 @@
 !/.github
 !/build-aux
 !/cmake
+!/assets
 !/data
 !/src
 !.clang-format
 !.gersemirc
 !.gitignore
+!resources.qrc
 !buildspec.json
 !CMakeLists.txt
 !CMakePresets.json

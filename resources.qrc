@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/super">
+        <file>assets/icons/play.svg</file>
+        <file>assets/icons/play-circle.svg</file>
+        <file>assets/icons/stop-circle.svg</file>
+        <file>assets/icons/plus.svg</file>
+        <file>assets/icons/octagon.svg</file>
+        <file>assets/icons/trash.svg</file>
+        <file>assets/icons/trash-2.svg</file>
+        <file>assets/icons/toggle-on.svg</file>
+        <file>assets/icons/toggle-off.svg</file>
+    </qresource>
+</RCC>
