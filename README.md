@@ -1,4 +1,4 @@
-# OBS Plugin Template
+# OBS Super Suite
 
 ## Introduction
 
