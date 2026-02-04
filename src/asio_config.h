@@ -8,12 +8,6 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
-// OBS defines MAX_CHANNELS (typically 64) - we use channels 1 to MAX_CHANNELS
-// If MAX_CHANNELS is not defined by OBS headers, define a reasonable default
-#ifndef MAX_CHANNELS
-#define MAX_CHANNELS 64
-#endif
-
 // Configuration for a single ASIO source
 struct AsioSourceConfig {
 	QString name;	       // Display name

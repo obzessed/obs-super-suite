@@ -9,6 +9,7 @@
 #include "super_suite.h"
 #include "asio_config.h"
 #include "asio_settings.h"
+#include "channels_view.h"
 
 #include <vector>
 #include <utility>
@@ -22,6 +23,7 @@
 // Store multiple ASIO sources with their channel assignments
 static std::vector<std::pair<int, obs_source_t *>> asio_sources; // (channel, source)
 static AsioSettingsDialog *settings_dialog = nullptr;
+static ChannelsView *channels_view = nullptr;
 
 // Guard flag to prevent signal handlers from modifying config during createSources()
 static bool creating_sources = false;
@@ -640,6 +642,19 @@ static void show_settings_dialog(void* data)
 	settings_dialog->toggle_show_hide();
 }
 
+static void show_channels_view(void* data)
+{
+	UNUSED_PARAMETER(data);
+	
+	if (!channels_view) {
+		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		channels_view = new ChannelsView(mainWindow);
+	}
+	channels_view->show();
+	channels_view->raise();
+	channels_view->activateWindow();
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -660,6 +675,13 @@ void on_plugin_loaded()
 		show_settings_dialog,
 		nullptr
 	);
+
+	// Add Channels View menu item
+	obs_frontend_add_tools_menu_item(
+		obs_module_text("ChannelsView.Title"), // "Channels" or similar
+		show_channels_view,
+		nullptr
+	);
 }
 
 void on_plugin_unload()
@@ -672,6 +694,12 @@ void on_plugin_unload()
 		settings_dialog->hide(); // Just hide, don't trigger close event
 		delete settings_dialog;
 		settings_dialog = nullptr;
+		settings_dialog = nullptr;
+	}
+
+	if (channels_view) {
+		delete channels_view;
+		channels_view = nullptr;
 	}
 
 	// Clean up sources
