@@ -10,6 +10,11 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
+#include <QKeyEvent>
+#include <QGraphicsColorizeEffect>
+
+class AsioSourceDialog;
 
 class AsioSettingsDialog : public QDialog {
 	Q_OBJECT
@@ -35,12 +40,17 @@ protected:
 	void closeEvent(QCloseEvent *event) override;
 	void hideEvent(QHideEvent *event) override;
 	bool eventFilter(QObject *obj, QEvent *event) override;
+	void keyPressEvent(QKeyEvent *event) override;
 
 private slots:
 	void addSource();
+	void editSource(int row);
+	void duplicateSource(int row);
+	void deleteSource(int row);
 	void removeSelectedSource();
 	void openSourceProperties(int row);
 	void openSourceFilters(int row);
+	void showContextMenu(const QPoint &pos);
 
 private:
 	void setupUi();
@@ -49,12 +59,13 @@ private:
 	void updateRemoveButtonState();
 	void updateAddButtonState();
 	void addRowWidgets(int row, const struct AsioSourceConfig &src);
+	void updateRowTooltip(int row);
 	int findNextAvailableChannel() const;
-	bool isChannelOccupied(int channel, int excludeRow = -1) const;
-	void onChannelChanged(int row);
-	void onItemChanged(QTableWidgetItem *item);
+	QSet<int> getOccupiedChannels(int excludeRow = -1) const;
+	QString generateUniqueName(const QString &baseName) const;
 
 	QTableWidget *tableWidget;
 	QPushButton *btnAdd;
 	QPushButton *btnRemove;
 };
+

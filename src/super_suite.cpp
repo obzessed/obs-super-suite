@@ -453,7 +453,7 @@ void createSources()
 	// We do this first so that channels are free to be reassigned
 	for (auto &[channel, src] : asio_sources) {
 		if (src) {
-			obs_set_output_source(channel, nullptr);
+			obs_set_output_source(channel - 1, nullptr); // OBS uses 0-indexed channels
 		}
 	}
 
@@ -479,8 +479,8 @@ void createSources()
 		std::string configName = cfg.name.toUtf8().constData();
 		int channel = cfg.outputChannel;
 		
-		if (channel < ASIO_START_CHANNEL || channel > ASIO_END_CHANNEL) {
-			channel = ASIO_START_CHANNEL;
+		if (channel < 1 || channel > MAX_CHANNELS) {
+			channel = 1;
 		}
 
 		// Try to reuse existing source by channel
@@ -559,7 +559,7 @@ void createSources()
 			apply_audio_settings(source, cfg);
 			
 			// Assign to channel
-			obs_set_output_source(channel, source);
+			obs_set_output_source(channel - 1, source); // OBS uses 0-indexed channels
 			new_asio_sources.emplace_back(channel, source);
 
 			obs_log(LOG_INFO, "ASIO source '%s' assigned to channel %d",
@@ -597,7 +597,7 @@ void cleanup()
 			// Disconnect signals before releasing
 			disconnect_source_signals(src);
 			// Clear the output channel
-			obs_set_output_source(channel, nullptr);
+			obs_set_output_source(channel - 1, nullptr); // OBS uses 0-indexed channels
 			// Release our reference
 			obs_source_release(src);
 		}

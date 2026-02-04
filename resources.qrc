@@ -1,5 +1,12 @@
 <RCC>
     <qresource prefix="/super">
+        <file>assets/icons/edit.svg</file>
+        <file>assets/icons/tool.svg</file>
+        <file>assets/icons/volume-x.svg</file>
+        <file>assets/icons/volume-2.svg</file>
+        <file>assets/icons/headphones.svg</file>
+        <file>assets/icons/sliders.svg</file>
+        <file>assets/icons/settings.svg</file>
         <file>assets/icons/play.svg</file>
         <file>assets/icons/play-circle.svg</file>
         <file>assets/icons/stop-circle.svg</file>

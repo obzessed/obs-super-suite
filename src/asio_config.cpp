@@ -61,7 +61,7 @@ void AsioConfig::load()
 		// Add one default source
 		AsioSourceConfig defaultConfig;
 		defaultConfig.name = "Audio 1 (ASIO)";
-		defaultConfig.outputChannel = ASIO_START_CHANNEL;
+		defaultConfig.outputChannel = 1;
 		defaultConfig.enabled = true;
 		sources.append(defaultConfig);
 
@@ -94,7 +94,7 @@ void AsioConfig::load()
 
 		AsioSourceConfig src;
 		src.name = obj["name"].toString("ASIO Audio");
-		src.outputChannel = obj["outputChannel"].toInt(ASIO_START_CHANNEL);
+		src.outputChannel = obj["outputChannel"].toInt(1);
 		src.enabled = obj["enabled"].toBool(true);
 		src.sourceSettings = obj["sourceSettings"].toObject();
 		src.sourceFilters = obj["sourceFilters"].toArray();
@@ -109,8 +109,8 @@ void AsioConfig::load()
 		if (src.name.isEmpty()) {
 			src.name = QString("Audio %1 (ASIO)").arg(sources.size() + 1);
 		}
-		if (src.outputChannel < ASIO_START_CHANNEL || src.outputChannel > ASIO_END_CHANNEL) {
-			src.outputChannel = ASIO_START_CHANNEL + sources.size();
+		if (src.outputChannel < 1 || src.outputChannel > MAX_CHANNELS) {
+			src.outputChannel = sources.size() + 1;
 		}
 
 		sources.append(src);
