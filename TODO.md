@@ -2,3 +2,4 @@
 - [ ] Interactive ASIO Mixer.
 - [ ] Matrix Audio Router.
 - [ ] Channels Viewer.
+- [ ] Master Fader.
