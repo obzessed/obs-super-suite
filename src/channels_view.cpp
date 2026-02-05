@@ -3,16 +3,22 @@
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
-#include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QIcon>
+#include <QTreeWidget>
+
+static bool canvas_enum_cb(void *param, obs_canvas_t *canvas) {
+	auto *view = static_cast<ChannelsView*>(param);
+	view->addCanvasGroup(canvas);
+	return true;
+}
 
 ChannelsView::ChannelsView(QWidget *parent) : QDialog(parent)
 {
 	setWindowTitle("Output Channels");
-	resize(600, 500);
+	resize(700, 600);
 	setupUi();
 }
 
@@ -31,25 +37,26 @@ void ChannelsView::setupUi()
 	auto *layout = new QVBoxLayout(this);
 	
 	// Description
-	auto *infoLabel = new QLabel("This view shows all OBS Output Channels and their assigned sources.\n"
-		"Channels are 1-indexed for display, but 0-indexed internally.", this);
-	infoLabel->setStyleSheet("color: #888;");
-	layout->addWidget(infoLabel);
+	// auto *infoLabel = new QLabel("Browsing visual channels (canvases) and their output channels.\n"
+	// 	"Grouped by Canvas.", this);
+	// infoLabel->setStyleSheet("color: #888;");
+	// layout->addWidget(infoLabel);
 	
-	// Table
-	m_table = new QTableWidget(this);
-	m_table->setColumnCount(4);
-	m_table->setHorizontalHeaderLabels({"Channel", "Source", "Properties", "Filters"});
-	m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-	m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-	m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
-	m_table->setColumnWidth(2, 30);
-	m_table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
-	m_table->setColumnWidth(3, 30);
-	m_table->verticalHeader()->setVisible(false);
-	m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-	m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-	layout->addWidget(m_table);
+	// Tree
+	m_tree = new QTreeWidget(this);
+	m_tree->setColumnCount(4);
+	m_tree->setHeaderLabels({"Channel", "Source", "Properties", "Filters"});
+	m_tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+	m_tree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+	m_tree->header()->setSectionResizeMode(2, QHeaderView::Fixed);
+	m_tree->header()->setSectionResizeMode(3, QHeaderView::Fixed);
+	m_tree->header()->setStretchLastSection(false);
+	m_tree->setColumnWidth(2, 40);
+	m_tree->setColumnWidth(3, 40);
+	m_tree->setSelectionMode(QAbstractItemView::NoSelection);
+	// m_tree->setAlternatingRowColors(true); // Maybe?
+	
+	layout->addWidget(m_tree);
 	
 	// Buttons
 	auto *btnLayout = new QHBoxLayout();
@@ -67,37 +74,55 @@ void ChannelsView::setupUi()
 
 void ChannelsView::refresh()
 {
-	m_table->setRowCount(0);
+	m_tree->clear();
 	
+	// Enumerate canvases
+	obs_enum_canvases(canvas_enum_cb, this);
+	
+	m_tree->expandAll();
+}
+
+void ChannelsView::addCanvasGroup(obs_canvas_t *canvas)
+{
+	// Determine canvas name or index
+	int index = m_tree->topLevelItemCount();
+	const char *cname = obs_canvas_get_name(canvas);
+	QString title = cname ? QString("Canvas: %1").arg(cname) : QString("Canvas %1").arg(index + 1);
+	
+	auto *item = new QTreeWidgetItem(m_tree);
+	item->setText(0, title);
+	// Make it span all columns or just bold?
+	QFont font = item->font(0);
+	font.setBold(true);
+	item->setFont(0, font);
+	item->setFirstColumnSpanned(true); // Span across all columns for clarity
+	
+	// Iterate output channels for this canvas
 	for (int i = 0; i < MAX_CHANNELS; i++) {
-		obs_source_t *source = obs_get_output_source(i);
-		addRow(i, source);
+		obs_source_t *source = obs_canvas_get_channel(canvas, i);
+		addChannelItem(item, i, source);
 		if (source) obs_source_release(source);
 	}
 }
 
-void ChannelsView::addRow(int channel, obs_source_t *source)
+void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_source_t *source)
 {
-	int row = m_table->rowCount();
-	m_table->insertRow(row);
+	auto *item = new QTreeWidgetItem(parent);
 	
-	// Channel (1-indexed for display)
-	auto *chanItem = new QTableWidgetItem(QString::number(channel + 1));
-	chanItem->setTextAlignment(Qt::AlignCenter);
-	m_table->setItem(row, 0, chanItem);
+	// Channel (0-indexed internally, show 0-63 internally but display 1-64 per user pref)
+	item->setText(0, QString::number(channel + 1));
+	item->setTextAlignment(0, Qt::AlignCenter);
 	
 	if (!source) {
-		auto *emptyItem = new QTableWidgetItem("- Empty -");
-		emptyItem->setForeground(QBrush(QColor(100, 100, 100)));
-		m_table->setItem(row, 1, emptyItem);
+		item->setText(1, "- Empty -");
+		item->setForeground(1, QBrush(QColor(100, 100, 100)));
 		return;
 	}
 	
-	// Source Name
 	QString name = obs_source_get_name(source);
-	auto *nameItem = new QTableWidgetItem(name);
-	m_table->setItem(row, 1, nameItem);
+	item->setText(1, name);
 	
+	// Add buttons using QTreeWidget::setItemWidget
 	// Properties Button
 	auto *propWidget = new QWidget();
 	auto *propLayout = new QHBoxLayout(propWidget);
@@ -109,7 +134,8 @@ void ChannelsView::addRow(int channel, obs_source_t *source)
 	propBtn->setStyleSheet("QPushButton { background: transparent; border: none; }");
 	propBtn->setToolTip("Properties");
 	propLayout->addWidget(propBtn);
-	m_table->setCellWidget(row, 2, propWidget);
+	
+	m_tree->setItemWidget(item, 2, propWidget);
 	
 	connect(propBtn, &QPushButton::clicked, this, [this, name]() {
 		obs_source_t *s = obs_get_source_by_name(name.toUtf8().constData());
@@ -117,7 +143,7 @@ void ChannelsView::addRow(int channel, obs_source_t *source)
 			obs_frontend_open_source_properties(s);
 			obs_source_release(s);
 		} else {
-			refresh(); // Source might be gone
+			refresh(); 
 		}
 	});
 
@@ -132,7 +158,8 @@ void ChannelsView::addRow(int channel, obs_source_t *source)
 	filterBtn->setStyleSheet("QPushButton { background: transparent; border: none; }");
 	filterBtn->setToolTip("Filters");
 	filterLayout->addWidget(filterBtn);
-	m_table->setCellWidget(row, 3, filterWidget);
+	
+	m_tree->setItemWidget(item, 3, filterWidget);
 	
 	connect(filterBtn, &QPushButton::clicked, this, [this, name]() {
 		obs_source_t *s = obs_get_source_by_name(name.toUtf8().constData());

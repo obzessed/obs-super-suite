@@ -3,7 +3,7 @@
 #include "obs-module.h"
 
 #include <QDialog>
-#include <QTableWidget>
+#include <QTreeWidget>
 #include <QPushButton>
 
 class ChannelsView : public QDialog {
@@ -15,14 +15,17 @@ public:
 
 	void refresh();
 
+	// Public for callback access
+	void addCanvasGroup(obs_canvas_t *canvas);
+
 protected:
 	void showEvent(QShowEvent *event) override;
 
 private:
 	void setupUi();
-	void addRow(int channel, obs_source_t *source);
+	void addChannelItem(QTreeWidgetItem *parent, int channel, obs_source_t *source);
 
-	QTableWidget *m_table;
+	QTreeWidget *m_tree;
 	QPushButton *m_refreshBtn;
 	QPushButton *m_closeBtn;
 };

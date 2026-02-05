@@ -62,9 +62,11 @@ file(GLOB_RECURSE PLUGIN_SOURCES
   src/*.c
   src/*.cc
   src/*.cpp
+  src/*.cxx
 )
 # Exclude test executable from plugin sources
 list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.cpp$")
+list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.cxx$")
 list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.cc$")
 list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.c$")
 
