@@ -1,5 +1,8 @@
-- [ ] Multi Canvas Support.
+- [ ] ASIO Channels.
+    - [ ] Multi Canvas Support.
 - [ ] Interactive ASIO Mixer.
 - [ ] Matrix Audio Router.
-- [ ] Channels Viewer.
 - [ ] Master Fader.
+- [ ] Channels Viewer.
+  - [ ] Has Video
+  - [ ] Has Audio
