@@ -30,6 +30,8 @@ enum TableItemUserDataSlot: int {
 	kTIDS_AudioBalance = Qt::UserRole + 5,
 	kTIDS_AudioForceMono = Qt::UserRole + 6,
 	kTIDS_OutputChannel = Qt::UserRole + 7,
+	kTIDS_Canvas = Qt::UserRole + 8,
+	kTIDS_SourceType = Qt::UserRole + 9,
 };
 
 AsioSettingsDialog::AsioSettingsDialog(QWidget *parent)
@@ -61,12 +63,13 @@ void AsioSettingsDialog::setupUi()
 	infoLabel->setStyleSheet("color: #888; margin-bottom: 8px;");
 	mainLayout->addWidget(infoLabel);
 
-	// Table - 11 columns: Name, Ch, Vol, Bal, Mute, Mono, Monitor, Props, Filters, Edit, Delete
+	// Table - 12 columns: Name, Ch, Canvas, Vol, Bal, Mute, Mono, Monitor, Props, Filters, Edit, Delete
 	tableWidget = new QTableWidget(this);
-	tableWidget->setColumnCount(11);
+	tableWidget->setColumnCount(12);
 	tableWidget->setHorizontalHeaderLabels({
 		obs_module_text("AsioSettings.SourceName"),
 		"Ch",       // Channel (read-only)
+		obs_module_text("AsioSettings.Canvas"),  // Canvas
 		"Vol",      // Volume
 		"Bal",      // Balance
 		"M",        // Mute
@@ -82,23 +85,25 @@ void AsioSettingsDialog::setupUi()
 	tableWidget->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
 	tableWidget->setColumnWidth(1, 35);   // Channel
 	tableWidget->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(2, 60);   // Volume
+	tableWidget->setColumnWidth(2, 60);   // Canvas
 	tableWidget->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(3, 60);   // Balance
+	tableWidget->setColumnWidth(3, 60);   // Volume
 	tableWidget->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(4, 30);   // Mute
+	tableWidget->setColumnWidth(4, 60);   // Balance
 	tableWidget->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(5, 30);   // Mono
+	tableWidget->setColumnWidth(5, 30);   // Mute
 	tableWidget->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(6, 70);   // Monitoring
+	tableWidget->setColumnWidth(6, 30);   // Mono
 	tableWidget->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(7, 30);   // Configure
+	tableWidget->setColumnWidth(7, 70);   // Monitoring
 	tableWidget->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(8, 30);   // Filters
+	tableWidget->setColumnWidth(8, 30);   // Configure
 	tableWidget->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(9, 30);   // Edit
+	tableWidget->setColumnWidth(9, 30);   // Filters
 	tableWidget->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Fixed);
-	tableWidget->setColumnWidth(10, 30);  // Delete
+	tableWidget->setColumnWidth(10, 30);  // Edit
+	tableWidget->horizontalHeader()->setSectionResizeMode(11, QHeaderView::Fixed);
+	tableWidget->setColumnWidth(11, 30);  // Delete
 
 	tableWidget->verticalHeader()->setVisible(false);
 	tableWidget->verticalHeader()->setDefaultSectionSize(36);
@@ -177,6 +182,10 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	nameItem->setData(kTIDS_AudioForceMono, src.forceMono);
 	// Store channel in a new slot for easy retrieval
 	nameItem->setData(kTIDS_OutputChannel, src.outputChannel);
+	// Store canvas UUID
+	nameItem->setData(kTIDS_Canvas, src.canvas);
+	// Store source type
+	nameItem->setData(kTIDS_SourceType, src.sourceType);
 	tableWidget->blockSignals(true);
 	tableWidget->setItem(row, 0, nameItem);
 	tableWidget->blockSignals(false);
@@ -191,7 +200,37 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	channelLayout->addWidget(channelLabel);
 	tableWidget->setCellWidget(row, 1, channelWidget);
 
-	// Column 2: Volume slider (0-100, representing 0.0-1.0)
+	// Column 2: Canvas label - look up canvas name by UUID
+	auto *canvasWidget = new QWidget();
+	auto *canvasLayout = new QHBoxLayout(canvasWidget);
+	canvasLayout->setContentsMargins(4, 0, 4, 0);
+	canvasLayout->setAlignment(Qt::AlignCenter);
+	
+	// Find canvas name from UUID
+	QString canvasName = obs_module_text("AsioSettings.MainCanvas");
+	if (!src.canvas.isEmpty()) {
+		obs_canvas_t *mainCanvas = obs_get_main_canvas();
+		// Look up canvas by UUID to get its name
+		obs_canvas_t *canvas = obs_get_canvas_by_uuid(src.canvas.toUtf8().constData());
+		if (canvas) {
+			if (canvas == mainCanvas) {
+				canvasName = obs_module_text("AsioSettings.MainCanvas");
+			} else {
+				const char *name = obs_canvas_get_name(canvas);
+				canvasName = name ? QString::fromUtf8(name) : src.canvas.left(8);
+			}
+		} else {
+			canvasName = QString("? %1").arg(src.canvas.left(6)); // Unknown canvas
+		}
+	}
+	
+	auto *canvasLabel = new QLabel(canvasName);
+	canvasLabel->setStyleSheet("QLabel { color: #aaa; font-size: 10px; }");
+	canvasLabel->setToolTip(src.canvas.isEmpty() ? "Main Canvas" : src.canvas);
+	canvasLayout->addWidget(canvasLabel);
+	tableWidget->setCellWidget(row, 2, canvasWidget);
+
+	// Column 3: Volume slider (0-100, representing 0.0-1.0)
 	auto *volWidget = new QWidget();
 	auto *volLayout = new QHBoxLayout(volWidget);
 	volLayout->setContentsMargins(2, 0, 2, 0);
@@ -202,7 +241,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 		"QSlider::handle:horizontal { background: #5a6578; width: 10px; margin: -3px 0; border-radius: 5px; }");
 	volSlider->setToolTip("Double-click to reset to 100%");
 	volLayout->addWidget(volSlider);
-	tableWidget->setCellWidget(row, 2, volWidget);
+	tableWidget->setCellWidget(row, 3, volWidget);
 
 	connect(volSlider, &QSlider::valueChanged, this, [this]() { saveToConfig(true); });
 	
@@ -210,7 +249,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	volSlider->installEventFilter(this);
 	volSlider->setProperty("resetValue", 100);
 
-	// Column 3: Balance slider (0-100, representing 0.0-1.0, 50=center)
+	// Column 4: Balance slider (0-100, representing 0.0-1.0, 50=center)
 	auto *balWidget = new QWidget();
 	auto *balLayout = new QHBoxLayout(balWidget);
 	balLayout->setContentsMargins(2, 0, 2, 0);
@@ -221,7 +260,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 		"QSlider::handle:horizontal { background: #5a6578; width: 10px; margin: -3px 0; border-radius: 5px; }");
 	balSlider->setToolTip("Double-click to reset to center");
 	balLayout->addWidget(balSlider);
-	tableWidget->setCellWidget(row, 3, balWidget);
+	tableWidget->setCellWidget(row, 4, balWidget);
 
 	connect(balSlider, &QSlider::valueChanged, this, [this]() { saveToConfig(true); });
 	
@@ -229,7 +268,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	balSlider->installEventFilter(this);
 	balSlider->setProperty("resetValue", 50);
 
-	// Column 4: Mute checkbox with custom icons
+	// Column 5: Mute checkbox with custom icons
 	auto *muteWidget = new QWidget();
 	auto *muteLayout = new QHBoxLayout(muteWidget);
 	muteLayout->setContentsMargins(0, 0, 0, 0);
@@ -245,14 +284,14 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	muteCheck->setToolTip(src.muted ? "Unmute" : "Mute");
 	
 	muteLayout->addWidget(muteCheck);
-	tableWidget->setCellWidget(row, 4, muteWidget);
+	tableWidget->setCellWidget(row, 5, muteWidget);
 
 	connect(muteCheck, &QCheckBox::checkStateChanged, this, [this, muteCheck](int state) {
 		muteCheck->setToolTip(state == Qt::Checked ? "Unmute" : "Mute");
 		saveToConfig(true);
 	});
 
-	// Column 5: Mono checkbox
+	// Column 6: Mono checkbox
 	auto *monoWidget = new QWidget();
 	auto *monoLayout = new QHBoxLayout(monoWidget);
 	monoLayout->setContentsMargins(0, 0, 0, 0);
@@ -260,11 +299,11 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	auto *monoCheck = new QCheckBox();
 	monoCheck->setChecked(src.forceMono);
 	monoLayout->addWidget(monoCheck);
-	tableWidget->setCellWidget(row, 5, monoWidget);
+	tableWidget->setCellWidget(row, 6, monoWidget);
 
 	connect(monoCheck, &QCheckBox::checkStateChanged, this, [this] { saveToConfig(true); });
 
-	// Column 6: Monitoring dropdown
+	// Column 7: Monitoring dropdown
 	auto *monWidget = new QWidget();
 	auto *monLayout = new QHBoxLayout(monWidget);
 	monLayout->setContentsMargins(2, 0, 2, 0);
@@ -275,11 +314,11 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	monCombo->setCurrentIndex(src.monitoringType);
 	monCombo->setStyleSheet("QComboBox { background-color: #3b3b3b; border: 1px solid #555; border-radius: 3px; padding: 2px; font-size: 10px; }");
 	monLayout->addWidget(monCombo);
-	tableWidget->setCellWidget(row, 6, monWidget);
+	tableWidget->setCellWidget(row, 7, monWidget);
 
 	connect(monCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() { saveToConfig(true); });
 
-	// Column 7: Configure button
+	// Column 8: Configure button
 	auto *cfgWidget = new QWidget();
 	auto *cfgLayout = new QHBoxLayout(cfgWidget);
 	cfgLayout->setContentsMargins(2, 0, 2, 0);
@@ -292,7 +331,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 
 	connect(cfgBtn, &QPushButton::clicked, this, [this, cfgBtn]() {
 		for (int r = 0; r < tableWidget->rowCount(); ++r) {
-			QWidget *w = tableWidget->cellWidget(r, 7);
+			QWidget *w = tableWidget->cellWidget(r, 8);
 			if (w && w->findChild<QPushButton *>() == cfgBtn) {
 				openSourceProperties(r);
 				break;
@@ -301,9 +340,9 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	});
 
 	cfgLayout->addWidget(cfgBtn);
-	tableWidget->setCellWidget(row, 7, cfgWidget);
+	tableWidget->setCellWidget(row, 8, cfgWidget);
 
-	// Column 8: Filters button
+	// Column 9: Filters button
 	auto *filterWidget = new QWidget();
 	auto *filterLayout = new QHBoxLayout(filterWidget);
 	filterLayout->setContentsMargins(2, 0, 2, 0);
@@ -316,7 +355,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 
 	connect(filterBtn, &QPushButton::clicked, this, [this, filterBtn]() {
 		for (int r = 0; r < tableWidget->rowCount(); ++r) {
-			QWidget *w = tableWidget->cellWidget(r, 8);
+			QWidget *w = tableWidget->cellWidget(r, 9);
 			if (w && w->findChild<QPushButton *>() == filterBtn) {
 				openSourceFilters(r);
 				break;
@@ -325,9 +364,9 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	});
 
 	filterLayout->addWidget(filterBtn);
-	tableWidget->setCellWidget(row, 8, filterWidget);
+	tableWidget->setCellWidget(row, 9, filterWidget);
 
-	// Column 9: Edit button
+	// Column 10: Edit button
 	auto *editWidget = new QWidget();
 	auto *editLayout = new QHBoxLayout(editWidget);
 	editLayout->setContentsMargins(2, 0, 2, 0);
@@ -340,7 +379,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 
 	connect(editBtn, &QPushButton::clicked, this, [this, editBtn]() {
 		for (int r = 0; r < tableWidget->rowCount(); ++r) {
-			QWidget *w = tableWidget->cellWidget(r, 9);
+			QWidget *w = tableWidget->cellWidget(r, 10);
 			if (w && w->findChild<QPushButton *>() == editBtn) {
 				editSource(r);
 				break;
@@ -349,9 +388,9 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	});
 
 	editLayout->addWidget(editBtn);
-	tableWidget->setCellWidget(row, 9, editWidget);
+	tableWidget->setCellWidget(row, 10, editWidget);
 
-	// Column 10: Delete button
+	// Column 11: Delete button
 	auto *delWidget = new QWidget();
 	auto *delLayout = new QHBoxLayout(delWidget);
 	delLayout->setContentsMargins(2, 0, 2, 0);
@@ -367,7 +406,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 
 	connect(delBtn, &QPushButton::clicked, this, [this, delBtn]() {
 		for (int r = 0; r < tableWidget->rowCount(); ++r) {
-			QWidget *w = tableWidget->cellWidget(r, 10);
+			QWidget *w = tableWidget->cellWidget(r, 11);
 			if (w && w->findChild<QPushButton *>() == delBtn) {
 				deleteSource(r);
 				break;
@@ -376,7 +415,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	});
 
 	delLayout->addWidget(delBtn);
-	tableWidget->setCellWidget(row, 10, delWidget);
+	tableWidget->setCellWidget(row, 11, delWidget);
 
 	// Update tooltip for this row
 	updateRowTooltip(row);
@@ -416,40 +455,45 @@ void AsioSettingsDialog::saveToConfig(bool doRefresh)
 			// Retrieve preserved settings and filters
 			cfg.sourceSettings = item->data(kTIDS_SourceSettings).toJsonObject();
 			cfg.sourceFilters = item->data(kTIDS_SourceFilters).toJsonArray();
-			// Read channel from item data (stored at UserRole + 10)
+			// Read channel from item data
 			cfg.outputChannel = item->data(kTIDS_OutputChannel).toInt();
+			// Read canvas UUID from item data
+			cfg.canvas = item->data(kTIDS_Canvas).toString();
+			// Read source type from item data
+			cfg.sourceType = item->data(kTIDS_SourceType).toString();
+			if (cfg.sourceType.isEmpty()) cfg.sourceType = "asio_input_capture"; // Legacy default
 		}
 
-		// Volume (column 2)
-		if (auto *w = tableWidget->cellWidget(i, 2)) {
+		// Volume (column 3)
+		if (auto *w = tableWidget->cellWidget(i, 3)) {
 			if (auto *slider = w->findChild<QSlider *>()) {
 				cfg.volume = slider->value() / 100.0f;
 			}
 		}
 
-		// Balance (column 3)
-		if (auto *w = tableWidget->cellWidget(i, 3)) {
+		// Balance (column 4)
+		if (auto *w = tableWidget->cellWidget(i, 4)) {
 			if (auto *slider = w->findChild<QSlider *>()) {
 				cfg.balance = slider->value() / 100.0f;
 			}
 		}
 
-		// Mute (column 4)
-		if (auto *w = tableWidget->cellWidget(i, 4)) {
+		// Mute (column 5)
+		if (auto *w = tableWidget->cellWidget(i, 5)) {
 			if (auto *check = w->findChild<QCheckBox *>()) {
 				cfg.muted = check->isChecked();
 			}
 		}
 
-		// Mono (column 5)
-		if (auto *w = tableWidget->cellWidget(i, 5)) {
+		// Mono (column 6)
+		if (auto *w = tableWidget->cellWidget(i, 6)) {
 			if (auto *check = w->findChild<QCheckBox *>()) {
 				cfg.forceMono = check->isChecked();
 			}
 		}
 
-		// Monitoring (column 6)
-		if (auto *w = tableWidget->cellWidget(i, 6)) {
+		// Monitoring (column 7)
+		if (auto *w = tableWidget->cellWidget(i, 7)) {
 			if (auto *combo = w->findChild<QComboBox *>()) {
 				cfg.monitoringType = combo->currentIndex();
 			}
@@ -468,68 +512,23 @@ void AsioSettingsDialog::saveToConfig(bool doRefresh)
 	}
 }
 
-int AsioSettingsDialog::findNextAvailableChannel() const
+int AsioSettingsDialog::findNextAvailableChannel(const QString &canvasUuid) const
 {
-	QSet<int> usedChannels;
-	for (int i = 0; i < tableWidget->rowCount(); i++) {
-		auto *item = tableWidget->item(i, 0);
-		if (item) {
-			int ch = item->data(kTIDS_OutputChannel).toInt();
-			if (ch > 0) {
-				usedChannels.insert(ch);
-			}
-		}
-	}
-
+	// Get canvas from UUID (OBS is source of truth)
+	obs_canvas_t *canvas = canvasUuid.isEmpty() ? obs_get_main_canvas()
+		: obs_get_canvas_by_uuid(canvasUuid.toUtf8().constData());
+	if (!canvas) canvas = obs_get_main_canvas();
+	
 	for (int ch = 1; ch <= MAX_CHANNELS; ch++) {
-		if (!usedChannels.contains(ch)) {
+		obs_source_t *existing = obs_canvas_get_channel(canvas, ch - 1); // 0-indexed
+		if (!existing) {
 			return ch;
 		}
 	}
 
-	return -1; // No available channel
+	// All channels used - cycle back to 1
+	return 1;
 }
-
-// bool AsioSettingsDialog::isChannelOccupied(int channel, int excludeRow) const
-// {
-// 	for (int i = 0; i < tableWidget->rowCount(); i++) {
-// 		if (i == excludeRow) continue;
-//
-// 		if (auto *w = tableWidget->cellWidget(i, 1)) {
-// 			if (auto *spin = w->findChild<QSpinBox *>()) {
-// 				if (spin->value() == channel) {
-// 					return true;
-// 				}
-// 			}
-// 		}
-// 	}
-// 	return false;
-// }
-
-// void AsioSettingsDialog::onChannelChanged(int row)
-// {
-// 	if (auto *w = tableWidget->cellWidget(row, 1)) {
-// 		if (auto *spin = w->findChild<QSpinBox *>()) {
-// 			int channel = spin->value();
-//
-// 			if (isChannelOccupied(channel, row)) {
-// 				// Show warning
-// 				spin->setStyleSheet(
-// 					"QSpinBox { background-color: #5c2323; border: 1px solid #c62828; border-radius: 3px; padding: 2px; color: #ffcccc; }"
-// 				);
-// 				spin->setToolTip(obs_module_text("AsioSettings.ChannelOccupied"));
-// 			} else {
-// 				// Normal style
-// 				spin->setStyleSheet(
-// 					"QSpinBox { background-color: #3b3b3b; border: 1px solid #555; border-radius: 3px; padding: 2px; }"
-// 				);
-// 				spin->setToolTip("");
-// 			}
-// 		}
-// 	}
-//
-// 	saveToConfig();
-// }
 
 void AsioSettingsDialog::addSource()
 {
@@ -542,11 +541,10 @@ void AsioSettingsDialog::addSource()
 
 	// Create and configure dialog
 	AsioSourceDialog dlg(AsioSourceDialog::AddMode, this);
-	dlg.setOccupiedChannels(getOccupiedChannels());
 	
 	// Pre-fill with default unique name
 	AsioSourceConfig defaultCfg;
-	defaultCfg.name = generateUniqueName("ASIO Audio");
+	defaultCfg.name = generateUniqueName("Audio");
 	defaultCfg.outputChannel = findNextAvailableChannel();
 	dlg.setConfig(defaultCfg);
 	
@@ -562,6 +560,8 @@ void AsioSettingsDialog::addSource()
 
 	AsioSourceConfig newCfg;
 	newCfg.name = dlg.getName();
+	newCfg.sourceType = dlg.getSourceType();
+	newCfg.canvas = dlg.getCanvas();
 	newCfg.outputChannel = dlg.getChannel();
 	newCfg.enabled = true;
 	newCfg.muted = dlg.shouldStartMuted();
@@ -591,13 +591,15 @@ void AsioSettingsDialog::editSource(int row)
 	// Build config from current row data
 	AsioSourceConfig cfg;
 	cfg.name = currentName;
+	cfg.sourceType = item->data(kTIDS_SourceType).toString();
+	if (cfg.sourceType.isEmpty()) cfg.sourceType = "asio_input_capture"; // Legacy default
+	cfg.canvas = item->data(kTIDS_Canvas).toString();
 	cfg.outputChannel = currentChannel;
 	cfg.sourceSettings = item->data(kTIDS_SourceSettings).toJsonObject();
 	cfg.sourceFilters = item->data(kTIDS_SourceFilters).toJsonArray();
 	
 	// Create dialog in edit mode
 	AsioSourceDialog dlg(AsioSourceDialog::EditMode, this);
-	dlg.setOccupiedChannels(getOccupiedChannels(row));
 	dlg.setConfig(cfg);
 	
 	if (dlg.exec() != QDialog::Accepted) {
@@ -607,12 +609,41 @@ void AsioSettingsDialog::editSource(int row)
 	// Update name
 	item->setText(dlg.getName());
 	
+	// Update source type
+	item->setData(kTIDS_SourceType, dlg.getSourceType());
+	
 	// Update channel in item data and label
 	int newChannel = dlg.getChannel();
 	item->setData(kTIDS_OutputChannel, newChannel);
 	if (auto *w = tableWidget->cellWidget(row, 1)) {
 		if (auto *lbl = w->findChild<QLabel *>()) {
 			lbl->setText(QString::number(newChannel));
+		}
+	}
+	
+	// Update canvas in item data and label
+	QString newCanvas = dlg.getCanvas();
+	item->setData(kTIDS_Canvas, newCanvas);
+	if (auto *w = tableWidget->cellWidget(row, 2)) {
+		if (auto *lbl = w->findChild<QLabel *>()) {
+			// Look up canvas name from UUID
+			QString canvasName = obs_module_text("AsioSettings.MainCanvas");
+			if (!newCanvas.isEmpty()) {
+				obs_canvas_t *mainCanvas = obs_get_main_canvas();
+				obs_canvas_t *canvas = obs_get_canvas_by_uuid(newCanvas.toUtf8().constData());
+				if (canvas) {
+					if (canvas == mainCanvas) {
+						canvasName = obs_module_text("AsioSettings.MainCanvas");
+					} else {
+						const char *name = obs_canvas_get_name(canvas);
+						canvasName = name ? QString::fromUtf8(name) : newCanvas.left(8);
+					}
+				} else {
+					canvasName = QString("? %1").arg(newCanvas.left(6));
+				}
+			}
+			lbl->setText(canvasName);
+			lbl->setToolTip(newCanvas.isEmpty() ? "Main Canvas" : newCanvas);
 		}
 	}
 	
@@ -638,7 +669,6 @@ void AsioSettingsDialog::duplicateSource(int row)
 	
 	// Create dialog pre-filled
 	AsioSourceDialog dlg(AsioSourceDialog::AddMode, this);
-	dlg.setOccupiedChannels(getOccupiedChannels());
 	
 	AsioSourceConfig cfg;
 	cfg.name = suggestedName;
@@ -658,6 +688,7 @@ void AsioSettingsDialog::duplicateSource(int row)
 	
 	AsioSourceConfig newCfg;
 	newCfg.name = dlg.getName();
+	newCfg.canvas = dlg.getCanvas();
 	newCfg.outputChannel = dlg.getChannel();
 	newCfg.enabled = true;
 	newCfg.muted = dlg.shouldStartMuted();
@@ -790,26 +821,6 @@ void AsioSettingsDialog::updateRowTooltip(int row)
 	item->setToolTip(tooltip);
 }
 
-QSet<int> AsioSettingsDialog::getOccupiedChannels(int excludeRow) const
-{
-	QSet<int> occupied;
-	
-	// Check our managed sources
-	for (int i = 0; i < tableWidget->rowCount(); i++) {
-		if (i == excludeRow) continue;
-		
-		auto *item = tableWidget->item(i, 0);
-		if (item) {
-			int ch = item->data(kTIDS_OutputChannel).toInt();
-			if (ch > 0) {
-				occupied.insert(ch);
-			}
-		}
-	}
-	
-	return occupied;
-}
-
 QString AsioSettingsDialog::generateUniqueName(const QString &baseName) const
 {
 	const auto &sources = AsioConfig::get()->getSources();
@@ -837,14 +848,20 @@ void AsioSettingsDialog::openSourceProperties(int row)
 		return;
 	}
 
-	// Get channel from item data
+	// Get channel and canvas from item data
 	int channel = 1;
+	QString canvasUuid;
 	if (auto *item = tableWidget->item(row, 0)) {
 		channel = item->data(kTIDS_OutputChannel).toInt();
+		canvasUuid = item->data(kTIDS_Canvas).toString();
 	}
 
-	// Get the actual running source from the output channel
-	obs_source_t *source = obs_get_output_source(channel - 1); // OBS uses 0-indexed
+	// Get the actual running source from the canvas channel
+	obs_canvas_t *canvas = canvasUuid.isEmpty() ? obs_get_main_canvas() 
+		: obs_get_canvas_by_uuid(canvasUuid.toUtf8().constData());
+	if (!canvas) canvas = obs_get_main_canvas();
+	
+	obs_source_t *source = obs_canvas_get_channel(canvas, channel - 1); // OBS uses 0-indexed
 	if (!source) {
 		QMessageBox::warning(this, obs_module_text("Error"),
 			obs_module_text("Error.CreateAsioSource"));
@@ -873,14 +890,13 @@ void AsioSettingsDialog::openSourceProperties(int row)
 					}
 
 					AsioConfig::get()->save();
-					obs_log(LOG_INFO, "Saved ASIO source settings for channel %d", channel);
+	obs_log(LOG_INFO, "Saved ASIO source settings for channel %d", channel);
 				}
 			}
 			obs_data_release(newSettings);
 		}
 	}
-
-	obs_source_release(source); // Release ref from obs_get_output_source
+	// Note: obs_canvas_get_channel does not add a reference, so no release needed
 }
 
 void AsioSettingsDialog::openSourceFilters(int row)
@@ -889,14 +905,20 @@ void AsioSettingsDialog::openSourceFilters(int row)
 		return;
 	}
 
-	// Get channel from item data
+	// Get channel and canvas from item data
 	int channel = 1;
+	QString canvasUuid;
 	if (auto *item = tableWidget->item(row, 0)) {
 		channel = item->data(kTIDS_OutputChannel).toInt();
+		canvasUuid = item->data(kTIDS_Canvas).toString();
 	}
 
-	// Get the actual running source from the output channel
-	obs_source_t *source = obs_get_output_source(channel - 1); // OBS uses 0-indexed
+	// Get the actual running source from the canvas channel
+	obs_canvas_t *canvas = canvasUuid.isEmpty() ? obs_get_main_canvas() 
+		: obs_get_canvas_by_uuid(canvasUuid.toUtf8().constData());
+	if (!canvas) canvas = obs_get_main_canvas();
+	
+	obs_source_t *source = obs_canvas_get_channel(canvas, channel - 1); // OBS uses 0-indexed
 	if (!source) {
 		QMessageBox::warning(this, obs_module_text("Error"),
 			obs_module_text("Error.CreateAsioSource"));
@@ -905,8 +927,7 @@ void AsioSettingsDialog::openSourceFilters(int row)
 
 	// Open the filters dialog for the actual running source
 	obs_frontend_open_source_filters(source);
-
-	obs_source_release(source); // Release ref from obs_get_output_source
+	// Note: obs_canvas_get_channel does not add a reference, so no release needed
 }
 
 void AsioSettingsDialog::updateRemoveButtonState()
@@ -916,7 +937,8 @@ void AsioSettingsDialog::updateRemoveButtonState()
 
 void AsioSettingsDialog::updateAddButtonState()
 {
-	bool canAdd = tableWidget->rowCount() < MAX_CHANNELS && findNextAvailableChannel() >= 0;
+	// Allow adding sources even when all channels are used (they'll cycle back)
+	bool canAdd = tableWidget->rowCount() < MAX_CHANNELS;
 	btnAdd->setEnabled(canAdd);
 
 	if (!canAdd) {

@@ -58,13 +58,7 @@ void AsioConfig::load()
 		// Config doesn't exist yet, create default
 		obs_log(LOG_INFO, "ASIO config not found, creating default");
 
-		// Add one default source
-		AsioSourceConfig defaultConfig;
-		defaultConfig.name = "Audio 1 (ASIO)";
-		defaultConfig.outputChannel = 1;
-		defaultConfig.enabled = true;
-		sources.append(defaultConfig);
-
+		// No config file - start with empty sources
 		save();
 		return;
 	}
@@ -79,9 +73,7 @@ void AsioConfig::load()
 		obs_log(LOG_WARNING, "Failed to parse ASIO config JSON: %s",
 			parseError.errorString().toUtf8().constData());
 
-		// Create default
-		AsioSourceConfig defaultConfig;
-		sources.append(defaultConfig);
+		// Parse error - start with empty sources
 		save();
 		return;
 	}
@@ -93,7 +85,9 @@ void AsioConfig::load()
 		QJsonObject obj = val.toObject();
 
 		AsioSourceConfig src;
-		src.name = obj["name"].toString("ASIO Audio");
+		src.name = obj["name"].toString("Audio");
+		src.sourceType = obj["sourceType"].toString("asio_input_capture"); // Default to ASIO for legacy
+		src.canvas = obj["canvas"].toString("");  // Empty = main canvas
 		src.outputChannel = obj["outputChannel"].toInt(1);
 		src.enabled = obj["enabled"].toBool(true);
 		src.sourceSettings = obj["sourceSettings"].toObject();
@@ -107,7 +101,7 @@ void AsioConfig::load()
 		src.forceMono = obj["forceMono"].toBool(false);
 
 		if (src.name.isEmpty()) {
-			src.name = QString("Audio %1 (ASIO)").arg(sources.size() + 1);
+			src.name = QString("Audio %1").arg(sources.size() + 1);
 		}
 		if (src.outputChannel < 1 || src.outputChannel > MAX_CHANNELS) {
 			src.outputChannel = sources.size() + 1;
@@ -132,6 +126,8 @@ void AsioConfig::save()
 	for (const AsioSourceConfig &src : sources) {
 		QJsonObject obj;
 		obj["name"] = src.name;
+		obj["sourceType"] = src.sourceType;
+		obj["canvas"] = src.canvas;
 		obj["outputChannel"] = src.outputChannel;
 		obj["enabled"] = src.enabled;
 		obj["sourceSettings"] = src.sourceSettings;

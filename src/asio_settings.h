@@ -60,8 +60,7 @@ private:
 	void updateAddButtonState();
 	void addRowWidgets(int row, const struct AsioSourceConfig &src);
 	void updateRowTooltip(int row);
-	int findNextAvailableChannel() const;
-	QSet<int> getOccupiedChannels(int excludeRow = -1) const;
+	int findNextAvailableChannel(const QString &canvasUuid = QString()) const;
 	QString generateUniqueName(const QString &baseName) const;
 
 	QTableWidget *tableWidget;

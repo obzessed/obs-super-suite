@@ -26,30 +26,33 @@ public:
 	
 	// Get the configured values
 	QString getName() const;
+	QString getSourceType() const;
+	QString getCanvas() const;
 	int getChannel() const;
 	bool shouldOpenProperties() const;
 	void setOpenProperties(bool open);
 	bool shouldStartMuted() const;
 	void setStartMuted(bool muted);
 
-	// Set channels that are already in use (will be greyed out)
-	void setOccupiedChannels(const QSet<int> &channels);
-	
-	// For edit mode: the channel being edited (always enabled)
+	// For edit mode: the channel/canvas being edited (always enabled)
 	void setCurrentChannel(int channel);
 
 private slots:
 	void validateInput();
+	void onCanvasChanged();
 
 private:
 	void setupUi();
+	void populateCanvases();
 	void populateChannels();
 
 	Mode m_mode;
 	int m_currentChannel = -1; // For edit mode
-	QSet<int> m_occupiedChannels;
+	QString m_currentCanvas; // For edit mode
 
 	QLineEdit *m_nameEdit;
+	QComboBox *m_typeCombo;
+	QComboBox *m_canvasCombo;
 	QComboBox *m_channelCombo;
 	QPushButton *m_okButton;
 	QPushButton *m_cancelButton;

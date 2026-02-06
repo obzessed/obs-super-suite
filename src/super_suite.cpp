@@ -20,13 +20,54 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
-// Store multiple ASIO sources with their channel assignments
-static std::vector<std::pair<int, obs_source_t *>> asio_sources; // (channel, source)
+// OBS Channels (64) Reservations
+// 1 - Scene Transition
+// 2 - Desktop Audio 1
+// 3 - Desktop Audio 2
+// 4 - Mix/Aux 1
+// 5 - Mix/Aux 2
+// 6 - Mix/Aux 3
+// 7 - Mix/Aux 4
+// 8 - 64 - Unreserved
+
+// Store ASIO sources with channel, canvas UUID, and source pointer
+struct AsioSourceEntry {
+	int channel;
+	QString canvasUuid;
+	obs_source_t *source;
+};
+static std::vector<AsioSourceEntry> asio_sources;
 static AsioSettingsDialog *settings_dialog = nullptr;
 static ChannelsView *channels_view = nullptr;
 
 // Guard flag to prevent signal handlers from modifying config during createSources()
 static bool creating_sources = false;
+
+// Helper: Check if a source type is available (plugin installed)
+static bool source_type_exists(const char *type_id)
+{
+	bool found = false;
+	size_t idx = 0;
+	const char *id = nullptr;
+	
+	while (obs_enum_source_types(idx++, &id)) {
+		if (id && strcmp(id, type_id) == 0) {
+			found = true;
+			break;
+		}
+	}
+	return found;
+}
+
+// Helper: Get canvas from UUID (empty = main canvas)
+static obs_canvas_t* get_canvas_for_uuid(const QString &uuid)
+{
+	if (uuid.isEmpty()) {
+		return obs_get_main_canvas();
+	}
+	obs_canvas_t *canvas = obs_get_canvas_by_uuid(uuid.toUtf8().constData());
+	return canvas ? canvas : obs_get_main_canvas(); // Fallback to main if not found
+}
 
 // Apply audio control settings to a source
 static void apply_audio_settings(obs_source_t *source, const AsioSourceConfig &cfg)
@@ -83,9 +124,9 @@ static int find_config_index_for_source(obs_source_t *source)
 // Helper: Get channel for a source from asio_sources (for UI updates)
 static int get_channel_for_source(obs_source_t *source)
 {
-	for (const auto &[channel, src] : asio_sources) {
-		if (src == source) {
-			return channel;
+	for (const auto &entry : asio_sources) {
+		if (entry.source == source) {
+			return entry.channel;
 		}
 	}
 	return -1;
@@ -435,11 +476,11 @@ static void disconnect_source_signals(obs_source_t *source)
 
 // Helper to find existing source by name from our managed list
 static obs_source_t* find_managed_source_by_name(const char* name) {
-	for (const auto& pair : asio_sources) {
-		if (pair.second) {
-			const char* srcName = obs_source_get_name(pair.second);
+	for (const auto& entry : asio_sources) {
+		if (entry.source) {
+			const char* srcName = obs_source_get_name(entry.source);
 			if (srcName && strcmp(srcName, name) == 0) {
-				return pair.second;
+				return entry.source;
 			}
 		}
 	}
@@ -451,25 +492,26 @@ void createSources()
 	// Set guard flag to prevent signal handlers from modifying config
 	creating_sources = true;
 
-	// 1. Detach all current sources from their output channels
+	// 1. Detach all current sources from their canvas channels
 	// We do this first so that channels are free to be reassigned
-	for (auto &[channel, src] : asio_sources) {
-		if (src) {
-			obs_set_output_source(channel - 1, nullptr); // OBS uses 0-indexed channels
+	for (auto &entry : asio_sources) {
+		if (entry.source) {
+			obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid);
+			obs_canvas_set_channel(canvas, entry.channel - 1, nullptr); // OBS uses 0-indexed channels
 		}
 	}
 
 	// 2. Build map of existing managed sources by CHANNEL for reuse
 	// Using channel as the stable identifier allows name changes to work
 	std::map<int, obs_source_t*> reusable_sources;
-	for (auto &[channel, src] : asio_sources) {
-		if (src) {
-			reusable_sources[channel] = src;
+	for (auto &entry : asio_sources) {
+		if (entry.source) {
+			reusable_sources[entry.channel] = entry.source;
 		}
 	}
 
 	// 3. Prepare new list
-	std::vector<std::pair<int, obs_source_t *>> new_asio_sources;
+	std::vector<AsioSourceEntry> new_asio_sources;
 	const auto &configs = AsioConfig::get()->getSources();
 
 	for (const auto &cfg : configs) {
@@ -513,6 +555,13 @@ void createSources()
 		}
 
 		if (!source) {
+			// Check if source type is available (plugin might not be installed)
+			if (!source_type_exists(cfg.sourceType.toUtf8().constData())) {
+				obs_log(LOG_WARNING, "Source type '%s' not available, skipping '%s'",
+					cfg.sourceType.toUtf8().constData(), configName.c_str());
+				continue;
+			}
+			
 			// Create new source
 			// Parse stored settings from JSON
 			QJsonDocument doc(cfg.sourceSettings);
@@ -521,7 +570,7 @@ void createSources()
 			if (!settings) settings = obs_data_create();
 
 			source = obs_source_create(
-				"asio_input_capture",
+				cfg.sourceType.toUtf8().constData(),
 				configName.c_str(),
 				settings, nullptr
 			);
@@ -560,12 +609,13 @@ void createSources()
 			// Apply audio settings from config
 			apply_audio_settings(source, cfg);
 			
-			// Assign to channel
-			obs_set_output_source(channel - 1, source); // OBS uses 0-indexed channels
-			new_asio_sources.emplace_back(channel, source);
+			// Assign to canvas channel
+			obs_canvas_t *canvas = get_canvas_for_uuid(cfg.canvas);
+			obs_canvas_set_channel(canvas, channel - 1, source); // OBS uses 0-indexed channels
+			new_asio_sources.push_back({channel, cfg.canvas, source});
 
-			obs_log(LOG_INFO, "ASIO source '%s' assigned to channel %d",
-				configName.c_str(), channel);
+			obs_log(LOG_INFO, "ASIO source '%s' assigned to channel %d (canvas: %s)",
+				configName.c_str(), channel, cfg.canvas.isEmpty() ? "main" : cfg.canvas.toUtf8().constData());
 		} else {
 			obs_log(LOG_ERROR, "Failed to get/create ASIO source '%s'.",
 				configName.c_str());
@@ -593,15 +643,16 @@ void createSources()
 
 void cleanup()
 {
-	// Simply release our references - OBS manages output channel references
-	for (auto &[channel, src] : asio_sources) {
-		if (src) {
+	// Simply release our references - OBS manages canvas channel references
+	for (auto &entry : asio_sources) {
+		if (entry.source) {
 			// Disconnect signals before releasing
-			disconnect_source_signals(src);
-			// Clear the output channel
-			obs_set_output_source(channel - 1, nullptr); // OBS uses 0-indexed channels
+			disconnect_source_signals(entry.source);
+			// Clear the canvas channel
+			obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid);
+			obs_canvas_set_channel(canvas, entry.channel - 1, nullptr); // OBS uses 0-indexed channels
 			// Release our reference
-			obs_source_release(src);
+			obs_source_release(entry.source);
 		}
 	}
 	asio_sources.clear();

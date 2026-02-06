@@ -8,12 +8,14 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
-// Configuration for a single ASIO source
+// Configuration for a single audio channel source
 struct AsioSourceConfig {
-	QString name;	       // Display name
+	QString name;          // Display name
+	QString sourceType;    // OBS source type ID (wasapi_output_capture, wasapi_input_capture, asio_input_capture)
+	QString canvas;        // Canvas UUID (empty = main canvas)
 	int outputChannel;     // Output channel index (1-MAX_CHANNELS)
 	bool enabled;	       // Whether source is active
-	QJsonObject sourceSettings; // obs_data settings for asio_input_capture
+	QJsonObject sourceSettings; // obs_data settings for the source
 	QJsonArray sourceFilters;   // Filter data array (from obs_source_backup_filters)
 	
 	// Audio control settings
@@ -24,8 +26,10 @@ struct AsioSourceConfig {
 	bool forceMono;        // Force mono downmix
 
 	AsioSourceConfig()
-		: name("ASIO Audio"),
-		  outputChannel(1),        // Default to channel 1
+		: name("Audio"),
+		  sourceType("asio_input_capture"), // Default to ASIO
+		  canvas(""),              // Empty = main canvas
+		  outputChannel(1),
 		  enabled(true),
 		  sourceSettings(QJsonObject()),
 		  sourceFilters(QJsonArray()),

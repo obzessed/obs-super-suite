@@ -44,15 +44,19 @@ void ChannelsView::setupUi()
 	
 	// Tree
 	m_tree = new QTreeWidget(this);
-	m_tree->setColumnCount(4);
-	m_tree->setHeaderLabels({"Channel", "Source", "Properties", "Filters"});
+	m_tree->setColumnCount(6);
+	m_tree->setHeaderLabels({"Channel", "Source", "Audio", "Video", "Properties", "Filters"});
 	m_tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 	m_tree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
 	m_tree->header()->setSectionResizeMode(2, QHeaderView::Fixed);
 	m_tree->header()->setSectionResizeMode(3, QHeaderView::Fixed);
+	m_tree->header()->setSectionResizeMode(4, QHeaderView::Fixed);
+	m_tree->header()->setSectionResizeMode(5, QHeaderView::Fixed);
 	m_tree->header()->setStretchLastSection(false);
-	m_tree->setColumnWidth(2, 40);
-	m_tree->setColumnWidth(3, 40);
+	m_tree->setColumnWidth(2, 50);
+	m_tree->setColumnWidth(3, 50);
+	m_tree->setColumnWidth(4, 40);
+	m_tree->setColumnWidth(5, 40);
 	m_tree->setSelectionMode(QAbstractItemView::NoSelection);
 	// m_tree->setAlternatingRowColors(true); // Maybe?
 	
@@ -122,6 +126,21 @@ void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_sour
 	QString name = obs_source_get_name(source);
 	item->setText(1, name);
 	
+	// Check output flags for audio/video capability
+	uint32_t outputFlags = obs_source_get_output_flags(source);
+	bool hasAudio = (outputFlags & OBS_SOURCE_AUDIO) != 0;
+	bool hasVideo = (outputFlags & OBS_SOURCE_VIDEO) != 0;
+	
+	// Audio column
+	item->setText(2, hasAudio ? "✓" : "-");
+	item->setTextAlignment(2, Qt::AlignCenter);
+	if (!hasAudio) item->setForeground(2, QBrush(QColor(100, 100, 100)));
+	
+	// Video column
+	item->setText(3, hasVideo ? "✓" : "-");
+	item->setTextAlignment(3, Qt::AlignCenter);
+	if (!hasVideo) item->setForeground(3, QBrush(QColor(100, 100, 100)));
+	
 	// Add buttons using QTreeWidget::setItemWidget
 	// Properties Button
 	auto *propWidget = new QWidget();
@@ -135,7 +154,7 @@ void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_sour
 	propBtn->setToolTip("Properties");
 	propLayout->addWidget(propBtn);
 	
-	m_tree->setItemWidget(item, 2, propWidget);
+	m_tree->setItemWidget(item, 4, propWidget);
 	
 	connect(propBtn, &QPushButton::clicked, this, [this, name]() {
 		obs_source_t *s = obs_get_source_by_name(name.toUtf8().constData());
@@ -159,7 +178,7 @@ void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_sour
 	filterBtn->setToolTip("Filters");
 	filterLayout->addWidget(filterBtn);
 	
-	m_tree->setItemWidget(item, 3, filterWidget);
+	m_tree->setItemWidget(item, 5, filterWidget);
 	
 	connect(filterBtn, &QPushButton::clicked, this, [this, name]() {
 		obs_source_t *s = obs_get_source_by_name(name.toUtf8().constData());
