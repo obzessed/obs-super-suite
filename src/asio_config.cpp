@@ -86,7 +86,7 @@ void AsioConfig::load()
 
 		AsioSourceConfig src;
 		src.name = obj["name"].toString("Audio");
-		src.sourceType = obj["sourceType"].toString("asio_input_capture"); // Default to ASIO for legacy
+		src.sourceType = obj["sourceType"].toString("wasapi_input_capture"); // Default to Audio Input Capture
 		src.canvas = obj["canvas"].toString("");  // Empty = main canvas
 		src.outputChannel = obj["outputChannel"].toInt(1);
 		src.enabled = obj["enabled"].toBool(true);
@@ -99,12 +99,16 @@ void AsioConfig::load()
 		src.volume = (float)obj["volume"].toDouble(1.0);
 		src.balance = (float)obj["balance"].toDouble(0.5);
 		src.forceMono = obj["forceMono"].toBool(false);
+		src.audioMixers = (uint32_t)obj["audioMixers"].toInt(0x3F); // Default all 6 tracks
+		src.audioActive = obj["audioActive"].toBool(true); // Default show in mixer
+		src.sourceUuid = obj["sourceUuid"].toString(""); // Persisted UUID for source matching
 
 		if (src.name.isEmpty()) {
 			src.name = QString("Audio %1").arg(sources.size() + 1);
 		}
-		if (src.outputChannel < 1 || src.outputChannel > MAX_CHANNELS) {
-			src.outputChannel = sources.size() + 1;
+		// -1 means no channel (none), otherwise must be 1-MAX_CHANNELS
+		if (src.outputChannel != -1 && (src.outputChannel < 1 || src.outputChannel > MAX_CHANNELS)) {
+			src.outputChannel = -1; // Default to none for invalid values
 		}
 
 		sources.append(src);
@@ -139,6 +143,9 @@ void AsioConfig::save()
 		obj["volume"] = src.volume;
 		obj["balance"] = src.balance;
 		obj["forceMono"] = src.forceMono;
+		obj["audioMixers"] = (int)src.audioMixers;
+		obj["audioActive"] = src.audioActive;
+		obj["sourceUuid"] = src.sourceUuid; // Persist UUID for source matching
 		
 		sourcesArray.append(obj);
 	}

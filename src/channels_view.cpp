@@ -36,29 +36,25 @@ void ChannelsView::setupUi()
 {
 	auto *layout = new QVBoxLayout(this);
 	
-	// Description
-	// auto *infoLabel = new QLabel("Browsing visual channels (canvases) and their output channels.\n"
-	// 	"Grouped by Canvas.", this);
-	// infoLabel->setStyleSheet("color: #888;");
-	// layout->addWidget(infoLabel);
-	
 	// Tree
 	m_tree = new QTreeWidget(this);
-	m_tree->setColumnCount(6);
-	m_tree->setHeaderLabels({"Channel", "Source", "Audio", "Video", "Properties", "Filters"});
+	m_tree->setColumnCount(8);
+	m_tree->setHeaderLabels({"Channel", "Source", "Source ID", "Source Type", "Audio", "Video", "Properties", "Filters"});
 	m_tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 	m_tree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
-	m_tree->header()->setSectionResizeMode(2, QHeaderView::Fixed);
-	m_tree->header()->setSectionResizeMode(3, QHeaderView::Fixed);
+	m_tree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+	m_tree->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
 	m_tree->header()->setSectionResizeMode(4, QHeaderView::Fixed);
 	m_tree->header()->setSectionResizeMode(5, QHeaderView::Fixed);
+	m_tree->header()->setSectionResizeMode(6, QHeaderView::Fixed);
+	m_tree->header()->setSectionResizeMode(7, QHeaderView::Fixed);
 	m_tree->header()->setStretchLastSection(false);
-	m_tree->setColumnWidth(2, 50);
-	m_tree->setColumnWidth(3, 50);
-	m_tree->setColumnWidth(4, 40);
-	m_tree->setColumnWidth(5, 40);
+	m_tree->setColumnWidth(4, 50);
+	m_tree->setColumnWidth(5, 50);
+	m_tree->setColumnWidth(6, 40);
+	m_tree->setColumnWidth(7, 40);
 	m_tree->setSelectionMode(QAbstractItemView::NoSelection);
-	// m_tree->setAlternatingRowColors(true); // Maybe?
+	m_tree->setAlternatingRowColors(true);
 	
 	layout->addWidget(m_tree);
 	
@@ -126,23 +122,41 @@ void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_sour
 	QString name = obs_source_get_name(source);
 	item->setText(1, name);
 	
+	// Source ID column (obs_source_get_id)
+	const char *sourceId = obs_source_get_id(source);
+	item->setText(2, sourceId ? sourceId : "");
+	item->setForeground(2, QBrush(QColor(130, 130, 130)));
+	
+	// Source Type column (obs_source_get_type)
+	obs_source_type type = obs_source_get_type(source);
+	QString typeStr;
+	switch (type) {
+		case OBS_SOURCE_TYPE_INPUT: typeStr = "Input"; break;
+		case OBS_SOURCE_TYPE_FILTER: typeStr = "Filter"; break;
+		case OBS_SOURCE_TYPE_TRANSITION: typeStr = "Transition"; break;
+		case OBS_SOURCE_TYPE_SCENE: typeStr = "Scene"; break;
+		default: typeStr = "Unknown"; break;
+	}
+	item->setText(3, typeStr);
+	item->setForeground(3, QBrush(QColor(130, 130, 130)));
+	
 	// Check output flags for audio/video capability
 	uint32_t outputFlags = obs_source_get_output_flags(source);
 	bool hasAudio = (outputFlags & OBS_SOURCE_AUDIO) != 0;
 	bool hasVideo = (outputFlags & OBS_SOURCE_VIDEO) != 0;
 	
-	// Audio column
-	item->setText(2, hasAudio ? "✓" : "-");
-	item->setTextAlignment(2, Qt::AlignCenter);
-	if (!hasAudio) item->setForeground(2, QBrush(QColor(100, 100, 100)));
+	// Audio column (now column 4)
+	item->setText(4, hasAudio ? "✓" : "-");
+	item->setTextAlignment(4, Qt::AlignCenter);
+	if (!hasAudio) item->setForeground(4, QBrush(QColor(100, 100, 100)));
 	
-	// Video column
-	item->setText(3, hasVideo ? "✓" : "-");
-	item->setTextAlignment(3, Qt::AlignCenter);
-	if (!hasVideo) item->setForeground(3, QBrush(QColor(100, 100, 100)));
+	// Video column (now column 5)
+	item->setText(5, hasVideo ? "✓" : "-");
+	item->setTextAlignment(5, Qt::AlignCenter);
+	if (!hasVideo) item->setForeground(5, QBrush(QColor(100, 100, 100)));
 	
 	// Add buttons using QTreeWidget::setItemWidget
-	// Properties Button
+	// Properties Button (now column 6)
 	auto *propWidget = new QWidget();
 	auto *propLayout = new QHBoxLayout(propWidget);
 	propLayout->setContentsMargins(0, 0, 0, 0);
@@ -150,11 +164,17 @@ void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_sour
 	auto *propBtn = new QPushButton();
 	propBtn->setProperty("toolButton", true);
 	propBtn->setIcon(QIcon(":/super/assets/icons/settings.svg"));
-	propBtn->setStyleSheet("QPushButton { background: transparent; border: none; }");
 	propBtn->setToolTip("Properties");
+	
+	// Disable if source has no configurable properties
+	if (!obs_source_configurable(source)) {
+		propBtn->setEnabled(false);
+		propBtn->setToolTip("No configurable properties");
+	}
+	
 	propLayout->addWidget(propBtn);
 	
-	m_tree->setItemWidget(item, 4, propWidget);
+	m_tree->setItemWidget(item, 6, propWidget);
 	
 	connect(propBtn, &QPushButton::clicked, this, [this, name]() {
 		obs_source_t *s = obs_get_source_by_name(name.toUtf8().constData());
@@ -166,7 +186,7 @@ void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_sour
 		}
 	});
 
-	// Filters Button
+	// Filters Button (now column 7)
 	auto *filterWidget = new QWidget();
 	auto *filterLayout = new QHBoxLayout(filterWidget);
 	filterLayout->setContentsMargins(0, 0, 0, 0);
@@ -174,11 +194,17 @@ void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_sour
 	auto *filterBtn = new QPushButton();
 	filterBtn->setProperty("toolButton", true);
 	filterBtn->setIcon(QIcon(":/super/assets/icons/sliders.svg"));
-	filterBtn->setStyleSheet("QPushButton { background: transparent; border: none; }");
 	filterBtn->setToolTip("Filters");
+	
+	// Disable filter button for non-input sources
+	if (type != OBS_SOURCE_TYPE_INPUT && type != OBS_SOURCE_TYPE_SCENE) {
+		filterBtn->setEnabled(false);
+		filterBtn->setToolTip("Filters not available for this source type");
+	}
+	
 	filterLayout->addWidget(filterBtn);
 	
-	m_tree->setItemWidget(item, 5, filterWidget);
+	m_tree->setItemWidget(item, 7, filterWidget);
 	
 	connect(filterBtn, &QPushButton::clicked, this, [this, name]() {
 		obs_source_t *s = obs_get_source_by_name(name.toUtf8().constData());

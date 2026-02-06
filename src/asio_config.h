@@ -24,12 +24,17 @@ struct AsioSourceConfig {
 	float volume;          // Volume multiplier (0.0 to 1.0+, 1.0 = 0dB)
 	float balance;         // Balance/pan (0.0=left, 0.5=center, 1.0=right)
 	bool forceMono;        // Force mono downmix
+	uint32_t audioMixers;  // Audio mixer tracks bitmask (1-6), default 0x3F = all tracks
+	bool audioActive;      // Show in audio mixer (obs_source_audio_active)
+	
+	// Source identity (persisted for matching)
+	QString sourceUuid;    // OBS source UUID for stable matching across restarts
 
 	AsioSourceConfig()
 		: name("Audio"),
-		  sourceType("asio_input_capture"), // Default to ASIO
+		  sourceType("wasapi_input_capture"), // Default to Audio Input Capture
 		  canvas(""),              // Empty = main canvas
-		  outputChannel(1),
+		  outputChannel(-1),  // -1 = none (not bound to channel)
 		  enabled(true),
 		  sourceSettings(QJsonObject()),
 		  sourceFilters(QJsonArray()),
@@ -37,7 +42,10 @@ struct AsioSourceConfig {
 		  monitoringType(0),
 		  volume(1.0f),
 		  balance(0.5f),
-		  forceMono(false)
+		  forceMono(false),
+		  audioMixers(0x3F),   // All 6 tracks enabled by default
+		  audioActive(true),   // Show in mixer by default
+		  sourceUuid("")
 	{
 	}
 };

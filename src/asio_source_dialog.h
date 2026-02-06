@@ -1,5 +1,7 @@
 #pragma once
 
+#include <obs.h>
+
 #include <QDialog>
 #include <QLineEdit>
 #include <QComboBox>
@@ -16,7 +18,7 @@ class AsioSourceDialog : public QDialog {
 	Q_OBJECT
 
 public:
-	enum Mode { AddMode, EditMode };
+	enum Mode { AddMode, EditMode, DuplicateMode };
 
 	explicit AsioSourceDialog(Mode mode, QWidget *parent = nullptr);
 	~AsioSourceDialog() = default;
@@ -40,6 +42,7 @@ public:
 private slots:
 	void validateInput();
 	void onCanvasChanged();
+	void onTypeChanged();
 
 private:
 	void setupUi();
@@ -57,6 +60,12 @@ private:
 	QPushButton *m_okButton;
 	QPushButton *m_cancelButton;
 	QLabel *m_errorLabel;
+	QLabel *m_reservedWarningLabel;
 	QCheckBox *m_openPropertiesCheck;
 	QCheckBox *m_mutedCheck;
+	QCheckBox *m_trackChecks[MAX_AUDIO_MIXES]; // Audio mixer track checkboxes
+	
+public:
+	uint32_t getAudioMixers() const;
+	void setAudioMixers(uint32_t mixers);
 };

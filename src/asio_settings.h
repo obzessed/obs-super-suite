@@ -25,15 +25,20 @@ public:
 
 	void toggle_show_hide();
 	
-	// Update methods called by signal handlers to keep UI in sync
-	void updateSourceSettings(int channel, const QJsonObject &settings);
-	void updateSourceFilters(int channel, const QJsonArray &filters);
-	void updateSourceName(int channel, const QString &name);
-	void updateSourceMuted(int channel, bool muted);
-	void updateSourceVolume(int channel, float volume);
-	void updateSourceBalance(int channel, float balance);
-	void updateSourceMonitoring(int channel, int type);
-	void updateSourceMono(int channel, bool mono);
+	// Update methods called by signal handlers to keep UI in sync (use UUID for unique identification)
+	void updateSourceSettings(const QString &sourceUuid, const QJsonObject &settings);
+	void updateSourceFilters(const QString &sourceUuid, const QJsonArray &filters);
+	void updateSourceName(const QString &sourceUuid, const QString &name);
+	void updateSourceMuted(const QString &sourceUuid, bool muted);
+	void updateSourceVolume(const QString &sourceUuid, float volume);
+	void updateSourceBalance(const QString &sourceUuid, float balance);
+	void updateSourceMonitoring(const QString &sourceUuid, int type);
+	void updateSourceMono(const QString &sourceUuid, bool mono);
+	void updateSourceAudioMixers(const QString &sourceUuid, uint32_t mixers);
+	void updateSourceAudioActive(const QString &sourceUuid, bool active);
+	void updateSpeakerLayoutByUuid(const QString &sourceUuid);
+	void updateSourceUuid(int configIndex, const QString &uuid);
+	void updateSourceNameByIndex(int configIndex, const QString &name);
 
 protected:
 	void showEvent(QShowEvent *event) override;
@@ -60,6 +65,8 @@ private:
 	void updateAddButtonState();
 	void addRowWidgets(int row, const struct AsioSourceConfig &src);
 	void updateRowTooltip(int row);
+	void updateActiveIndicator(int row);
+	void updateSpeakerLayout(int row);
 	int findNextAvailableChannel(const QString &canvasUuid = QString()) const;
 	QString generateUniqueName(const QString &baseName) const;
 

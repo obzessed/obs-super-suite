@@ -4,15 +4,24 @@
 #include <obs-frontend-api.h>
 #include <QMessageBox>
 #include <QStandardItemModel>
+#include <QGroupBox>
 
 AsioSourceDialog::AsioSourceDialog(Mode mode, QWidget *parent)
 	: QDialog(parent), m_mode(mode)
 {
 	setupUi();
 	
-	setWindowTitle(mode == AddMode 
-		? obs_module_text("AsioSettings.AddSource")
-		: obs_module_text("AsioSettings.EditSource"));
+	switch (mode) {
+		case AddMode:
+			setWindowTitle(obs_module_text("AsioSettings.AddSource"));
+			break;
+		case EditMode:
+			setWindowTitle(obs_module_text("AsioSettings.EditSource"));
+			break;
+		case DuplicateMode:
+			setWindowTitle(obs_module_text("AsioSettings.DuplicateSource"));
+			break;
+	}
 	
 	setMinimumWidth(300);
 }
@@ -27,35 +36,32 @@ void AsioSourceDialog::setupUi()
 	m_nameEdit->setPlaceholderText(obs_module_text("AsioSettings.EnterSourceName"));
 	formLayout->addRow(obs_module_text("AsioSettings.SourceName"), m_nameEdit);
 	
-	// Source type dropdown - only add types that are available
+	// Source type dropdown - dynamically discover audio input types
 	m_typeCombo = new QComboBox(this);
-	// Built-in types (always available)
-	m_typeCombo->addItem(obs_module_text("AsioSettings.TypeDesktopAudio"), "wasapi_output_capture");
-	m_typeCombo->addItem(obs_module_text("AsioSettings.TypeMicAux"), "wasapi_input_capture");
-	// Optional plugin-based types (only if plugin is installed)
-	// Check using obs_enum_source_types
-	auto sourceTypeExists = [](const char *typeId) {
-		size_t idx = 0;
-		const char *id = nullptr;
-		while (obs_enum_source_types(idx++, &id)) {
-			if (id && strcmp(id, typeId) == 0) return true;
-		}
-		return false;
-	};
-	// obs-asio
-	if (sourceTypeExists("asio_input_capture")) {
-		m_typeCombo->addItem(obs_module_text("AsioSettings.TypeASIO"), "asio_input_capture");
+	
+	// Loop over all input source types and add those with audio capability
+	size_t idx = 0;
+	const char *typeId = nullptr;
+	while (obs_enum_input_types(idx++, &typeId)) {
+		if (!typeId) continue;
+		
+		// Check if it has audio capability
+		uint32_t outputFlags = obs_get_source_output_flags(typeId);
+		if (!(outputFlags & OBS_SOURCE_AUDIO)) continue;
+		
+		// Add to combo with display name
+		const char *displayName = obs_source_get_display_name(typeId);
+		m_typeCombo->addItem(displayName ? displayName : typeId, typeId);
 	}
-	// obs-vban
-	if (sourceTypeExists("net.nagater.obs-vban.source")) {
-		m_typeCombo->addItem(obs_module_text("AsioSettings.TypeVBAN"), "net.nagater.obs-vban.source");
-	}
-	// atkAudio
-	if (sourceTypeExists("atkaudio_source_mixer")) {
-		m_typeCombo->addItem(obs_module_text("AsioSettings.TypeSourceMixer"), "atkaudio_source_mixer");
-	}
+
 	m_typeCombo->setCurrentIndex(0); // Default to first available
 	formLayout->addRow(obs_module_text("AsioSettings.SourceType"), m_typeCombo);
+	
+	// Disable source type selection for edit/duplicate modes (can't change type of existing source)
+	if (m_mode != AddMode) {
+		m_typeCombo->setEnabled(false);
+		m_typeCombo->setToolTip("Source type cannot be changed after creation");
+	}
 	
 	// Canvas dropdown (above channel)
 	m_canvasCombo = new QComboBox(this);
@@ -74,6 +80,15 @@ void AsioSourceDialog::setupUi()
 	m_errorLabel->hide();
 	mainLayout->addWidget(m_errorLabel);
 	
+	// Reserved channel warning label (hidden by default)
+	m_reservedWarningLabel = new QLabel(this);
+	m_reservedWarningLabel->setText(obs_module_text("AsioSettings.ReservedChannelWarning"));
+	m_reservedWarningLabel->setStyleSheet("QLabel { color: #ffaa00; font-size: 11px; }");
+	m_reservedWarningLabel->setWordWrap(true);
+	m_reservedWarningLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+	m_reservedWarningLabel->hide();
+	mainLayout->addWidget(m_reservedWarningLabel);
+	
 	mainLayout->addSpacing(10);
 	
 	// Start muted checkbox (only in Add mode)
@@ -83,6 +98,18 @@ void AsioSourceDialog::setupUi()
 		m_mutedCheck->hide();
 	}
 	mainLayout->addWidget(m_mutedCheck);
+	
+	// Tracks checkboxes (audio mixers)
+	auto *tracksGroup = new QGroupBox("Tracks", this);
+	tracksGroup->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+	auto *tracksLayout = new QHBoxLayout(tracksGroup);
+	tracksLayout->setContentsMargins(8, 4, 8, 4);
+	for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
+		m_trackChecks[i] = new QCheckBox(QString::number(i + 1), tracksGroup);
+		m_trackChecks[i]->setChecked(true); // Default all tracks enabled
+		tracksLayout->addWidget(m_trackChecks[i]);
+	}
+	mainLayout->addWidget(tracksGroup);
 	
 	// Open properties checkbox (only in Add mode)
 	m_openPropertiesCheck = new QCheckBox(obs_module_text("AsioSettings.OpenPropertiesAfter"), this);
@@ -108,6 +135,8 @@ void AsioSourceDialog::setupUi()
 	
 	// Connections
 	connect(m_nameEdit, &QLineEdit::textChanged, this, &AsioSourceDialog::validateInput);
+	connect(m_typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+		this, &AsioSourceDialog::onTypeChanged);
 	connect(m_canvasCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
 		this, &AsioSourceDialog::onCanvasChanged);
 	connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
@@ -115,8 +144,9 @@ void AsioSourceDialog::setupUi()
 	connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
 	connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
 	
-	// Populate channels
+	// Populate channels and update initial state
 	populateChannels();
+	onTypeChanged(); // Update open properties checkbox based on selected type
 	validateInput();
 }
 
@@ -171,6 +201,22 @@ void AsioSourceDialog::onCanvasChanged()
 	validateInput();
 }
 
+void AsioSourceDialog::onTypeChanged()
+{
+	// Update open properties checkbox based on whether selected source type is configurable
+	QString typeId = m_typeCombo->currentData().toString();
+	bool configurable = obs_is_source_configurable(typeId.toUtf8().constData());
+	
+	m_openPropertiesCheck->setEnabled(configurable);
+	if (configurable) {
+		m_openPropertiesCheck->setChecked(true);
+		m_openPropertiesCheck->setToolTip("");
+	} else {
+		m_openPropertiesCheck->setChecked(false);
+		m_openPropertiesCheck->setToolTip("This source type has no configurable properties");
+	}
+}
+
 void AsioSourceDialog::populateChannels()
 {
 	m_channelCombo->clear();
@@ -180,6 +226,9 @@ void AsioSourceDialog::populateChannels()
 	obs_canvas_t *canvas = selectedCanvasUuid.isEmpty() ? obs_get_main_canvas()
 		: obs_get_canvas_by_uuid(selectedCanvasUuid.toUtf8().constData());
 	if (!canvas) canvas = obs_get_main_canvas();
+	
+	// Add (none) option for sources not bound to any channel
+	m_channelCombo->addItem("(none)", -1);
 	
 	for (int ch = 1; ch <= MAX_CHANNELS; ch++) {
 		// Show OBS channel reservation names for channels 1-7
@@ -199,6 +248,7 @@ void AsioSourceDialog::populateChannels()
 		// Check if channel is occupied by querying OBS directly
 		obs_source_t *existingSource = obs_canvas_get_channel(canvas, ch - 1); // 0-indexed
 		bool occupied = (existingSource != nullptr);
+		if (existingSource) obs_source_release(existingSource);
 		
 		// In edit mode, current channel on current canvas is always enabled (it's our own)
 		if (m_mode == EditMode && ch == m_currentChannel && selectedCanvasUuid == m_currentCanvas) {
@@ -260,6 +310,9 @@ void AsioSourceDialog::setConfig(const AsioSourceConfig &cfg)
 	// Set channel - because setText triggers validateInput which needs m_currentChannel
 	setCurrentChannel(cfg.outputChannel);
 	m_nameEdit->setText(cfg.name);
+	
+	// Set audio mixers (tracks)
+	setAudioMixers(cfg.audioMixers);
 }
 
 QString AsioSourceDialog::getName() const
@@ -341,6 +394,7 @@ void AsioSourceDialog::validateInput()
 		// Query OBS directly for channel occupancy
 		obs_source_t *existingSource = obs_canvas_get_channel(canvas, channel - 1); // 0-indexed
 		bool isOccupied = (existingSource != nullptr);
+		if (existingSource) obs_source_release(existingSource);
 		
 		// In edit mode, current channel on current canvas is always valid (it's our own)
 		if (m_mode == EditMode && channel == m_currentChannel && selectedCanvasUuid == m_currentCanvas) {
@@ -358,5 +412,31 @@ void AsioSourceDialog::validateInput()
 		m_errorLabel->show();
 	} else {
 		m_errorLabel->hide();
+	}
+	
+	// Show warning for reserved OBS channels (1-6)
+	// These can be overridden by OBS built-in sources like Desktop Audio, Mic/Aux, etc.
+	if (channel >= 1 && channel <= 6) {
+		m_reservedWarningLabel->show();
+	} else {
+		m_reservedWarningLabel->hide();
+	}
+}
+
+uint32_t AsioSourceDialog::getAudioMixers() const
+{
+	uint32_t mixers = 0;
+	for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
+		if (m_trackChecks[i]->isChecked()) {
+			mixers |= (1 << i);
+		}
+	}
+	return mixers;
+}
+
+void AsioSourceDialog::setAudioMixers(uint32_t mixers)
+{
+	for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
+		m_trackChecks[i]->setChecked((mixers & (1 << i)) != 0);
 	}
 }

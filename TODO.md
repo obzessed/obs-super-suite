@@ -1,10 +1,17 @@
-- [ ] ASIO Channels.
-    - [ ] Multi Canvas Support.
+- [x] ASIO Channels.
+- [ ] Advanced MultiView.
+  - https://obsproject.com/forum/resources/durchblick.1484/
 - [ ] Interactive ASIO Mixer.
 - [ ] Matrix Audio Router.
 - [ ] Master Fader.
 - [ ] Channels Viewer.
-  - [ ] Has Video
-  - [ ] Has Audio
+  - [ ] '???'
 - [ ] Audio Source types.
   - [ ] '???'
+- [ ] Channel Override detection
+  - Other plugin might overwrite on channels.
+- [ ] Advanced Audio Monitoring
+  - [ ] Name it Cue (Similar to Ableton)
+  - [ ] Custom Output Source (Similar to Audio Channel Source). (private source).
+  - [ ] Internal Source routing to mix and forward monitor enabled sources.
+  - [ ] option to forward to the obs_monitoring device too. (using `obs_monitoring_type`).

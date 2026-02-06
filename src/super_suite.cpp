@@ -30,6 +30,15 @@
 // 7 - Mix/Aux 4
 // 8 - 64 - Unreserved
 
+// 8-... - Downstream Keyer uses channels starting from (8-MAX_CHANNELS).
+// 63 - SoundBoard plugin puts a ffmpeg-source here to play its audio.
+
+/*
+ * #define MAX_AUDIO_MIXES 6 (Tracks)
+ * #define MAX_AUDIO_CHANNELS 8 (Channels per Source)
+ * #define MAX_DEVICE_INPUT_CHANNELS 64 (Output Channels)
+ */
+
 // Store ASIO sources with channel, canvas UUID, and source pointer
 struct AsioSourceEntry {
 	int channel;
@@ -87,6 +96,12 @@ static void apply_audio_settings(obs_source_t *source, const AsioSourceConfig &c
 		flags &= ~OBS_SOURCE_FLAG_FORCE_MONO;
 	}
 	obs_source_set_flags(source, flags);
+	
+	// Apply audio mixers (tracks)
+	obs_source_set_audio_mixers(source, cfg.audioMixers);
+	
+	// Apply show in mixer state (audio_active controls mixer visibility, not final mix)
+	obs_source_set_audio_active(source, cfg.audioActive);
 }
 
 template<typename T> T *calldata_get_pointer(const calldata_t *data, const char *name)
@@ -153,9 +168,9 @@ static void on_source_rename(void *data, calldata_t *cd)
 			sources[i].name = QString::fromUtf8(new_name);
 			AsioConfig::get()->save();
 			
-			// Update UI using the config's channel
+			// Update UI using the source's UUID
 			if (settings_dialog) {
-				settings_dialog->updateSourceName(sources[i].outputChannel, QString::fromUtf8(new_name));
+				settings_dialog->updateSourceName(sources[i].sourceUuid, QString::fromUtf8(new_name));
 			}
 			
 			obs_log(LOG_INFO, "ASIO source renamed: '%s' -> '%s'", prev_name, new_name);
@@ -189,8 +204,9 @@ static void on_source_update(void *data, calldata_t *cd)
 			if (error.error == QJsonParseError::NoError && doc.isObject()) {
 				sources[idx].sourceSettings = doc.object();
 				AsioConfig::get()->save();
-				if (settings_dialog) {
-					settings_dialog->updateSourceSettings(sources[idx].outputChannel, sources[idx].sourceSettings);
+			if (settings_dialog) {
+					settings_dialog->updateSourceSettings(sources[idx].sourceUuid, sources[idx].sourceSettings);
+					settings_dialog->updateSpeakerLayoutByUuid(sources[idx].sourceUuid);
 				}
 				obs_log(LOG_INFO, "ASIO source settings updated for '%s'",
 					obs_source_get_name(source));
@@ -225,7 +241,7 @@ static void save_source_filters(obs_source_t *source)
 					sources[idx].sourceFilters = root["filters"].toArray();
 					AsioConfig::get()->save();
 					if (settings_dialog) {
-						settings_dialog->updateSourceFilters(sources[idx].outputChannel, sources[idx].sourceFilters);
+						settings_dialog->updateSourceFilters(sources[idx].sourceUuid, sources[idx].sourceFilters);
 					}
 					obs_log(LOG_INFO, "Saved filters for '%s'",
 						obs_source_get_name(source));
@@ -306,7 +322,7 @@ static void on_mute_changed(void *data, calldata_t *cd)
 	sources[idx].muted = muted;
 	AsioConfig::get()->save();
 	if (settings_dialog) {
-		settings_dialog->updateSourceMuted(sources[idx].outputChannel, muted);
+		settings_dialog->updateSourceMuted(sources[idx].sourceUuid, muted);
 	}
 }
 
@@ -328,7 +344,7 @@ static void on_volume_changed(void *data, calldata_t *cd)
 	sources[idx].volume = volume;
 	AsioConfig::get()->save();
 	if (settings_dialog) {
-		settings_dialog->updateSourceVolume(sources[idx].outputChannel, volume);
+		settings_dialog->updateSourceVolume(sources[idx].sourceUuid, volume);
 	}
 }
 
@@ -350,7 +366,7 @@ static void on_audio_monitoring_changed(void *data, calldata_t *cd)
 	sources[idx].monitoringType = monitoringType;
 	AsioConfig::get()->save();
 	if (settings_dialog) {
-		settings_dialog->updateSourceMonitoring(sources[idx].outputChannel, monitoringType);
+		settings_dialog->updateSourceMonitoring(sources[idx].sourceUuid, monitoringType);
 	}
 }
 
@@ -372,7 +388,7 @@ static void on_audio_balance_changed(void *data, calldata_t *cd)
 	sources[idx].balance = balance;
 	AsioConfig::get()->save();
 	if (settings_dialog) {
-		settings_dialog->updateSourceBalance(sources[idx].outputChannel, balance);
+		settings_dialog->updateSourceBalance(sources[idx].sourceUuid, balance);
 	}
 }
 
@@ -395,7 +411,71 @@ static void on_update_flags(void *data, calldata_t *cd)
 	sources[idx].forceMono = forceMono;
 	AsioConfig::get()->save();
 	if (settings_dialog) {
-		settings_dialog->updateSourceMono(sources[idx].outputChannel, forceMono);
+		settings_dialog->updateSourceMono(sources[idx].sourceUuid, forceMono);
+	}
+}
+
+// Signal callback: audio mixers changed (track selection)
+static void on_audio_mixers_changed(void *data, calldata_t *cd)
+{
+	UNUSED_PARAMETER(data);
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+
+	uint32_t mixers = (uint32_t)calldata_int(cd, "mixers");
+	auto &sources = AsioConfig::get()->getSources();
+	sources[idx].audioMixers = mixers;
+	AsioConfig::get()->save();
+	if (settings_dialog) {
+		settings_dialog->updateSourceAudioMixers(sources[idx].sourceUuid, mixers);
+	}
+}
+
+// Signal callback: audio activated (show in mixer)
+static void on_audio_activate(void *data, calldata_t *cd)
+{
+	UNUSED_PARAMETER(data);
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+
+	auto &sources = AsioConfig::get()->getSources();
+	sources[idx].audioActive = true;
+	AsioConfig::get()->save();
+	if (settings_dialog) {
+		settings_dialog->updateSourceAudioActive(sources[idx].sourceUuid, true);
+	}
+}
+
+// Signal callback: audio deactivated (hide from mixer)
+static void on_audio_deactivate(void *data, calldata_t *cd)
+{
+	UNUSED_PARAMETER(data);
+	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	if (!source) return;
+	
+	// Skip if we're in the middle of creating sources
+	if (creating_sources) return;
+
+	int idx = find_config_index_for_source(source);
+	if (idx < 0) return;
+
+	auto &sources = AsioConfig::get()->getSources();
+	sources[idx].audioActive = false;
+	AsioConfig::get()->save();
+	if (settings_dialog) {
+		settings_dialog->updateSourceAudioActive(sources[idx].sourceUuid, false);
 	}
 }
 
@@ -438,6 +518,9 @@ static void connect_source_signals(obs_source_t *source)
 		signal_handler_connect(sh, "audio_monitoring", on_audio_monitoring_changed, nullptr);
 		signal_handler_connect(sh, "audio_balance", on_audio_balance_changed, nullptr);
 		signal_handler_connect(sh, "update_flags", on_update_flags, nullptr);
+		signal_handler_connect(sh, "audio_mixers", on_audio_mixers_changed, nullptr);
+		signal_handler_connect(sh, "audio_activate", on_audio_activate, nullptr);
+		signal_handler_connect(sh, "audio_deactivate", on_audio_deactivate, nullptr);
 	}
 	
 	// Also connect to any existing filters (restored from config)
@@ -461,6 +544,9 @@ static void disconnect_source_signals(obs_source_t *source)
 		signal_handler_disconnect(sh, "audio_monitoring", on_audio_monitoring_changed, nullptr);
 		signal_handler_disconnect(sh, "audio_balance", on_audio_balance_changed, nullptr);
 		signal_handler_disconnect(sh, "update_flags", on_update_flags, nullptr);
+		signal_handler_disconnect(sh, "audio_mixers", on_audio_mixers_changed, nullptr);
+		signal_handler_disconnect(sh, "audio_activate", on_audio_activate, nullptr);
+		signal_handler_disconnect(sh, "audio_deactivate", on_audio_deactivate, nullptr);
 	}
 	
 	// Disconnect from filters
@@ -497,41 +583,50 @@ void createSources()
 	for (auto &entry : asio_sources) {
 		if (entry.source) {
 			obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid);
-			obs_canvas_set_channel(canvas, entry.channel - 1, nullptr); // OBS uses 0-indexed channels
+			if (entry.channel > 0 && entry.channel < MAX_CHANNELS) {
+				obs_canvas_set_channel(canvas, entry.channel - 1, nullptr); // OBS uses 0-indexed channels
+			}
 		}
 	}
 
-	// 2. Build map of existing managed sources by CHANNEL for reuse
-	// Using channel as the stable identifier allows name changes to work
-	std::map<int, obs_source_t*> reusable_sources;
+	// 2. Build map of existing managed sources by UUID for reuse
+	// UUID is stable across name changes and unique per source
+	std::map<std::string, std::pair<int, obs_source_t*>> reusable_sources; // uuid -> (oldChannel, source)
 	for (auto &entry : asio_sources) {
 		if (entry.source) {
-			reusable_sources[entry.channel] = entry.source;
+			const char *uuid = obs_source_get_uuid(entry.source);
+			if (uuid) {
+				reusable_sources[uuid] = {entry.channel, entry.source};
+			}
 		}
 	}
 
 	// 3. Prepare new list
 	std::vector<AsioSourceEntry> new_asio_sources;
-	const auto &configs = AsioConfig::get()->getSources();
+	auto &configs = AsioConfig::get()->getSources();
+	
+	obs_log(LOG_INFO, "createSources: %zu existing sources, %d configs, %zu reusable",
+		asio_sources.size(), configs.size(), reusable_sources.size());
 
-	for (const auto &cfg : configs) {
+	for (int i = 0; i < configs.size(); i++) {
+		auto &cfg = configs[i];
 		if (!cfg.enabled) {
 			continue;
 		}
 
 		obs_source_t *source = nullptr;
 		std::string configName = cfg.name.toUtf8().constData();
+		std::string configUuid = cfg.sourceUuid.toUtf8().constData();
 		int channel = cfg.outputChannel;
 		
-		if (channel < 1 || channel > MAX_CHANNELS) {
-			channel = 1;
-		}
+		// Only valid channels (1-MAX_CHANNELS) will be assigned; -1 or invalid = no channel
+		bool validChannel = (channel >= 1 && channel <= MAX_CHANNELS);
 
-		// Try to reuse existing source by channel
-		auto it = reusable_sources.find(channel);
+		// Try to find existing source by UUID
+		auto it = configUuid.empty() ? reusable_sources.end() : reusable_sources.find(configUuid);
 		if (it != reusable_sources.end()) {
-			source = it->second;
-			reusable_sources.erase(it); // Mark as used
+			source = it->second.second;
+			int oldChannel = it->second.first;
 			
 			// Sync name: if config name differs from source name, update source
 			const char* currentName = obs_source_get_name(source);
@@ -539,19 +634,17 @@ void createSources()
 				obs_source_set_name(source, configName.c_str());
 				obs_log(LOG_INFO, "Renamed source '%s' -> '%s'", currentName, configName.c_str());
 			}
-		} else {
-			// Fallback: Try to find by NAME in remaining reusable sources
-			// This handles cases where channel might have changed or been mismatched
-			for (auto rit = reusable_sources.begin(); rit != reusable_sources.end(); ++rit) {
-				const char *rName = obs_source_get_name(rit->second);
-				if (rName && configName == rName) {
-					source = rit->second;
-					obs_log(LOG_INFO, "Reused source '%s' by name match (channel %d -> %d)", 
-						rName, rit->first, channel);
-					reusable_sources.erase(rit);
-					break;
-				}
+			
+			// If source was on a channel and is now unbound, clear the old channel
+			if (oldChannel > 0 && !validChannel) {
+				obs_canvas_t *oldCanvas = get_canvas_for_uuid(cfg.canvas);
+				obs_canvas_set_channel(oldCanvas, oldChannel - 1, nullptr);
+				obs_log(LOG_INFO, "Cleared channel %d (source '%s' now unbound)", oldChannel, configName.c_str());
 			}
+			
+			obs_log(LOG_INFO, "Reused source '%s' by UUID (channel %d -> %d)", 
+				configName.c_str(), oldChannel, channel);
+			reusable_sources.erase(it);
 		}
 
 		if (!source) {
@@ -579,6 +672,20 @@ void createSources()
 
 			if (source) {
 				obs_source_set_hidden(source, true);
+				
+				// Check if OBS renamed the source (happens if duplicate name existed)
+				const char *actualName = obs_source_get_name(source);
+				if (actualName && configName != actualName) {
+					obs_log(LOG_WARNING, "OBS renamed source '%s' -> '%s' (duplicate existed)", 
+						configName.c_str(), actualName);
+					cfg.name = QString::fromUtf8(actualName);
+					configName = actualName;
+					
+					// Update settings dialog if open
+					if (settings_dialog) {
+						settings_dialog->updateSourceNameByIndex(i, cfg.name);
+					}
+				}
 
 				// Restore filters from config
 				if (!cfg.sourceFilters.isEmpty()) {
@@ -609,24 +716,47 @@ void createSources()
 			// Apply audio settings from config
 			apply_audio_settings(source, cfg);
 			
-			// Assign to canvas channel
-			obs_canvas_t *canvas = get_canvas_for_uuid(cfg.canvas);
-			obs_canvas_set_channel(canvas, channel - 1, source); // OBS uses 0-indexed channels
+			// Store source UUID in config
+			const char *uuid = obs_source_get_uuid(source);
+			if (uuid) {
+				cfg.sourceUuid = QString::fromUtf8(uuid);
+				// Update settings dialog if open
+				if (settings_dialog) {
+					settings_dialog->updateSourceUuid(i, cfg.sourceUuid);
+				}
+			}
+			
+			// Assign to canvas channel (only if valid channel 1-MAX_CHANNELS)
+			if (validChannel) {
+				obs_canvas_t *canvas = get_canvas_for_uuid(cfg.canvas);
+				obs_canvas_set_channel(canvas, channel - 1, source); // OBS uses 0-indexed channels
+				obs_log(LOG_INFO, "Audio source '%s' (uuid: %s) assigned to channel %d (canvas: %s)",
+					configName.c_str(), uuid ? uuid : "?", channel, cfg.canvas.isEmpty() ? "main" : cfg.canvas.toUtf8().constData());
+			} else {
+				obs_log(LOG_INFO, "Audio source '%s' (uuid: %s) created (no channel assigned)",
+					configName.c_str(), uuid ? uuid : "?");
+			}
 			new_asio_sources.push_back({channel, cfg.canvas, source});
-
-			obs_log(LOG_INFO, "ASIO source '%s' assigned to channel %d (canvas: %s)",
-				configName.c_str(), channel, cfg.canvas.isEmpty() ? "main" : cfg.canvas.toUtf8().constData());
 		} else {
 			obs_log(LOG_ERROR, "Failed to get/create ASIO source '%s'.",
 				configName.c_str());
 		}
 	}
 
-	// 4. Clean up unused sources
-	for (auto &[channel, src] : reusable_sources) {
+	// 4. Clean up unused sources - must call obs_source_remove to actually destroy them
+	for (auto &[uuid, channelSourcePair] : reusable_sources) {
+		auto &[oldChannel, src] = channelSourcePair;
+		const char *srcName = obs_source_get_name(src);
 		disconnect_source_signals(src);
+		obs_source_set_audio_active(src, false); // else it won't free up the source
+		
+		// obs_source_remove removes from OBS's internal source list and triggers destruction
+		// obs_source_release decrements our reference count
+		obs_source_remove(src);
+		const bool removed = obs_source_removed(src);
 		obs_source_release(src);
-		obs_log(LOG_INFO, "Released unused ASIO source on channel %d", channel);
+		obs_log(LOG_INFO, "Removed source '%s' (uuid: %s, was on channel %d), %d",
+			srcName ? srcName : "?", uuid.c_str(), oldChannel, removed);
 	}
 	
 	asio_sources = std::move(new_asio_sources);
@@ -643,15 +773,18 @@ void createSources()
 
 void cleanup()
 {
-	// Simply release our references - OBS manages canvas channel references
+	// Release and remove all managed sources
 	for (auto &entry : asio_sources) {
 		if (entry.source) {
-			// Disconnect signals before releasing
+			// Disconnect signals first
 			disconnect_source_signals(entry.source);
 			// Clear the canvas channel
 			obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid);
-			obs_canvas_set_channel(canvas, entry.channel - 1, nullptr); // OBS uses 0-indexed channels
-			// Release our reference
+			if (entry.channel > 0) {
+				obs_canvas_set_channel(canvas, entry.channel - 1, nullptr);
+			}
+			// Remove from OBS source list and release our reference
+			obs_source_remove(entry.source);
 			obs_source_release(entry.source);
 		}
 	}
@@ -675,6 +808,7 @@ void on_obs_evt(obs_frontend_event event, void *data)
 		createSources();
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP:
+	case OBS_FRONTEND_EVENT_EXIT:
 		cleanup();
 		break;
 	default:
@@ -739,12 +873,15 @@ void on_plugin_unload()
 {
 	obs_frontend_remove_event_callback(on_obs_evt, nullptr);
 
-	// Delete settings dialog first (before cleaning up sources)
-	// Don't call close() as it triggers saveToConfig which may access cleaned up resources
+	// Clean up sources FIRST - this disconnects all signal handlers
+	// Must happen before deleting dialogs to prevent signal handlers
+	// from accessing deleted dialog pointers
+	cleanup();
+
+	// Now safe to delete dialogs (signals already disconnected)
 	if (settings_dialog) {
-		settings_dialog->hide(); // Just hide, don't trigger close event
+		settings_dialog->hide();
 		delete settings_dialog;
-		settings_dialog = nullptr;
 		settings_dialog = nullptr;
 	}
 
@@ -752,9 +889,6 @@ void on_plugin_unload()
 		delete channels_view;
 		channels_view = nullptr;
 	}
-
-	// Clean up sources
-	cleanup();
 
 	// Clean up config singleton last
 	AsioConfig::cleanup();
