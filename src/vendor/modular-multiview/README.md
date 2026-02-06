@@ -1,0 +1,3 @@
+- https://git.vrsal.cc/alex/durchblick
+- commit: a7d240ae8295062d2e77e0e663e3e9d2eb43dcce
+- https://git.vrsal.cc/alex/durchblick/commit/a7d240ae8295062d2e77e0e663e3e9d2eb43dcce

@@ -36,7 +36,7 @@ AsioConfig::AsioConfig()
 
 QString AsioConfig::getConfigPath() const
 {
-	char *configPath = obs_module_config_path("asio_channels.json");
+	char *configPath = obs_module_config_path("audio-channels.json");
 	QString path = QString::fromUtf8(configPath);
 	bfree(configPath);
 	return path;

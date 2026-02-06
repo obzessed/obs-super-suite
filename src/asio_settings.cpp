@@ -263,13 +263,15 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 		obs_canvas_t *mainCanvas = obs_get_main_canvas();
 		// Look up canvas by UUID to get its name
 		obs_canvas_t *canvas = obs_get_canvas_by_uuid(src.canvas.toUtf8().constData());
-		if (canvas) {
+		if (mainCanvas && canvas) {
 			if (canvas == mainCanvas) {
 				canvasName = obs_module_text("AsioSettings.MainCanvas");
 			} else {
 				const char *name = obs_canvas_get_name(canvas);
 				canvasName = name ? QString::fromUtf8(name) : src.canvas.left(8);
 			}
+			obs_canvas_release(mainCanvas);
+			obs_canvas_release(canvas);
 		} else {
 			canvasName = QString("? %1").arg(src.canvas.left(6)); // Unknown canvas
 		}
@@ -612,6 +614,9 @@ int AsioSettingsDialog::findNextAvailableChannel(const QString &canvasUuid) cons
 		}
 		obs_source_release(existing);
 	}
+	if (canvas) {
+		obs_canvas_release(canvas);
+	}
 
 	// All channels used - cycle back to 1
 	return 1;
@@ -724,13 +729,15 @@ void AsioSettingsDialog::editSource(int row)
 			if (!newCanvas.isEmpty()) {
 				obs_canvas_t *mainCanvas = obs_get_main_canvas();
 				obs_canvas_t *canvas = obs_get_canvas_by_uuid(newCanvas.toUtf8().constData());
-				if (canvas) {
+				if (mainCanvas && canvas) {
 					if (canvas == mainCanvas) {
 						canvasName = obs_module_text("AsioSettings.MainCanvas");
 					} else {
 						const char *name = obs_canvas_get_name(canvas);
 						canvasName = name ? QString::fromUtf8(name) : newCanvas.left(8);
 					}
+					obs_canvas_release(mainCanvas);
+					obs_canvas_release(canvas);
 				} else {
 					canvasName = QString("? %1").arg(newCanvas.left(6));
 				}
@@ -1145,13 +1152,17 @@ void AsioSettingsDialog::showEvent(QShowEvent *event)
 
 void AsioSettingsDialog::closeEvent(QCloseEvent *event)
 {
-	// Config is already saved on every change, no need to save again
-	QDialog::closeEvent(event);
+	if (event->spontaneous()) {
+		// Window closed by user (X button) - just hide
+		hide();
+		event->ignore();
+	} else {
+		QDialog::closeEvent(event);
+	}
 }
 
 void AsioSettingsDialog::hideEvent(QHideEvent *event)
 {
-	// Config is already saved on every change, no need to save again
 	QDialog::hideEvent(event);
 }
 
@@ -1159,8 +1170,7 @@ bool AsioSettingsDialog::eventFilter(QObject *obj, QEvent *event)
 {
 	if (event->type() == QEvent::MouseButtonDblClick) {
 		if (auto *slider = qobject_cast<QSlider *>(obj)) {
-			QVariant resetVal = slider->property("resetValue");
-			if (resetVal.isValid()) {
+			if (QVariant resetVal = slider->property("resetValue"); resetVal.isValid()) {
 				slider->setValue(resetVal.toInt());
 				return true; // Event handled
 			}

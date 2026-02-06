@@ -6,11 +6,7 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QCheckBox>
-#include <QPushButton>
 #include <QLabel>
-#include <QVBoxLayout>
-#include <QFormLayout>
-#include <QSet>
 
 struct AsioSourceConfig;
 

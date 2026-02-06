@@ -5,11 +5,13 @@
 
 #include <QMessageBox>
 #include <QMainWindow>
+#include <QPointer>
 
 #include "super_suite.h"
 #include "asio_config.h"
 #include "asio_settings.h"
 #include "channels_view.h"
+#include "mixer_dock.h"
 
 #include <vector>
 #include <utility>
@@ -46,8 +48,9 @@ struct AsioSourceEntry {
 	obs_source_t *source;
 };
 static std::vector<AsioSourceEntry> asio_sources;
-static AsioSettingsDialog *settings_dialog = nullptr;
-static ChannelsView *channels_view = nullptr;
+static QPointer<AsioSettingsDialog> settings_dialog;
+static QPointer<ChannelsView> channels_view;
+static QPointer<MixerDock> mixer_dock;
 
 // Guard flag to prevent signal handlers from modifying config during createSources()
 static bool creating_sources = false;
@@ -204,7 +207,7 @@ static void on_source_update(void *data, calldata_t *cd)
 			if (error.error == QJsonParseError::NoError && doc.isObject()) {
 				sources[idx].sourceSettings = doc.object();
 				AsioConfig::get()->save();
-			if (settings_dialog) {
+				if (settings_dialog) {
 					settings_dialog->updateSourceSettings(sources[idx].sourceUuid, sources[idx].sourceSettings);
 					settings_dialog->updateSpeakerLayoutByUuid(sources[idx].sourceUuid);
 				}
@@ -583,8 +586,11 @@ void createSources()
 	for (auto &entry : asio_sources) {
 		if (entry.source) {
 			obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid);
-			if (entry.channel > 0 && entry.channel < MAX_CHANNELS) {
-				obs_canvas_set_channel(canvas, entry.channel - 1, nullptr); // OBS uses 0-indexed channels
+			if (canvas) {
+				if (entry.channel > 0 && entry.channel < MAX_CHANNELS) {
+					obs_canvas_set_channel(canvas, entry.channel - 1, nullptr); // OBS uses 0-indexed channels
+				}
+				obs_canvas_release(canvas);
 			}
 		}
 	}
@@ -620,7 +626,7 @@ void createSources()
 		int channel = cfg.outputChannel;
 		
 		// Only valid channels (1-MAX_CHANNELS) will be assigned; -1 or invalid = no channel
-		bool validChannel = (channel >= 1 && channel <= MAX_CHANNELS);
+		bool validChannel = channel >= 1 && channel <= MAX_CHANNELS;
 
 		// Try to find existing source by UUID
 		auto it = configUuid.empty() ? reusable_sources.end() : reusable_sources.find(configUuid);
@@ -640,6 +646,7 @@ void createSources()
 				obs_canvas_t *oldCanvas = get_canvas_for_uuid(cfg.canvas);
 				obs_canvas_set_channel(oldCanvas, oldChannel - 1, nullptr);
 				obs_log(LOG_INFO, "Cleared channel %d (source '%s' now unbound)", oldChannel, configName.c_str());
+				obs_canvas_release(oldCanvas);
 			}
 			
 			obs_log(LOG_INFO, "Reused source '%s' by UUID (channel %d -> %d)", 
@@ -661,6 +668,23 @@ void createSources()
 			obs_data_t *settings = obs_data_create_from_json(
 				doc.toJson(QJsonDocument::Compact).constData());
 			if (!settings) settings = obs_data_create();
+
+			// a hacky way to fix the dup source creation where the built-in sources (Desktop-Audio and Mix/Aux)
+			// channel assigned source is saved and restored before us.
+			// special check for sources of channels 2-7 (Desktop-Audio and Mix/Aux)
+			if (asio_sources.empty()) { // is first attempt (loading from saved)
+				if (channel >= 2 && channel <= 7) {
+					obs_canvas_t *canvas = get_canvas_for_uuid(cfg.canvas);
+					if (const auto src = obs_canvas_get_channel(canvas, channel - 1)) {
+						obs_log(LOG_WARNING, "Source PreExisting at channel: %d", channel);
+						obs_canvas_set_channel(canvas, channel - 1, nullptr); // OBS uses 0-indexed channels
+						// just rename it to prevent clashes
+						obs_source_set_name(src, QString::fromUtf8("%1_").arg(configName.c_str()).toUtf8().constData());
+						obs_source_release(src);
+					}
+					obs_canvas_release(canvas);
+				}
+			}
 
 			source = obs_source_create(
 				cfg.sourceType.toUtf8().constData(),
@@ -732,6 +756,7 @@ void createSources()
 				obs_canvas_set_channel(canvas, channel - 1, source); // OBS uses 0-indexed channels
 				obs_log(LOG_INFO, "Audio source '%s' (uuid: %s) assigned to channel %d (canvas: %s)",
 					configName.c_str(), uuid ? uuid : "?", channel, cfg.canvas.isEmpty() ? "main" : cfg.canvas.toUtf8().constData());
+				obs_canvas_release(canvas);
 			} else {
 				obs_log(LOG_INFO, "Audio source '%s' (uuid: %s) created (no channel assigned)",
 					configName.c_str(), uuid ? uuid : "?");
@@ -778,10 +803,13 @@ void cleanup()
 		if (entry.source) {
 			// Disconnect signals first
 			disconnect_source_signals(entry.source);
+			obs_source_set_audio_active(entry.source, false); // else it won't free up the source
 			// Clear the canvas channel
-			obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid);
-			if (entry.channel > 0) {
-				obs_canvas_set_channel(canvas, entry.channel - 1, nullptr);
+			if (obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid)) {
+				if (entry.channel > 0) {
+					obs_canvas_set_channel(canvas, entry.channel - 1, nullptr);
+				}
+				obs_canvas_release(canvas);
 			}
 			// Remove from OBS source list and release our reference
 			obs_source_remove(entry.source);
@@ -867,6 +895,11 @@ void on_plugin_loaded()
 		show_channels_view,
 		nullptr
 	);
+	
+	// Create and register the Super Mixer dock
+	auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	mixer_dock = new MixerDock(mainWindow);
+	obs_frontend_add_dock_by_id("SuperMixerDock", obs_module_text("SuperMixer.Title"), mixer_dock);
 }
 
 void on_plugin_unload()
@@ -878,16 +911,22 @@ void on_plugin_unload()
 	// from accessing deleted dialog pointers
 	cleanup();
 
-	// Now safe to delete dialogs (signals already disconnected)
-	if (settings_dialog) {
-		settings_dialog->hide();
-		delete settings_dialog;
-		settings_dialog = nullptr;
-	}
+	// these are most probably won't execute, by this time obs gc's the main window which is the parent of these widgets
+	{
+		if (settings_dialog) {
+			settings_dialog->close();
+			delete settings_dialog;
+		}
 
-	if (channels_view) {
-		delete channels_view;
-		channels_view = nullptr;
+		if (channels_view) {
+			delete channels_view;
+		}
+
+		if (mixer_dock) {
+			// Dock is managed by OBS frontend, just remove our reference
+			obs_frontend_remove_dock("SuperMixerDock");
+			delete mixer_dock;
+		}
 	}
 
 	// Clean up config singleton last

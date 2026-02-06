@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 #include "./super_suite.h"
+#include "./vendor/master-level-meter/plugin-main.h"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -27,7 +28,7 @@ bool obs_module_load(void)
 {
 	obs_log(LOG_INFO, "Super Suite plugin loaded successfully (version %s)", PLUGIN_VERSION);
 
-	return on_plugin_load();
+	return mlm_on_obs_module_load() && on_plugin_load();
 }
 
 void obs_module_post_load(void)
@@ -37,6 +38,8 @@ void obs_module_post_load(void)
 
 void obs_module_unload(void)
 {
+	mlm_on_obs_module_unload();
+
 	on_plugin_unload();
 
 	obs_log(LOG_INFO, "Super Suite plugin unloaded");

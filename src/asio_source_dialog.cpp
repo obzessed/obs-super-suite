@@ -1,4 +1,8 @@
 #include "asio_source_dialog.h"
+
+#include "QFormLayout"
+#include "QPushButton"
+#include "QVBoxLayout"
 #include "asio_config.h"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -257,8 +261,7 @@ void AsioSourceDialog::populateChannels()
 		
 		// Grey out occupied channels
 		if (occupied) {
-			QStandardItemModel *model = qobject_cast<QStandardItemModel*>(m_channelCombo->model());
-			if (model) {
+			if (auto *model = qobject_cast<QStandardItemModel *>(m_channelCombo->model())) {
 				QStandardItem *item = model->item(m_channelCombo->count() - 1);
 				item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
 				item->setText(QString("%1 (in use)").arg(channelName));
@@ -268,12 +271,14 @@ void AsioSourceDialog::populateChannels()
 	
 	// Select first available channel
 	for (int i = 0; i < m_channelCombo->count(); i++) {
-		QStandardItemModel *model = qobject_cast<QStandardItemModel*>(m_channelCombo->model());
-		if (model && model->item(i)->flags() & Qt::ItemIsEnabled) {
+		if (auto *model = qobject_cast<QStandardItemModel *>(m_channelCombo->model());
+		    model && model->item(i)->flags() & Qt::ItemIsEnabled) {
 			m_channelCombo->setCurrentIndex(i);
 			break;
 		}
 	}
+
+	if (canvas) obs_canvas_release(canvas);
 }
 
 void AsioSourceDialog::setCurrentChannel(int channel)
@@ -404,6 +409,7 @@ void AsioSourceDialog::validateInput()
 			valid = false;
 			error = obs_module_text("AsioSettings.ErrorChannelInUse");
 		}
+		if (canvas) obs_canvas_release(canvas);
 	}
 	
 	m_okButton->setEnabled(valid);

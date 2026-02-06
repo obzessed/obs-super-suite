@@ -1,3 +1,5 @@
+- [ ] Bugs
+  - [ ] When restart looks like there an dup source exists at the time of source creation from saved.
 - [x] ASIO Channels.
 - [ ] Advanced MultiView.
   - https://obsproject.com/forum/resources/durchblick.1484/
@@ -6,6 +8,7 @@
 - [ ] Master Fader.
 - [ ] Channels Viewer.
   - [ ] '???'
+  - [ ] 'channel_change' signal on canvas
 - [ ] Audio Source types.
   - [ ] '???'
 - [ ] Channel Override detection
