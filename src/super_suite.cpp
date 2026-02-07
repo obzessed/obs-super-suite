@@ -11,8 +11,12 @@
 #include "models/audio_channel_source_config.h"
 #include "dialogs/audio_channels.h"
 #include "dialogs/channels_viewer.h"
+#include "dialogs/outputs_viewer.h"
+#include "dialogs/encoders_viewer.h"
+#include "windows/secondary_window.h"
 #include "docks/mixer_dock.h"
 #include "docks/wrapper_test_dock.h"
+#include "dialogs/canvas_manager.h"
 
 #include <vector>
 #include <utility>
@@ -51,8 +55,12 @@ struct AsioSourceEntry {
 static std::vector<AsioSourceEntry> asio_sources;
 static QPointer<AudioChannelsDialog> settings_dialog;
 static QPointer<ChannelsDialog> channels_view;
+static QPointer<OutputsViewer> outputs_viewer;
+static QPointer<EncodersViewer> encoders_viewer;
+static QPointer<SecondaryWindow> secondary_windows[3];
 static QPointer<MixerDock> mixer_dock;
 static QPointer<WrapperTestDock> wrapper_test_dock;
+static QPointer<CanvasManager> canvas_manager;
 
 // Guard flag to prevent signal handlers from modifying config during createSources()
 static bool creating_sources = false;
@@ -869,6 +877,59 @@ static void show_channels_view(void* data)
 	channels_view->activateWindow();
 }
 
+static void show_canvas_manager(void* data)
+{
+	UNUSED_PARAMETER(data);
+	
+	if (!canvas_manager) {
+		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		canvas_manager = new CanvasManager(mainWindow);
+	}
+	canvas_manager->show();
+	canvas_manager->raise();
+	canvas_manager->activateWindow();
+}
+
+static void show_outputs_viewer(void* data)
+{
+	UNUSED_PARAMETER(data);
+	
+	if (!outputs_viewer) {
+		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		outputs_viewer = new OutputsViewer(mainWindow);
+	}
+	outputs_viewer->show();
+	outputs_viewer->raise();
+	outputs_viewer->activateWindow();
+}
+
+static void show_encoders_viewer(void* data)
+{
+	UNUSED_PARAMETER(data);
+	
+	if (!encoders_viewer) {
+		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		encoders_viewer = new EncodersViewer(mainWindow);
+	}
+	encoders_viewer->show();
+	encoders_viewer->raise();
+	encoders_viewer->activateWindow();
+}
+
+static void show_secondary_window(void* data)
+{
+	int index = (int)(intptr_t)data;
+	if (index < 0 || index >= 3) return;
+
+	if (!secondary_windows[index]) {
+		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		secondary_windows[index] = new SecondaryWindow(index, mainWindow);
+	}
+	secondary_windows[index]->show();
+	secondary_windows[index]->raise();
+	secondary_windows[index]->activateWindow();
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -895,6 +956,44 @@ void on_plugin_loaded()
 		obs_module_text("ChannelsView.Title"), // "Channels" or similar
 		show_channels_view,
 		nullptr
+	);
+	
+	// Add Canvas Manager menu item
+	obs_frontend_add_tools_menu_item(
+		obs_module_text("CanvasManager.Title"),
+		show_canvas_manager,
+		nullptr
+	);
+
+	// Add Outputs Viewer menu item
+	obs_frontend_add_tools_menu_item(
+		obs_module_text("OutputsViewer.Title"),
+		show_outputs_viewer,
+		nullptr
+	);
+
+	// Add Encoders Viewer menu item
+	obs_frontend_add_tools_menu_item(
+		obs_module_text("EncodersViewer.Title"),
+		show_encoders_viewer,
+		nullptr
+	);
+
+	// Add Secondary Window menu items
+	obs_frontend_add_tools_menu_item(
+		"Secondary Dock Window 1",
+		show_secondary_window,
+		(void*)(intptr_t)0
+	);
+	obs_frontend_add_tools_menu_item(
+		"Secondary Dock Window 2",
+		show_secondary_window,
+		(void*)(intptr_t)1
+	);
+	obs_frontend_add_tools_menu_item(
+		"Secondary Dock Window 3",
+		show_secondary_window,
+		(void*)(intptr_t)2
 	);
 	
 	// Create and register docks

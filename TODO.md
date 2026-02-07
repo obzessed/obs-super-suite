@@ -1,17 +1,31 @@
+- [ ] Name
+  - Super Suite?
+  - Power Suite?
+  - Ultra Suite?
 - [ ] Bugs
-  - [ ] When restart looks like there an dup source exists at the time of source creation from saved.
-- [x] ASIO Channels.
+  - ???
+- [ ] Audio Inputs
+  - [x] WASAPI (WDM) (built-in)
+  - [ ] KS (Kernel Streaming)
+  - [ ] MME (Multimedia)
+  - [x] ASIO (Steinberg)
+- [ ] Canvas Manager.
+- [x] Secondary Dockable Windows
+  - [ ] Secondary Studio Frontend.
+- [ ] WhatsApp Browser Dock.
+- [ ] Browser Dock using Webview Runtime.
 - [ ] Advanced MultiView.
   - https://obsproject.com/forum/resources/durchblick.1484/
-- [ ] Interactive ASIO Mixer.
+- [ ] Interactive Audio Mixer.
 - [ ] Matrix Audio Router.
 - [ ] Master Fader.
 - [ ] Channels Viewer.
+- [ ] Multi Audio Output (obs_output_t)
   - [ ] '???'
-  - [ ] 'channel_change' signal on canvas
 - [ ] Audio Source types.
   - [ ] '???'
 - [ ] Channel Override detection
+  - [ ] 'channel_change' signal on canvas
   - Other plugin might overwrite on channels.
 - [ ] Advanced Audio Monitoring
   - [ ] Name it Cue (Similar to Ableton)

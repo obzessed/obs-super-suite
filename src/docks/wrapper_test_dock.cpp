@@ -94,22 +94,6 @@ void WrapperTestDock::onClearLog()
 void WrapperTestDock::onTestSources()
 {
 	logSection("Testing Sources (obs::Source)");
-
-	// test Local<Source>
-	{
-		obs_source_t *ref = nullptr;
-		{
-			auto source = obs_source_create("audio_line", "Hola", nullptr, nullptr);
-			log(QString("  created a source: %1").arg(reinterpret_cast<qintptr>(source)));
-			if (source) {
-				const auto src = obs::Local<obs::Source>(source);
-				ref = src.raw();
-				// obs_source_remove(ref);
-				// obs_source_get_ref(ref);
-				log(QString("  removed source: %1").arg(reinterpret_cast<qintptr>(ref)));
-			}
-		}
-	}
 	
 	size_t count = 0;
 	obs::Source::forEach([this, &count](const obs::Local<obs::Source>& source, const size_t idx) {
