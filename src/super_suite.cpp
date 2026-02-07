@@ -155,7 +155,7 @@ static void on_source_rename(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
 
-	obs_source_t *source = calldata_get_pointer<obs_source_t>(cd, "source");
+	auto *source = calldata_get_pointer<obs_source_t>(cd, "source");
 	const char *new_name = calldata_string(cd, "new_name");
 	const char *prev_name = calldata_string(cd, "prev_name");
 
@@ -187,7 +187,7 @@ static void on_source_update(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
 
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -229,8 +229,7 @@ static void save_source_filters(obs_source_t *source)
 	if (idx < 0) return;
 	
 	auto &sources = AsioConfig::get()->getSources();
-	obs_data_array_t *filterArray = obs_source_backup_filters(source);
-	if (filterArray) {
+	if (obs_data_array_t *filterArray = obs_source_backup_filters(source)) {
 		// Wrap in object with "filters" key for consistent parsing
 		obs_data_t *wrapper = obs_data_create();
 		obs_data_set_array(wrapper, "filters", filterArray);
@@ -261,7 +260,7 @@ static void on_filter_changed(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
 
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -276,7 +275,7 @@ static void on_filter_settings_update(void *data, calldata_t *cd)
 	UNUSED_PARAMETER(cd);
 	
 	// 'data' is the parent source
-	obs_source_t *parent_source = (obs_source_t *)data;
+	auto *parent_source = static_cast<obs_source_t *>(data);
 	if (!parent_source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -290,8 +289,8 @@ static void on_filter_added(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
 
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
-	obs_source_t *filter = (obs_source_t *)calldata_ptr(cd, "filter");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	auto *filter = static_cast<obs_source_t *>(calldata_ptr(cd, "filter"));
 	
 	if (!source || !filter) return;
 
@@ -311,7 +310,7 @@ static void on_filter_added(void *data, calldata_t *cd)
 static void on_mute_changed(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -333,7 +332,7 @@ static void on_mute_changed(void *data, calldata_t *cd)
 static void on_volume_changed(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -355,7 +354,7 @@ static void on_volume_changed(void *data, calldata_t *cd)
 static void on_audio_monitoring_changed(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -377,7 +376,7 @@ static void on_audio_monitoring_changed(void *data, calldata_t *cd)
 static void on_audio_balance_changed(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -399,7 +398,7 @@ static void on_audio_balance_changed(void *data, calldata_t *cd)
 static void on_update_flags(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -408,7 +407,7 @@ static void on_update_flags(void *data, calldata_t *cd)
 	int idx = find_config_index_for_source(source);
 	if (idx < 0) return;
 
-	uint32_t flags = (uint32_t)calldata_int(cd, "flags");
+	auto flags = static_cast<uint32_t>(calldata_int(cd, "flags"));
 	bool forceMono = (flags & OBS_SOURCE_FLAG_FORCE_MONO) != 0;
 	auto &sources = AsioConfig::get()->getSources();
 	sources[idx].forceMono = forceMono;
@@ -422,7 +421,7 @@ static void on_update_flags(void *data, calldata_t *cd)
 static void on_audio_mixers_changed(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
@@ -431,7 +430,7 @@ static void on_audio_mixers_changed(void *data, calldata_t *cd)
 	int idx = find_config_index_for_source(source);
 	if (idx < 0) return;
 
-	uint32_t mixers = (uint32_t)calldata_int(cd, "mixers");
+	auto mixers = static_cast<uint32_t>(calldata_int(cd, "mixers"));
 	auto &sources = AsioConfig::get()->getSources();
 	sources[idx].audioMixers = mixers;
 	AsioConfig::get()->save();
@@ -444,7 +443,7 @@ static void on_audio_mixers_changed(void *data, calldata_t *cd)
 static void on_audio_activate(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(data);
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 	if (!source) return;
 	
 	// Skip if we're in the middle of creating sources
