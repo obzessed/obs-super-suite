@@ -1,7 +1,7 @@
 #pragma once
 
 #include <obs-frontend-api.h>
-#include <obs-module.h>
+#include <obs.h>
 
 #include <QString>
 #include <QVector>
@@ -51,9 +51,9 @@ struct AsioSourceConfig {
 };
 
 // Singleton configuration manager for ASIO sources
-class AsioConfig {
+class AudioChSrcConfig {
 public:
-	static AsioConfig *get();
+	static AudioChSrcConfig *get();
 	static void cleanup();
 
 	void load();
@@ -67,8 +67,8 @@ public:
 	void updateSource(int index, const AsioSourceConfig &config);
 
 private:
-	AsioConfig();
-	~AsioConfig() = default;
+	AudioChSrcConfig();
+	~AudioChSrcConfig() = default;
 
 	QVector<AsioSourceConfig> sources;
 

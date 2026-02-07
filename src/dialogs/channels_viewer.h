@@ -6,12 +6,12 @@
 #include <QTreeWidget>
 #include <QPushButton>
 
-class ChannelsView : public QDialog {
+class ChannelsDialog : public QDialog {
 	Q_OBJECT
 
 public:
-	explicit ChannelsView(QWidget *parent = nullptr);
-	~ChannelsView();
+	explicit ChannelsDialog(QWidget *parent = nullptr);
+	~ChannelsDialog() override;
 
 	void refresh();
 

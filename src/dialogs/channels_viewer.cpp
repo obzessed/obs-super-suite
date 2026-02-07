@@ -1,5 +1,5 @@
-#include "channels_view.h"
-#include "asio_config.h" 
+#include "./channels_viewer.h"
+#include "../models/audio_channel_source_config.h"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
@@ -10,29 +10,29 @@
 #include <QTreeWidget>
 
 static bool canvas_enum_cb(void *param, obs_canvas_t *canvas) {
-	auto *view = static_cast<ChannelsView*>(param);
+	auto *view = static_cast<ChannelsDialog*>(param);
 	view->addCanvasGroup(canvas);
 	return true;
 }
 
-ChannelsView::ChannelsView(QWidget *parent) : QDialog(parent)
+ChannelsDialog::ChannelsDialog(QWidget *parent) : QDialog(parent)
 {
 	setWindowTitle("Output Channels");
 	resize(700, 600);
 	setupUi();
 }
 
-ChannelsView::~ChannelsView()
+ChannelsDialog::~ChannelsDialog()
 {
 }
 
-void ChannelsView::showEvent(QShowEvent *event)
+void ChannelsDialog::showEvent(QShowEvent *event)
 {
 	QDialog::showEvent(event);
 	refresh();
 }
 
-void ChannelsView::setupUi()
+void ChannelsDialog::setupUi()
 {
 	auto *layout = new QVBoxLayout(this);
 	
@@ -68,11 +68,11 @@ void ChannelsView::setupUi()
 	btnLayout->addWidget(m_closeBtn);
 	layout->addLayout(btnLayout);
 	
-	connect(m_refreshBtn, &QPushButton::clicked, this, &ChannelsView::refresh);
+	connect(m_refreshBtn, &QPushButton::clicked, this, &ChannelsDialog::refresh);
 	connect(m_closeBtn, &QPushButton::clicked, this, &QDialog::accept);
 }
 
-void ChannelsView::refresh()
+void ChannelsDialog::refresh()
 {
 	m_tree->clear();
 	
@@ -82,7 +82,7 @@ void ChannelsView::refresh()
 	m_tree->expandAll();
 }
 
-void ChannelsView::addCanvasGroup(obs_canvas_t *canvas)
+void ChannelsDialog::addCanvasGroup(obs_canvas_t *canvas)
 {
 	// Determine canvas name or index
 	int index = m_tree->topLevelItemCount();
@@ -105,7 +105,7 @@ void ChannelsView::addCanvasGroup(obs_canvas_t *canvas)
 	}
 }
 
-void ChannelsView::addChannelItem(QTreeWidgetItem *parent, int channel, obs_source_t *source)
+void ChannelsDialog::addChannelItem(QTreeWidgetItem *parent, int channel, obs_source_t *source)
 {
 	auto *item = new QTreeWidgetItem(parent);
 	

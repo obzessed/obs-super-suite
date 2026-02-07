@@ -1,10 +1,7 @@
-#include "mixer_channel.h"
-#include <plugin-support.h>
-
-#include <QFrame>
+#include "./mixer_channel.h"
 
 MixerChannel::MixerChannel(obs_source_t *source, QWidget *parent)
-	: QWidget(parent), m_source(nullptr)
+	: QWidget(parent)
 {
 	setupUi();
 	setSource(source);

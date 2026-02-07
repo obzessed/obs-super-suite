@@ -1,6 +1,6 @@
 #include "mixer_dock.h"
-#include "mixer_channel.h"
-#include "asio_config.h"
+#include "../components/mixer_channel.h"
+#include "../models/audio_channel_source_config.h"
 #include <plugin-support.h>
 
 #include <QLabel>
@@ -58,7 +58,7 @@ void MixerDock::refresh()
 	clearChannels();
 	
 	// Get sources from config
-	auto &configs = AsioConfig::get()->getSources();
+	auto &configs = AudioChSrcConfig::get()->getSources();
 	
 	for (const auto &cfg : configs) {
 		if (!cfg.enabled) continue;

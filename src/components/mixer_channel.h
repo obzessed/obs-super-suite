@@ -16,7 +16,7 @@ class MixerChannel : public QWidget {
 
 public:
 	explicit MixerChannel(obs_source_t *source, QWidget *parent = nullptr);
-	~MixerChannel();
+	~MixerChannel() override;
 
 	void setSource(obs_source_t *source);
 	obs_source_t *getSource() const { return m_source; }

@@ -14,14 +14,14 @@
 #include <QKeyEvent>
 #include <QGraphicsColorizeEffect>
 
-class AsioSourceDialog;
+class AudioSourceDialog;
 
-class AsioSettingsDialog : public QDialog {
+class AudioChannelsDialog : public QDialog {
 	Q_OBJECT
 
 public:
-	explicit AsioSettingsDialog(QWidget *parent = nullptr);
-	~AsioSettingsDialog();
+	explicit AudioChannelsDialog(QWidget *parent = nullptr);
+	~AudioChannelsDialog() override;
 
 	void toggle_show_hide();
 	

@@ -1,16 +1,17 @@
-#include "asio_source_dialog.h"
+#include "./audio_source_dialog.h"
 
-#include "QFormLayout"
-#include "QPushButton"
-#include "QVBoxLayout"
-#include "asio_config.h"
 #include <obs-module.h>
-#include <obs-frontend-api.h>
-#include <QMessageBox>
-#include <QStandardItemModel>
-#include <QGroupBox>
 
-AsioSourceDialog::AsioSourceDialog(Mode mode, QWidget *parent)
+#include <QFormLayout>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QMessageBox>
+#include <QGroupBox>
+#include <QStandardItemModel>
+
+#include "../models/audio_channel_source_config.h"
+
+AudioSourceDialog::AudioSourceDialog(Mode mode, QWidget *parent)
 	: QDialog(parent), m_mode(mode)
 {
 	setupUi();
@@ -30,7 +31,7 @@ AsioSourceDialog::AsioSourceDialog(Mode mode, QWidget *parent)
 	setMinimumWidth(300);
 }
 
-void AsioSourceDialog::setupUi()
+void AudioSourceDialog::setupUi()
 {
 	auto *mainLayout = new QVBoxLayout(this);
 	auto *formLayout = new QFormLayout();
@@ -138,13 +139,13 @@ void AsioSourceDialog::setupUi()
 	mainLayout->addLayout(buttonLayout);
 	
 	// Connections
-	connect(m_nameEdit, &QLineEdit::textChanged, this, &AsioSourceDialog::validateInput);
+	connect(m_nameEdit, &QLineEdit::textChanged, this, &AudioSourceDialog::validateInput);
 	connect(m_typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-		this, &AsioSourceDialog::onTypeChanged);
+		this, &AudioSourceDialog::onTypeChanged);
 	connect(m_canvasCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-		this, &AsioSourceDialog::onCanvasChanged);
+		this, &AudioSourceDialog::onCanvasChanged);
 	connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), 
-		this, &AsioSourceDialog::validateInput);
+		this, &AudioSourceDialog::validateInput);
 	connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
 	connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
 	
@@ -182,7 +183,7 @@ static bool canvas_enum_cb(void *param, obs_canvas_t *canvas)
 	return true;
 }
 
-void AsioSourceDialog::populateCanvases()
+void AudioSourceDialog::populateCanvases()
 {
 	m_canvasCombo->clear();
 	
@@ -198,14 +199,14 @@ void AsioSourceDialog::populateCanvases()
 	m_canvasCombo->setCurrentIndex(ctx.mainIndex);
 }
 
-void AsioSourceDialog::onCanvasChanged()
+void AudioSourceDialog::onCanvasChanged()
 {
 	// Refresh channel list for the selected canvas
 	populateChannels();
 	validateInput();
 }
 
-void AsioSourceDialog::onTypeChanged()
+void AudioSourceDialog::onTypeChanged()
 {
 	// Update open properties checkbox based on whether selected source type is configurable
 	QString typeId = m_typeCombo->currentData().toString();
@@ -221,7 +222,7 @@ void AsioSourceDialog::onTypeChanged()
 	}
 }
 
-void AsioSourceDialog::populateChannels()
+void AudioSourceDialog::populateChannels()
 {
 	m_channelCombo->clear();
 	
@@ -281,7 +282,7 @@ void AsioSourceDialog::populateChannels()
 	if (canvas) obs_canvas_release(canvas);
 }
 
-void AsioSourceDialog::setCurrentChannel(int channel)
+void AudioSourceDialog::setCurrentChannel(int channel)
 {
 	m_currentChannel = channel;
 	populateChannels();
@@ -295,7 +296,7 @@ void AsioSourceDialog::setCurrentChannel(int channel)
 	}
 }
 
-void AsioSourceDialog::setConfig(const AsioSourceConfig &cfg)
+void AudioSourceDialog::setConfig(const AsioSourceConfig &cfg)
 {
 	// Set source type
 	for (int i = 0; i < m_typeCombo->count(); i++) {
@@ -320,47 +321,47 @@ void AsioSourceDialog::setConfig(const AsioSourceConfig &cfg)
 	setAudioMixers(cfg.audioMixers);
 }
 
-QString AsioSourceDialog::getName() const
+QString AudioSourceDialog::getName() const
 {
 	return m_nameEdit->text().trimmed();
 }
 
-QString AsioSourceDialog::getSourceType() const
+QString AudioSourceDialog::getSourceType() const
 {
 	return m_typeCombo->currentData().toString();
 }
 
-QString AsioSourceDialog::getCanvas() const
+QString AudioSourceDialog::getCanvas() const
 {
 	return m_canvasCombo->currentData().toString();
 }
 
-int AsioSourceDialog::getChannel() const
+int AudioSourceDialog::getChannel() const
 {
 	return m_channelCombo->currentData().toInt();
 }
 
-bool AsioSourceDialog::shouldOpenProperties() const
+bool AudioSourceDialog::shouldOpenProperties() const
 {
 	return m_openPropertiesCheck->isChecked();
 }
 
-void AsioSourceDialog::setOpenProperties(bool open)
+void AudioSourceDialog::setOpenProperties(bool open)
 {
 	m_openPropertiesCheck->setChecked(open);
 }
 
-bool AsioSourceDialog::shouldStartMuted() const
+bool AudioSourceDialog::shouldStartMuted() const
 {
 	return m_mutedCheck->isChecked();
 }
 
-void AsioSourceDialog::setStartMuted(bool muted)
+void AudioSourceDialog::setStartMuted(bool muted)
 {
 	m_mutedCheck->setChecked(muted);
 }
 
-void AsioSourceDialog::validateInput()
+void AudioSourceDialog::validateInput()
 {
 	QString name = getName();
 	int channel = getChannel();
@@ -375,7 +376,7 @@ void AsioSourceDialog::validateInput()
 	
 	// Check duplicate name (against existing sources)
 	if (valid) {
-		const auto &sources = AsioConfig::get()->getSources();
+		const auto &sources = AudioChSrcConfig::get()->getSources();
 		for (const auto &src : sources) {
 			// In edit mode, skip self
 			if (m_mode == EditMode && src.outputChannel == m_currentChannel) {
@@ -429,7 +430,7 @@ void AsioSourceDialog::validateInput()
 	}
 }
 
-uint32_t AsioSourceDialog::getAudioMixers() const
+uint32_t AudioSourceDialog::getAudioMixers() const
 {
 	uint32_t mixers = 0;
 	for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
@@ -440,7 +441,7 @@ uint32_t AsioSourceDialog::getAudioMixers() const
 	return mixers;
 }
 
-void AsioSourceDialog::setAudioMixers(uint32_t mixers)
+void AudioSourceDialog::setAudioMixers(uint32_t mixers)
 {
 	for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
 		m_trackChecks[i]->setChecked((mixers & (1 << i)) != 0);

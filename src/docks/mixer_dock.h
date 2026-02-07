@@ -12,7 +12,7 @@ class MixerDock : public QWidget {
 
 public:
 	explicit MixerDock(QWidget *parent = nullptr);
-	~MixerDock();
+	~MixerDock() override;
 
 	void refresh();
 

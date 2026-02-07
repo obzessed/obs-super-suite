@@ -10,14 +10,14 @@
 
 struct AsioSourceConfig;
 
-class AsioSourceDialog : public QDialog {
+class AudioSourceDialog : public QDialog {
 	Q_OBJECT
 
 public:
 	enum Mode { AddMode, EditMode, DuplicateMode };
 
-	explicit AsioSourceDialog(Mode mode, QWidget *parent = nullptr);
-	~AsioSourceDialog() = default;
+	explicit AudioSourceDialog(Mode mode, QWidget *parent = nullptr);
+	~AudioSourceDialog() override = default;
 
 	// Set existing config for edit mode
 	void setConfig(const AsioSourceConfig &cfg);

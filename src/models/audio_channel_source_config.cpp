@@ -3,7 +3,7 @@
 
 #include <plugin-support.h>
 
-#include "asio_config.h"
+#include "./audio_channel_source_config.h"
 
 #include <QDir>
 #include <QFile>
@@ -11,17 +11,17 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
-static AsioConfig *instance = nullptr;
+static AudioChSrcConfig *instance = nullptr;
 
-AsioConfig *AsioConfig::get()
+AudioChSrcConfig *AudioChSrcConfig::get()
 {
 	if (!instance) {
-		instance = new AsioConfig();
+		instance = new AudioChSrcConfig();
 	}
 	return instance;
 }
 
-void AsioConfig::cleanup()
+void AudioChSrcConfig::cleanup()
 {
 	if (instance) {
 		delete instance;
@@ -29,12 +29,12 @@ void AsioConfig::cleanup()
 	}
 }
 
-AsioConfig::AsioConfig()
+AudioChSrcConfig::AudioChSrcConfig()
 {
 	load();
 }
 
-QString AsioConfig::getConfigPath() const
+QString AudioChSrcConfig::getConfigPath() const
 {
 	char *configPath = obs_module_config_path("audio-channels.json");
 	QString path = QString::fromUtf8(configPath);
@@ -42,7 +42,7 @@ QString AsioConfig::getConfigPath() const
 	return path;
 }
 
-void AsioConfig::load()
+void AudioChSrcConfig::load()
 {
 	sources.clear();
 
@@ -117,7 +117,7 @@ void AsioConfig::load()
 	obs_log(LOG_INFO, "ASIO config loaded: %d sources", sources.size());
 }
 
-void AsioConfig::save()
+void AudioChSrcConfig::save()
 {
 	QString configPath = getConfigPath();
 
@@ -168,13 +168,13 @@ void AsioConfig::save()
 	obs_log(LOG_INFO, "ASIO config saved: %d sources", sources.size());
 }
 
-void AsioConfig::addSource(const AsioSourceConfig &cfg)
+void AudioChSrcConfig::addSource(const AsioSourceConfig &cfg)
 {
 	sources.append(cfg);
 	save();
 }
 
-void AsioConfig::removeSource(int index)
+void AudioChSrcConfig::removeSource(int index)
 {
 	if (index >= 0 && index < sources.size()) {
 		sources.removeAt(index);
@@ -182,7 +182,7 @@ void AsioConfig::removeSource(int index)
 	}
 }
 
-void AsioConfig::updateSource(int index, const AsioSourceConfig &cfg)
+void AudioChSrcConfig::updateSource(int index, const AsioSourceConfig &cfg)
 {
 	if (index >= 0 && index < sources.size()) {
 		sources[index] = cfg;

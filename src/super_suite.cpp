@@ -8,10 +8,11 @@
 #include <QPointer>
 
 #include "super_suite.h"
-#include "asio_config.h"
-#include "asio_settings.h"
-#include "channels_view.h"
-#include "mixer_dock.h"
+#include "models/audio_channel_source_config.h"
+#include "dialogs/audio_channels.h"
+#include "dialogs/channels_viewer.h"
+#include "docks/mixer_dock.h"
+#include "docks/wrapper_test_dock.h"
 
 #include <vector>
 #include <utility>
@@ -48,9 +49,10 @@ struct AsioSourceEntry {
 	obs_source_t *source;
 };
 static std::vector<AsioSourceEntry> asio_sources;
-static QPointer<AsioSettingsDialog> settings_dialog;
-static QPointer<ChannelsView> channels_view;
+static QPointer<AudioChannelsDialog> settings_dialog;
+static QPointer<ChannelsDialog> channels_view;
 static QPointer<MixerDock> mixer_dock;
+static QPointer<WrapperTestDock> wrapper_test_dock;
 
 // Guard flag to prevent signal handlers from modifying config during createSources()
 static bool creating_sources = false;
@@ -130,7 +132,7 @@ static int find_config_index_for_source(obs_source_t *source)
 	const char *sourceName = obs_source_get_name(source);
 	if (!sourceName) return -1;
 	
-	const auto &sources = AsioConfig::get()->getSources();
+	const auto &sources = AudioChSrcConfig::get()->getSources();
 	for (int i = 0; i < sources.size(); i++) {
 		if (sources[i].name == QString::fromUtf8(sourceName)) {
 			return i;
@@ -165,11 +167,11 @@ static void on_source_rename(void *data, calldata_t *cd)
 	if (creating_sources) return;
 
 	// Find config by previous name (source has already been renamed by OBS)
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	for (int i = 0; i < sources.size(); i++) {
 		if (sources[i].name == QString::fromUtf8(prev_name)) {
 			sources[i].name = QString::fromUtf8(new_name);
-			AsioConfig::get()->save();
+			AudioChSrcConfig::get()->save();
 			
 			// Update UI using the source's UUID
 			if (settings_dialog) {
@@ -197,7 +199,7 @@ static void on_source_update(void *data, calldata_t *cd)
 	int idx = find_config_index_for_source(source);
 	if (idx < 0) return;
 	
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	obs_data_t *settings = obs_source_get_settings(source);
 	if (settings) {
 		const char *json = obs_data_get_json(settings);
@@ -206,7 +208,7 @@ static void on_source_update(void *data, calldata_t *cd)
 			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json), &error);
 			if (error.error == QJsonParseError::NoError && doc.isObject()) {
 				sources[idx].sourceSettings = doc.object();
-				AsioConfig::get()->save();
+				AudioChSrcConfig::get()->save();
 				if (settings_dialog) {
 					settings_dialog->updateSourceSettings(sources[idx].sourceUuid, sources[idx].sourceSettings);
 					settings_dialog->updateSpeakerLayoutByUuid(sources[idx].sourceUuid);
@@ -228,7 +230,7 @@ static void save_source_filters(obs_source_t *source)
 	int idx = find_config_index_for_source(source);
 	if (idx < 0) return;
 	
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	if (obs_data_array_t *filterArray = obs_source_backup_filters(source)) {
 		// Wrap in object with "filters" key for consistent parsing
 		obs_data_t *wrapper = obs_data_create();
@@ -241,7 +243,7 @@ static void save_source_filters(obs_source_t *source)
 				QJsonObject root = doc.object();
 				if (root.contains("filters") && root["filters"].isArray()) {
 					sources[idx].sourceFilters = root["filters"].toArray();
-					AsioConfig::get()->save();
+					AudioChSrcConfig::get()->save();
 					if (settings_dialog) {
 						settings_dialog->updateSourceFilters(sources[idx].sourceUuid, sources[idx].sourceFilters);
 					}
@@ -320,9 +322,9 @@ static void on_mute_changed(void *data, calldata_t *cd)
 	if (idx < 0) return;
 
 	bool muted = calldata_bool(cd, "muted");
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources[idx].muted = muted;
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	if (settings_dialog) {
 		settings_dialog->updateSourceMuted(sources[idx].sourceUuid, muted);
 	}
@@ -342,9 +344,9 @@ static void on_volume_changed(void *data, calldata_t *cd)
 	if (idx < 0) return;
 
 	float volume = (float)calldata_float(cd, "volume");
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources[idx].volume = volume;
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	if (settings_dialog) {
 		settings_dialog->updateSourceVolume(sources[idx].sourceUuid, volume);
 	}
@@ -364,9 +366,9 @@ static void on_audio_monitoring_changed(void *data, calldata_t *cd)
 	if (idx < 0) return;
 
 	int monitoringType = (int)calldata_int(cd, "type");
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources[idx].monitoringType = monitoringType;
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	if (settings_dialog) {
 		settings_dialog->updateSourceMonitoring(sources[idx].sourceUuid, monitoringType);
 	}
@@ -386,9 +388,9 @@ static void on_audio_balance_changed(void *data, calldata_t *cd)
 	if (idx < 0) return;
 
 	float balance = (float)calldata_float(cd, "balance");
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources[idx].balance = balance;
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	if (settings_dialog) {
 		settings_dialog->updateSourceBalance(sources[idx].sourceUuid, balance);
 	}
@@ -409,9 +411,9 @@ static void on_update_flags(void *data, calldata_t *cd)
 
 	auto flags = static_cast<uint32_t>(calldata_int(cd, "flags"));
 	bool forceMono = (flags & OBS_SOURCE_FLAG_FORCE_MONO) != 0;
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources[idx].forceMono = forceMono;
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	if (settings_dialog) {
 		settings_dialog->updateSourceMono(sources[idx].sourceUuid, forceMono);
 	}
@@ -431,9 +433,9 @@ static void on_audio_mixers_changed(void *data, calldata_t *cd)
 	if (idx < 0) return;
 
 	auto mixers = static_cast<uint32_t>(calldata_int(cd, "mixers"));
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources[idx].audioMixers = mixers;
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	if (settings_dialog) {
 		settings_dialog->updateSourceAudioMixers(sources[idx].sourceUuid, mixers);
 	}
@@ -452,9 +454,9 @@ static void on_audio_activate(void *data, calldata_t *cd)
 	int idx = find_config_index_for_source(source);
 	if (idx < 0) return;
 
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources[idx].audioActive = true;
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	if (settings_dialog) {
 		settings_dialog->updateSourceAudioActive(sources[idx].sourceUuid, true);
 	}
@@ -473,9 +475,9 @@ static void on_audio_deactivate(void *data, calldata_t *cd)
 	int idx = find_config_index_for_source(source);
 	if (idx < 0) return;
 
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources[idx].audioActive = false;
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	if (settings_dialog) {
 		settings_dialog->updateSourceAudioActive(sources[idx].sourceUuid, false);
 	}
@@ -608,7 +610,7 @@ void createSources()
 
 	// 3. Prepare new list
 	std::vector<AsioSourceEntry> new_asio_sources;
-	auto &configs = AsioConfig::get()->getSources();
+	auto &configs = AudioChSrcConfig::get()->getSources();
 	
 	obs_log(LOG_INFO, "createSources: %zu existing sources, %d configs, %zu reusable",
 		asio_sources.size(), configs.size(), reusable_sources.size());
@@ -821,7 +823,7 @@ void cleanup()
 void refreshAsioSources()
 {
 	// Reload config and recreate sources
-	AsioConfig::get()->load();
+	AudioChSrcConfig::get()->load();
 	createSources();
 }
 
@@ -849,7 +851,7 @@ static void show_settings_dialog(void* data)
 
 	if (!settings_dialog) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		settings_dialog = new AsioSettingsDialog(mainWindow);
+		settings_dialog = new AudioChannelsDialog(mainWindow);
 	}
 	settings_dialog->toggle_show_hide();
 }
@@ -860,7 +862,7 @@ static void show_channels_view(void* data)
 	
 	if (!channels_view) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		channels_view = new ChannelsView(mainWindow);
+		channels_view = new ChannelsDialog(mainWindow);
 	}
 	channels_view->show();
 	channels_view->raise();
@@ -895,10 +897,12 @@ void on_plugin_loaded()
 		nullptr
 	);
 	
-	// Create and register the Super Mixer dock
+	// Create and register docks
 	auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	mixer_dock = new MixerDock(mainWindow);
+	wrapper_test_dock = new WrapperTestDock(mainWindow);
 	obs_frontend_add_dock_by_id("SuperMixerDock", obs_module_text("SuperMixer.Title"), mixer_dock);
+	obs_frontend_add_dock_by_id("WrapperTestDock", "OBS Wrapper Test", wrapper_test_dock);
 }
 
 void on_plugin_unload()
@@ -926,10 +930,15 @@ void on_plugin_unload()
 			obs_frontend_remove_dock("SuperMixerDock");
 			delete mixer_dock;
 		}
+		
+		if (wrapper_test_dock) {
+			obs_frontend_remove_dock("WrapperTestDock");
+			delete wrapper_test_dock;
+		}
 	}
 
 	// Clean up config singleton last
-	AsioConfig::cleanup();
+	AudioChSrcConfig::cleanup();
 }
 
 #ifdef __cplusplus

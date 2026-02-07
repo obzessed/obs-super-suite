@@ -3,10 +3,10 @@
 
 #include <plugin-support.h>
 
-#include "asio_settings.h"
-#include "asio_source_dialog.h"
-#include "asio_config.h"
-#include "super_suite.h"
+#include "./audio_channels.h"
+#include "./audio_source_dialog.h"
+#include "../models/audio_channel_source_config.h"
+#include "../super_suite.h"
 
 #include <QShowEvent>
 #include <QCloseEvent>
@@ -53,7 +53,7 @@ static QString speakerLayoutToString(enum speaker_layout layout)
 	}
 }
 
-AsioSettingsDialog::AsioSettingsDialog(QWidget *parent)
+AudioChannelsDialog::AudioChannelsDialog(QWidget *parent)
 	: QDialog(parent),
 	  tableWidget(nullptr),
 	  btnAdd(nullptr),
@@ -63,13 +63,13 @@ AsioSettingsDialog::AsioSettingsDialog(QWidget *parent)
 	loadFromConfig();
 }
 
-AsioSettingsDialog::~AsioSettingsDialog()
+AudioChannelsDialog::~AudioChannelsDialog()
 {
 	// Don't save here - we save on every change in the UI
 	// Saving during shutdown could access cleaned-up resources
 }
 
-void AsioSettingsDialog::setupUi()
+void AudioChannelsDialog::setupUi()
 {
 	setWindowTitle(obs_module_text("AsioSettings.Title"));
 	resize(700, 400);
@@ -148,7 +148,7 @@ void AsioSettingsDialog::setupUi()
 
 	// Context menu
 	tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-	connect(tableWidget, &QTableWidget::customContextMenuRequested, this, &AsioSettingsDialog::showContextMenu);
+	connect(tableWidget, &QTableWidget::customContextMenuRequested, this, &AudioChannelsDialog::showContextMenu);
 
 	mainLayout->addWidget(tableWidget);
 
@@ -158,9 +158,9 @@ void AsioSettingsDialog::setupUi()
 	btnAdd = new QPushButton(obs_module_text("AsioSettings.AddSource"), this);
 	btnRemove = new QPushButton(obs_module_text("AsioSettings.RemoveSource"), this);
 
-	connect(btnAdd, &QPushButton::clicked, this, &AsioSettingsDialog::addSource);
-	connect(btnRemove, &QPushButton::clicked, this, &AsioSettingsDialog::removeSelectedSource);
-	connect(tableWidget, &QTableWidget::itemSelectionChanged, this, &AsioSettingsDialog::updateRemoveButtonState);
+	connect(btnAdd, &QPushButton::clicked, this, &AudioChannelsDialog::addSource);
+	connect(btnRemove, &QPushButton::clicked, this, &AudioChannelsDialog::removeSelectedSource);
+	connect(tableWidget, &QTableWidget::itemSelectionChanged, this, &AudioChannelsDialog::updateRemoveButtonState);
 
 	// Handle drag-drop reorder - save config when rows are moved
 	connect(tableWidget->model(), &QAbstractItemModel::rowsMoved, this, [this]() {
@@ -177,7 +177,7 @@ void AsioSettingsDialog::setupUi()
 	updateAddButtonState();
 }
 
-void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
+void AudioChannelsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 {
 	// Column 0: Active indicator (read-only, based on obs_source_active)
 	auto *activeWidget = new QWidget();
@@ -199,7 +199,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	}
 	activeLayout->addWidget(activeLabel);
 	tableWidget->setCellWidget(row, 0, activeWidget);
-	
+
 	// Column 1: Source name (read-only, edited via dialog)
 	auto *nameItem = new QTableWidgetItem(src.name);
 	// Store settings and filters in UserRole slots
@@ -256,7 +256,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	auto *canvasLayout = new QHBoxLayout(canvasWidget);
 	canvasLayout->setContentsMargins(4, 0, 4, 0);
 	canvasLayout->setAlignment(Qt::AlignCenter);
-	
+
 	// Find canvas name from UUID
 	QString canvasName = obs_module_text("AsioSettings.MainCanvas");
 	if (!src.canvas.isEmpty()) {
@@ -276,7 +276,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 			canvasName = QString("? %1").arg(src.canvas.left(6)); // Unknown canvas
 		}
 	}
-	
+
 	auto *canvasLabel = new QLabel(canvasName);
 	canvasLabel->setToolTip(src.canvas.isEmpty() ? "Main Canvas" : src.canvas);
 	canvasLayout->addWidget(canvasLabel);
@@ -294,7 +294,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	tableWidget->setCellWidget(row, 5, volWidget);
 
 	connect(volSlider, &QSlider::valueChanged, this, [this]() { saveToConfig(true); });
-	
+
 	// Double-click to reset volume to 100
 	volSlider->installEventFilter(this);
 	volSlider->setProperty("resetValue", 100);
@@ -311,7 +311,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	tableWidget->setCellWidget(row, 6, balWidget);
 
 	connect(balSlider, &QSlider::valueChanged, this, [this]() { saveToConfig(true); });
-	
+
 	// Double-click to reset balance to 50 (center)
 	balSlider->installEventFilter(this);
 	balSlider->setProperty("resetValue", 50);
@@ -330,7 +330,7 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 		"QCheckBox::indicator:checked { fill: #ff0000; image: url(:/super/assets/icons/volume-x.svg); }"
 	);
 	muteCheck->setToolTip(src.muted ? "Unmute" : "Mute");
-	
+
 	muteLayout->addWidget(muteCheck);
 	tableWidget->setCellWidget(row, 7, muteWidget);
 
@@ -499,29 +499,29 @@ void AsioSettingsDialog::addRowWidgets(int row, const AsioSourceConfig &src)
 	updateRowTooltip(row);
 }
 
-void AsioSettingsDialog::loadFromConfig()
+void AudioChannelsDialog::loadFromConfig()
 {
 	// Block signals during population to prevent itemChanged from triggering saves
 	tableWidget->blockSignals(true);
-	
+
 	tableWidget->setRowCount(0);
 
-	const auto &sources = AsioConfig::get()->getSources();
+	const auto &sources = AudioChSrcConfig::get()->getSources();
 	for (const auto &src : sources) {
 		int row = tableWidget->rowCount();
 		tableWidget->insertRow(row);
 		addRowWidgets(row, src);
 	}
-	
+
 	tableWidget->blockSignals(false);
 
 	updateRemoveButtonState();
 	updateAddButtonState();
 }
 
-void AsioSettingsDialog::saveToConfig(bool doRefresh)
+void AudioChannelsDialog::saveToConfig(bool doRefresh)
 {
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	sources.clear();
 
 	for (int i = 0; i < tableWidget->rowCount(); i++) {
@@ -591,7 +591,7 @@ void AsioSettingsDialog::saveToConfig(bool doRefresh)
 		sources.append(cfg);
 	}
 
-	AsioConfig::get()->save();
+	AudioChSrcConfig::get()->save();
 	updateAddButtonState();
 
 	// Refresh running sources to match new settings (only when requested)
@@ -600,13 +600,13 @@ void AsioSettingsDialog::saveToConfig(bool doRefresh)
 	}
 }
 
-int AsioSettingsDialog::findNextAvailableChannel(const QString &canvasUuid) const
+int AudioChannelsDialog::findNextAvailableChannel(const QString &canvasUuid) const
 {
 	// Get canvas from UUID (OBS is source of truth)
 	obs_canvas_t *canvas = canvasUuid.isEmpty() ? obs_get_main_canvas()
 		: obs_get_canvas_by_uuid(canvasUuid.toUtf8().constData());
 	if (!canvas) canvas = obs_get_main_canvas();
-	
+
 	for (int ch = 1; ch <= MAX_CHANNELS; ch++) {
 		obs_source_t *existing = obs_canvas_get_channel(canvas, ch - 1); // 0-indexed
 		if (!existing) {
@@ -622,7 +622,7 @@ int AsioSettingsDialog::findNextAvailableChannel(const QString &canvasUuid) cons
 	return 1;
 }
 
-void AsioSettingsDialog::addSource()
+void AudioChannelsDialog::addSource()
 {
 	if (tableWidget->rowCount() >= MAX_CHANNELS) {
 		QMessageBox::warning(this,
@@ -632,21 +632,21 @@ void AsioSettingsDialog::addSource()
 	}
 
 	// Create and configure dialog
-	AsioSourceDialog dlg(AsioSourceDialog::AddMode, this);
-	
+	AudioSourceDialog dlg(AudioSourceDialog::AddMode, this);
+
 	// Pre-fill with default unique name
 	AsioSourceConfig defaultCfg;
 	defaultCfg.name = generateUniqueName("Audio");
 	defaultCfg.outputChannel = findNextAvailableChannel();
 	dlg.setConfig(defaultCfg);
-	
+
 	if (dlg.exec() != QDialog::Accepted) {
 		return;
 	}
 
 	// Capture whether to open properties before dialog is destroyed
 	bool openProps = dlg.shouldOpenProperties();
-	
+
 	int row = tableWidget->rowCount();
 	tableWidget->insertRow(row);
 
@@ -664,27 +664,27 @@ void AsioSettingsDialog::addSource()
 	saveToConfig();
 	updateRemoveButtonState();
 	updateAddButtonState();
-	
+
 	// Update active indicator after source may be created
 	updateActiveIndicator(row);
 	updateSpeakerLayout(row);
-	
+
 	// Open properties dialog if checkbox was checked
 	if (openProps) {
 		openSourceProperties(row);
 	}
 }
 
-void AsioSettingsDialog::editSource(int row)
+void AudioChannelsDialog::editSource(int row)
 {
 	if (row < 0 || row >= tableWidget->rowCount()) return;
-	
+
 	auto *item = tableWidget->item(row, 1);  // Name is in column 1
 	if (!item) return;
-	
+
 	QString currentName = item->text();
 	int currentChannel = item->data(kTIDS_OutputChannel).toInt();
-	
+
 	// Build config from current row data
 	AsioSourceConfig cfg;
 	cfg.name = currentName;
@@ -694,21 +694,21 @@ void AsioSettingsDialog::editSource(int row)
 	cfg.sourceSettings = item->data(kTIDS_SourceSettings).toJsonObject();
 	cfg.sourceFilters = item->data(kTIDS_SourceFilters).toJsonArray();
 	cfg.audioMixers = item->data(kTIDS_AudioMixers).toUInt();
-	
+
 	// Create dialog in edit mode
-	AsioSourceDialog dlg(AsioSourceDialog::EditMode, this);
+	AudioSourceDialog dlg(AudioSourceDialog::EditMode, this);
 	dlg.setConfig(cfg);
-	
+
 	if (dlg.exec() != QDialog::Accepted) {
 		return;
 	}
-	
+
 	// Update name
 	item->setText(dlg.getName());
-	
+
 	// Update source type
 	item->setData(kTIDS_SourceType, dlg.getSourceType());
-	
+
 	// Update channel in item data and label
 	int newChannel = dlg.getChannel();
 	item->setData(kTIDS_OutputChannel, newChannel);
@@ -718,7 +718,7 @@ void AsioSettingsDialog::editSource(int row)
 			lbl->setText(channelText);
 		}
 	}
-	
+
 	// Update canvas in item data and label
 	QString newCanvas = dlg.getCanvas();
 	item->setData(kTIDS_Canvas, newCanvas);
@@ -746,17 +746,17 @@ void AsioSettingsDialog::editSource(int row)
 			lbl->setToolTip(newCanvas.isEmpty() ? "Main Canvas" : newCanvas);
 		}
 	}
-	
+
 	// Update audio mixers
 	item->setData(kTIDS_AudioMixers, dlg.getAudioMixers());
-	
+
 	saveToConfig();
 	updateRowTooltip(row);
 	updateActiveIndicator(row);
 	updateSpeakerLayout(row);
 }
 
-void AsioSettingsDialog::duplicateSource(int row)
+void AudioChannelsDialog::duplicateSource(int row)
 {
 	if (row < 0 || row >= tableWidget->rowCount()) return;
 	if (tableWidget->rowCount() >= MAX_CHANNELS) {
@@ -765,20 +765,20 @@ void AsioSettingsDialog::duplicateSource(int row)
 			obs_module_text("AsioSettings.MaxSourcesReached"));
 		return;
 	}
-	
+
 	auto *item = tableWidget->item(row, 1);  // Name is in column 1
 	if (!item) return;
-	
+
 	QString baseName = item->text();
 	QString suggestedName = generateUniqueName(baseName + " Copy");
-	
+
 	// Copy source type and canvas from original
 	QString originalSourceType = item->data(kTIDS_SourceType).toString();
 	QString originalCanvas = item->data(kTIDS_Canvas).toString();
-	
+
 	// Create dialog pre-filled with original's properties
-	AsioSourceDialog dlg(AsioSourceDialog::DuplicateMode, this);
-	
+	AudioSourceDialog dlg(AudioSourceDialog::DuplicateMode, this);
+
 	AsioSourceConfig cfg;
 	cfg.name = suggestedName;
 	cfg.sourceType = originalSourceType;
@@ -786,17 +786,17 @@ void AsioSettingsDialog::duplicateSource(int row)
 	cfg.outputChannel = findNextAvailableChannel(originalCanvas);
 	dlg.setConfig(cfg);
 	dlg.setOpenProperties(false); // Don't open properties on duplicate
-	
+
 	if (dlg.exec() != QDialog::Accepted) {
 		return;
 	}
-	
+
 	// Capture whether to open properties
 	bool openProps = dlg.shouldOpenProperties();
-	
+
 	int newRow = tableWidget->rowCount();
 	tableWidget->insertRow(newRow);
-	
+
 	AsioSourceConfig newCfg;
 	newCfg.name = dlg.getName();
 	newCfg.sourceType = originalSourceType; // Keep original source type
@@ -804,59 +804,59 @@ void AsioSettingsDialog::duplicateSource(int row)
 	newCfg.outputChannel = dlg.getChannel();
 	newCfg.enabled = true;
 	newCfg.muted = dlg.shouldStartMuted();
-	
+
 	// Copy source settings and filters from original
 	newCfg.sourceSettings = item->data(kTIDS_SourceSettings).toJsonObject();
 	newCfg.sourceFilters = item->data(kTIDS_SourceFilters).toJsonArray();
-	
+
 	// Copy audio control settings from original
 	newCfg.volume = item->data(kTIDS_AudioVolume).toFloat();
 	newCfg.balance = item->data(kTIDS_AudioBalance).toFloat();
 	newCfg.monitoringType = item->data(kTIDS_AudioMonitoringType).toInt();
 	newCfg.forceMono = item->data(kTIDS_AudioForceMono).toBool();
 	newCfg.audioMixers = item->data(kTIDS_AudioMixers).toUInt();
-	
+
 	addRowWidgets(newRow, newCfg);
-	
+
 	saveToConfig();
 	updateRemoveButtonState();
 	updateAddButtonState();
-	
+
 	// Update active indicator after source may be created
 	updateActiveIndicator(newRow);
 	updateSpeakerLayout(newRow);
-	
+
 	// Open properties dialog if checkbox was checked
 	if (openProps) {
 		openSourceProperties(newRow);
 	}
 }
 
-void AsioSettingsDialog::deleteSource(int row)
+void AudioChannelsDialog::deleteSource(int row)
 {
 	if (row < 0 || row >= tableWidget->rowCount()) return;
-	
+
 	auto *item = tableWidget->item(row, 1);  // Name is in column 1
 	QString name = item ? item->text() : QString("Source");
-	
+
 	// Confirmation dialog
 	auto result = QMessageBox::question(this,
 		obs_module_text("AsioSettings.ConfirmDelete"),
 		QString(obs_module_text("AsioSettings.ConfirmDeleteMsg")).arg(name),
 		QMessageBox::Yes | QMessageBox::No,
 		QMessageBox::No);
-	
+
 	if (result != QMessageBox::Yes) {
 		return;
 	}
-	
+
 	tableWidget->removeRow(row);
 	saveToConfig(true);
 	updateRemoveButtonState();
 	updateAddButtonState();
 }
 
-void AsioSettingsDialog::removeSelectedSource()
+void AudioChannelsDialog::removeSelectedSource()
 {
 	auto selected = tableWidget->selectedItems();
 	if (!selected.isEmpty()) {
@@ -864,23 +864,23 @@ void AsioSettingsDialog::removeSelectedSource()
 	}
 }
 
-void AsioSettingsDialog::showContextMenu(const QPoint &pos)
+void AudioChannelsDialog::showContextMenu(const QPoint &pos)
 {
 	QModelIndex index = tableWidget->indexAt(pos);
 	if (!index.isValid()) return;
-	
+
 	int row = index.row();
-	
+
 	QMenu menu(this);
-	
+
 	QAction *editAction = menu.addAction(obs_module_text("AsioSettings.EditSource"));
 	QAction *duplicateAction = menu.addAction(obs_module_text("AsioSettings.Duplicate"));
 	menu.addSeparator();
 	QAction *deleteAction = menu.addAction(obs_module_text("AsioSettings.RemoveSource"));
 	deleteAction->setIcon(QIcon()); // No icon, but red text would be nice
-	
+
 	QAction *selected = menu.exec(tableWidget->viewport()->mapToGlobal(pos));
-	
+
 	if (selected == editAction) {
 		editSource(row);
 	} else if (selected == duplicateAction) {
@@ -890,21 +890,21 @@ void AsioSettingsDialog::showContextMenu(const QPoint &pos)
 	}
 }
 
-void AsioSettingsDialog::keyPressEvent(QKeyEvent *event)
+void AudioChannelsDialog::keyPressEvent(QKeyEvent *event)
 {
 	if (!tableWidget->hasFocus()) {
 		QDialog::keyPressEvent(event);
 		return;
 	}
-	
+
 	auto selected = tableWidget->selectedItems();
 	if (selected.isEmpty()) {
 		QDialog::keyPressEvent(event);
 		return;
 	}
-	
+
 	int row = selected.first()->row();
-	
+
 	if (event->key() == Qt::Key_Delete) {
 		deleteSource(row);
 	} else if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
@@ -916,38 +916,38 @@ void AsioSettingsDialog::keyPressEvent(QKeyEvent *event)
 	}
 }
 
-void AsioSettingsDialog::updateRowTooltip(int row)
+void AudioChannelsDialog::updateRowTooltip(int row)
 {
 	auto *item = tableWidget->item(row, 1);  // Name is in column 1
 	if (!item) return;
-	
+
 	int channel = item->data(kTIDS_OutputChannel).toInt();
 	QJsonArray filters = item->data(kTIDS_SourceFilters).toJsonArray();
 	QJsonObject settings = item->data(kTIDS_SourceSettings).toJsonObject();
-	
+
 	QString deviceName = settings.value("device_id").toString();
 	if (deviceName.isEmpty()) {
 		deviceName = "Not configured";
 	}
-	
+
 	QString tooltip = QString("Channel: %1 | Device: %2 | Filters: %3")
 		.arg(channel)
 		.arg(deviceName)
 		.arg(filters.size());
-	
+
 	item->setToolTip(tooltip);
 }
 
-void AsioSettingsDialog::updateActiveIndicator(int row)
+void AudioChannelsDialog::updateActiveIndicator(int row)
 {
 	if (row < 0 || row >= tableWidget->rowCount()) return;
-	
+
 	// Get name from item in column 1
 	auto *item = tableWidget->item(row, 1);  // Name is in column 1
 	if (!item) return;
-	
+
 	QString sourceUuid = item->data(kTIDS_SourceUuid).toString();
-	
+
 	// Find the active indicator label in column 0
 	if (auto *w = tableWidget->cellWidget(row, 0)) {
 		if (auto *lbl = w->findChild<QLabel *>()) {
@@ -965,16 +965,16 @@ void AsioSettingsDialog::updateActiveIndicator(int row)
 	}
 }
 
-void AsioSettingsDialog::updateSpeakerLayout(int row)
+void AudioChannelsDialog::updateSpeakerLayout(int row)
 {
 	if (row < 0 || row >= tableWidget->rowCount()) return;
-	
+
 	// Get name from item in column 1
 	auto *item = tableWidget->item(row, 1);  // Name is in column 1
 	if (!item) return;
-	
+
 	QString sourceUuid = item->data(kTIDS_SourceUuid).toString();
-	
+
 	// Find the speaker layout label in column 3
 	if (auto *w = tableWidget->cellWidget(row, 3)) {
 		if (auto *lbl = w->findChild<QLabel *>()) {
@@ -990,7 +990,7 @@ void AsioSettingsDialog::updateSpeakerLayout(int row)
 	}
 }
 
-void AsioSettingsDialog::updateSpeakerLayoutByUuid(const QString &sourceUuid)
+void AudioChannelsDialog::updateSpeakerLayoutByUuid(const QString &sourceUuid)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid]() {
@@ -1009,24 +1009,24 @@ void AsioSettingsDialog::updateSpeakerLayoutByUuid(const QString &sourceUuid)
 	}
 }
 
-void AsioSettingsDialog::updateSourceUuid(int configIndex, const QString &uuid)
+void AudioChannelsDialog::updateSourceUuid(int configIndex, const QString &uuid)
 {
 	if (configIndex < 0 || configIndex >= tableWidget->rowCount()) {
 		return;
 	}
-	
+
 	auto *item = tableWidget->item(configIndex, 1);  // Name is in column 1
 	if (item) {
 		item->setData(kTIDS_SourceUuid, uuid);
 	}
 }
 
-QString AsioSettingsDialog::generateUniqueName(const QString &baseName) const
+QString AudioChannelsDialog::generateUniqueName(const QString &baseName) const
 {
-	const auto &sources = AsioConfig::get()->getSources();
+	const auto &sources = AudioChSrcConfig::get()->getSources();
 	QString name = baseName;
 	int counter = 2;
-	
+
 	bool exists = true;
 	while (exists) {
 		exists = false;
@@ -1038,11 +1038,11 @@ QString AsioSettingsDialog::generateUniqueName(const QString &baseName) const
 			}
 		}
 	}
-	
+
 	return name;
 }
 
-void AsioSettingsDialog::openSourceProperties(int row)
+void AudioChannelsDialog::openSourceProperties(int row)
 {
 	if (row < 0 || row >= tableWidget->rowCount()) {
 		return;
@@ -1064,7 +1064,7 @@ void AsioSettingsDialog::openSourceProperties(int row)
 	obs_frontend_open_source_properties(source);
 
 	// After dialog closes, save the updated settings to config
-	auto &sources = AsioConfig::get()->getSources();
+	auto &sources = AudioChSrcConfig::get()->getSources();
 	if (row < sources.size()) {
 		AsioSourceConfig &cfg = sources[row];
 		obs_data_t *newSettings = obs_source_get_settings(source);
@@ -1075,13 +1075,13 @@ void AsioSettingsDialog::openSourceProperties(int row)
 				QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json), &error);
 				if (error.error == QJsonParseError::NoError && doc.isObject()) {
 					cfg.sourceSettings = doc.object();
-					
+
 					// Update the table item data too so it stays in sync if we save again
 					if (auto *item = tableWidget->item(row, 1)) {  // Name is in column 1
 						item->setData(kTIDS_SourceSettings, cfg.sourceSettings);
 					}
 
-					AsioConfig::get()->save();
+					AudioChSrcConfig::get()->save();
 					auto sourceName = item->text();
 					obs_log(LOG_INFO, "Saved source settings for '%s'", sourceName.toUtf8().constData());
 				}
@@ -1092,7 +1092,7 @@ void AsioSettingsDialog::openSourceProperties(int row)
 	obs_source_release(source);
 }
 
-void AsioSettingsDialog::openSourceFilters(int row)
+void AudioChannelsDialog::openSourceFilters(int row)
 {
 	if (row < 0 || row >= tableWidget->rowCount()) {
 		return;
@@ -1101,7 +1101,7 @@ void AsioSettingsDialog::openSourceFilters(int row)
 	// Get source name from table
 	auto *item = tableWidget->item(row, 1);  // Name is in column 1
 	if (!item) return;
-	
+
 	QString sourceName = item->text();
 	obs_source_t *source = obs_get_source_by_name(sourceName.toUtf8().constData());
 	if (!source) {
@@ -1115,12 +1115,12 @@ void AsioSettingsDialog::openSourceFilters(int row)
 	obs_source_release(source);
 }
 
-void AsioSettingsDialog::updateRemoveButtonState()
+void AudioChannelsDialog::updateRemoveButtonState()
 {
 	btnRemove->setEnabled(tableWidget->rowCount() > 0 && !tableWidget->selectedItems().isEmpty());
 }
 
-void AsioSettingsDialog::updateAddButtonState()
+void AudioChannelsDialog::updateAddButtonState()
 {
 	// Allow adding sources even when all channels are used (they'll cycle back)
 	bool canAdd = tableWidget->rowCount() < MAX_CHANNELS;
@@ -1133,7 +1133,7 @@ void AsioSettingsDialog::updateAddButtonState()
 	}
 }
 
-void AsioSettingsDialog::toggle_show_hide()
+void AudioChannelsDialog::toggle_show_hide()
 {
 	if (!isVisible()) {
 		show();
@@ -1144,13 +1144,13 @@ void AsioSettingsDialog::toggle_show_hide()
 	}
 }
 
-void AsioSettingsDialog::showEvent(QShowEvent *event)
+void AudioChannelsDialog::showEvent(QShowEvent *event)
 {
 	QDialog::showEvent(event);
 	loadFromConfig();
 }
 
-void AsioSettingsDialog::closeEvent(QCloseEvent *event)
+void AudioChannelsDialog::closeEvent(QCloseEvent *event)
 {
 	if (event->spontaneous()) {
 		// Window closed by user (X button) - just hide
@@ -1161,12 +1161,12 @@ void AsioSettingsDialog::closeEvent(QCloseEvent *event)
 	}
 }
 
-void AsioSettingsDialog::hideEvent(QHideEvent *event)
+void AudioChannelsDialog::hideEvent(QHideEvent *event)
 {
 	QDialog::hideEvent(event);
 }
 
-bool AsioSettingsDialog::eventFilter(QObject *obj, QEvent *event)
+bool AudioChannelsDialog::eventFilter(QObject *obj, QEvent *event)
 {
 	if (event->type() == QEvent::MouseButtonDblClick) {
 		if (auto *slider = qobject_cast<QSlider *>(obj)) {
@@ -1179,7 +1179,7 @@ bool AsioSettingsDialog::eventFilter(QObject *obj, QEvent *event)
 	return QDialog::eventFilter(obj, event);
 }
 
-void AsioSettingsDialog::updateSourceName(const QString &sourceUuid, const QString &name)
+void AudioChannelsDialog::updateSourceName(const QString &sourceUuid, const QString &name)
 {
 	// Called from OBS signal thread? ensure UI thread
 	if (QThread::currentThread() != this->thread()) {
@@ -1202,7 +1202,7 @@ void AsioSettingsDialog::updateSourceName(const QString &sourceUuid, const QStri
 	}
 }
 
-void AsioSettingsDialog::updateSourceNameByIndex(int configIndex, const QString &name)
+void AudioChannelsDialog::updateSourceNameByIndex(int configIndex, const QString &name)
 {
 	// Called from source creation - update by row index
 	if (QThread::currentThread() != this->thread()) {
@@ -1221,7 +1221,7 @@ void AsioSettingsDialog::updateSourceNameByIndex(int configIndex, const QString 
 	}
 }
 
-void AsioSettingsDialog::updateSourceMuted(const QString &sourceUuid, bool muted)
+void AudioChannelsDialog::updateSourceMuted(const QString &sourceUuid, bool muted)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, muted]() {
@@ -1246,7 +1246,7 @@ void AsioSettingsDialog::updateSourceMuted(const QString &sourceUuid, bool muted
 	}
 }
 
-void AsioSettingsDialog::updateSourceVolume(const QString &sourceUuid, float volume)
+void AudioChannelsDialog::updateSourceVolume(const QString &sourceUuid, float volume)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, volume]() {
@@ -1271,7 +1271,7 @@ void AsioSettingsDialog::updateSourceVolume(const QString &sourceUuid, float vol
 	}
 }
 
-void AsioSettingsDialog::updateSourceBalance(const QString &sourceUuid, float balance)
+void AudioChannelsDialog::updateSourceBalance(const QString &sourceUuid, float balance)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, balance]() {
@@ -1296,7 +1296,7 @@ void AsioSettingsDialog::updateSourceBalance(const QString &sourceUuid, float ba
 	}
 }
 
-void AsioSettingsDialog::updateSourceMonitoring(const QString &sourceUuid, int type)
+void AudioChannelsDialog::updateSourceMonitoring(const QString &sourceUuid, int type)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, type]() {
@@ -1321,7 +1321,7 @@ void AsioSettingsDialog::updateSourceMonitoring(const QString &sourceUuid, int t
 	}
 }
 
-void AsioSettingsDialog::updateSourceMono(const QString &sourceUuid, bool mono)
+void AudioChannelsDialog::updateSourceMono(const QString &sourceUuid, bool mono)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, mono]() {
@@ -1346,7 +1346,7 @@ void AsioSettingsDialog::updateSourceMono(const QString &sourceUuid, bool mono)
 	}
 }
 
-void AsioSettingsDialog::updateSourceAudioMixers(const QString &sourceUuid, uint32_t mixers)
+void AudioChannelsDialog::updateSourceAudioMixers(const QString &sourceUuid, uint32_t mixers)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, mixers]() {
@@ -1365,7 +1365,7 @@ void AsioSettingsDialog::updateSourceAudioMixers(const QString &sourceUuid, uint
 	}
 }
 
-void AsioSettingsDialog::updateSourceAudioActive(const QString &sourceUuid, bool active)
+void AudioChannelsDialog::updateSourceAudioActive(const QString &sourceUuid, bool active)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, active]() {
@@ -1390,7 +1390,7 @@ void AsioSettingsDialog::updateSourceAudioActive(const QString &sourceUuid, bool
 	}
 }
 
-void AsioSettingsDialog::updateSourceSettings(const QString &sourceUuid, const QJsonObject &settings)
+void AudioChannelsDialog::updateSourceSettings(const QString &sourceUuid, const QJsonObject &settings)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, settings]() {
@@ -1409,7 +1409,7 @@ void AsioSettingsDialog::updateSourceSettings(const QString &sourceUuid, const Q
 	}
 }
 
-void AsioSettingsDialog::updateSourceFilters(const QString &sourceUuid, const QJsonArray &filters)
+void AudioChannelsDialog::updateSourceFilters(const QString &sourceUuid, const QJsonArray &filters)
 {
 	if (QThread::currentThread() != this->thread()) {
 		QMetaObject::invokeMethod(this, [this, sourceUuid, filters]() {
