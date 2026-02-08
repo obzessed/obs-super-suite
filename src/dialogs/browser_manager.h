@@ -40,7 +40,7 @@ private slots:
 private:
 	void setupUi();
 	void refreshList();
-	void createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css, bool visible = false);
+	void createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css, const QString &backend, bool visible = false);
 	void deleteBrowserDock(const QString &id);
 
 	struct BrowserPreset {
@@ -55,7 +55,9 @@ private:
 		QString title;
 		QString url;
 		QString script;
+
 		QString css;
+		QString backend;
 	};
 
 	QList<BrowserDockEntry> docks;

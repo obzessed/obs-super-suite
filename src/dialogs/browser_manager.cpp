@@ -123,6 +123,10 @@ void BrowserManager::onAdd()
 	QPlainTextEdit *cssEdit = new QPlainTextEdit(&dlg);
 	cssEdit->setPlaceholderText("/* Custom CSS */");
 
+	QComboBox *backendCombo = new QComboBox(&dlg);
+	backendCombo->addItem("OBS Browser (CEF)", "obs-browser-cef");
+	backendCombo->setCurrentIndex(0);
+
 	QComboBox *presetCombo = new QComboBox(&dlg);
 	presetCombo->addItem("Select a Preset...", "");
 	if (presets.isEmpty()) initBuiltInPresets();
@@ -131,6 +135,7 @@ void BrowserManager::onAdd()
 	}
 
 	layout->addRow("Preset:", presetCombo);
+	layout->addRow("Backend:", backendCombo);
 	layout->addRow("Title:", titleEdit);
 	layout->addRow("URL:", urlEdit);
 	layout->addRow("Startup Script:", scriptEdit);
@@ -201,6 +206,7 @@ void BrowserManager::onAdd()
 		QString url = urlEdit->text().trimmed();
 		QString script = scriptEdit->toPlainText();
 		QString css = cssEdit->toPlainText();
+		QString backend = backendCombo->currentData().toString();
 		
 		QString id = QUuid::createUuid().toString().remove("{").remove("}");
 		
@@ -210,9 +216,10 @@ void BrowserManager::onAdd()
 		entry.url = url;
 		entry.script = script;
 		entry.css = css;
+		entry.backend = backend;
 		
 		docks.append(entry);
-		createBrowserDock(id, title, url, script, css, true);
+		createBrowserDock(id, title, url, script, css, backend, true);
 		refreshList();
 	}
 }
@@ -252,6 +259,13 @@ void BrowserManager::onEdit()
 	QPlainTextEdit *cssEdit = new QPlainTextEdit(&dlg);
 	cssEdit->setPlainText(entry.css);
 
+	QComboBox *backendCombo = new QComboBox(&dlg);
+	backendCombo->addItem("OBS Browser (CEF)", "obs-browser-cef");
+	int bIdx = backendCombo->findData(entry.backend);
+	if (bIdx != -1) backendCombo->setCurrentIndex(bIdx);
+	else backendCombo->setCurrentIndex(0);
+	backendCombo->setEnabled(false);
+
 	QComboBox *presetCombo = new QComboBox(&dlg);
 	presetCombo->addItem("Select a Preset...", "");
 	if (presets.isEmpty()) initBuiltInPresets();
@@ -260,6 +274,7 @@ void BrowserManager::onEdit()
 	}
 	
 	layout->addRow("Preset:", presetCombo);
+	layout->addRow("Backend:", backendCombo);
 	layout->addRow("Title:", titleEdit);
 	layout->addRow("URL:", urlEdit);
 	layout->addRow("Startup Script:", scriptEdit);
@@ -377,7 +392,7 @@ void BrowserManager::onEdit()
 			} else {
 				// Not found (maybe closed or not yet created), so create/recreate
 				deleteBrowserDock(entry.id);
-				createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, true);
+				createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, entry.backend, true);
 			}
 		}
 		
@@ -454,7 +469,7 @@ void BrowserManager::onVisibility()
 		// Not active/created => create and show
 		for (const auto &entry : docks) {
 			if (entry.id == id) {
-				createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, true);
+				createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, entry.backend, true);
 				break;
 			}
 		}
@@ -470,13 +485,13 @@ void BrowserManager::onSelectionChanged()
 	removeBtn->setEnabled(hasSel);
 }
 
-void BrowserManager::createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css, bool visible)
+void BrowserManager::createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css, const QString &backend, bool visible)
 {
 	// ID must be unique
 	QString dockId = "SuperSuite_BrowserDock_" + id;
 	
 	QMainWindow *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	BrowserDock *dock = new BrowserDock(*this, url.toUtf8().constData(), script.toUtf8().constData(), css.toUtf8().constData(), deferred_load, mainWin);
+	BrowserDock *dock = new BrowserDock(*this, url.toUtf8().constData(), script.toUtf8().constData(), css.toUtf8().constData(), backend.toUtf8().constData(), deferred_load, mainWin);
 	
 	obs_frontend_add_dock_by_id(dockId.toUtf8().constData(), title.toUtf8().constData(), dock);
 	
@@ -512,8 +527,9 @@ QJsonObject BrowserManager::saveToConfig()
 		obj["id"] = entry.id;
 		obj["title"] = entry.title;
 		obj["url"] = entry.url;
-		if (!entry.script.isEmpty()) obj["script"] = entry.script;
-		if (!entry.css.isEmpty()) obj["css"] = entry.css;
+		obj["script"] = entry.script;
+		obj["css"] = entry.css;
+		obj["backend"] = entry.backend;
 		arr.append(obj);
 	}
 	root["docks"] = arr;
@@ -538,9 +554,11 @@ void BrowserManager::loadFromConfig(const QJsonObject &data)
 			entry.url = obj["url"].toString();
 			entry.script = obj["script"].toString();
 			entry.css = obj["css"].toString();
+			entry.backend = obj["backend"].toString();
+			if (entry.backend.isEmpty()) entry.backend = "obs-browser-cef";
 			
 			docks.append(entry);
-			createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css);
+			createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, entry.backend);
 		}
 	}
 	refreshList();

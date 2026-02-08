@@ -18,11 +18,17 @@ static std::string get_injection_script(const QString &script, const QString &cs
 		dstr_cat(&s, css.toUtf8().constData());
 		dstr_cat(&s, "`;"
 			"document.head.appendChild(s);");
+	} else {
+		dstr_cat(&s,
+			"var s = document.getElementById('super-suite-custom-css');"
+			"if (s) s.remove();");
 	}
 
 	if (!script.isEmpty()) {
 		dstr_cat(&s, "\n");
 		dstr_cat(&s, script.toUtf8().constData());
+	} else {
+		dstr_cat(&s, "\n");
 	}
 
 	std::string result(s.array ? s.array : "");
@@ -47,11 +53,12 @@ bool BrowserDock::createBrowser()
 	return false;
 }
 
-BrowserDock::BrowserDock(BrowserManager& manager, const char *url, const char *script, const char *css, bool deferred_load, QWidget *parent) : QWidget(parent), manager_(manager)
+BrowserDock::BrowserDock(BrowserManager& manager, const char *url, const char *script, const char *css, const char *backend, bool deferred_load, QWidget *parent) : QWidget(parent), manager_(manager)
 {
 	url_ = url;
 	script_ = script;
 	css_ = css;
+	backend_ = backend;
 	deferred_ = deferred_load;
 
 	setMinimumSize(200, 100);
@@ -85,8 +92,6 @@ void BrowserDock::reload(const char *url, const char *script, const char *css)
 	cefWidget->setStartupScript(get_injection_script(script_, css_));
 
 	cefWidget->setURL(url_.toStdString());
-	
-	// cefWidget->reloadPage();
 }
 
 void BrowserDock::onOBSBrowserReady()
