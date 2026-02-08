@@ -73,11 +73,21 @@ void BrowserManager::setupUi()
 	
 	btnLayout->addWidget(addBtn);
 	btnLayout->addWidget(editBtn);
+	
+	reloadBtn = new QPushButton(obs_module_text("BrowserManager.Reload"), this);
+	visibilityBtn = new QPushButton(obs_module_text("BrowserManager.Visibility"), this);
+	if (reloadBtn->text().isEmpty()) reloadBtn->setText("Reload");
+	if (visibilityBtn->text().isEmpty()) visibilityBtn->setText("Show/Hide");
+	
+	btnLayout->addWidget(reloadBtn);
+	btnLayout->addWidget(visibilityBtn);
 	btnLayout->addWidget(removeBtn);
 	layout->addLayout(btnLayout);
 
 	connect(addBtn, &QPushButton::clicked, this, &BrowserManager::onAdd);
 	connect(editBtn, &QPushButton::clicked, this, &BrowserManager::onEdit);
+	connect(reloadBtn, &QPushButton::clicked, this, &BrowserManager::onReload);
+	connect(visibilityBtn, &QPushButton::clicked, this, &BrowserManager::onVisibility);
 	connect(removeBtn, &QPushButton::clicked, this, &BrowserManager::onRemove);
 	connect(dockList, &QListWidget::itemSelectionChanged, this, &BrowserManager::onSelectionChanged);
 	
@@ -202,7 +212,7 @@ void BrowserManager::onAdd()
 		entry.css = css;
 		
 		docks.append(entry);
-		createBrowserDock(id, title, url, script, css);
+		createBrowserDock(id, title, url, script, css, true);
 		refreshList();
 	}
 }
@@ -328,13 +338,13 @@ void BrowserManager::onEdit()
 		// but checking BrowserDock implementation (which I saw earlier in generic planning) might reveal setUrl.
 		// For now, let's destroy and recreate to be safe and simple.
 		
-		bool scriptChanged = (newScript != entry.script) || (newCss != entry.css);
+		bool scriptChanged = (newScript != entry.script) || (newCss != entry.css) || (newUrl != entry.url);
 		bool shouldRecreate = true;
 
 		if (scriptChanged) {
 			QMessageBox::StandardButton res = QMessageBox::question(this, 
 				obs_module_text("BrowserManager.ReloadQueryTitle") ? obs_module_text("BrowserManager.ReloadQueryTitle") : "Reload Required",
-				obs_module_text("BrowserManager.ReloadQueryText") ? obs_module_text("BrowserManager.ReloadQueryText") : "Startup script or CSS changed. Reload dock now to apply?",
+				obs_module_text("BrowserManager.ReloadQueryText") ? obs_module_text("BrowserManager.ReloadQueryText") : "Dock settings changed. Reload dock now to apply?",
 				QMessageBox::Yes | QMessageBox::No);
 			
 			if (res == QMessageBox::No) {
@@ -367,7 +377,7 @@ void BrowserManager::onEdit()
 			} else {
 				// Not found (maybe closed or not yet created), so create/recreate
 				deleteBrowserDock(entry.id);
-				createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css);
+				createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, true);
 			}
 		}
 		
@@ -395,14 +405,72 @@ void BrowserManager::onRemove()
 	}
 }
 
+void BrowserManager::onReload()
+{
+	auto items = dockList->selectedItems();
+	if (items.isEmpty()) return;
+	QString id = items.first()->data(Qt::UserRole).toString();
+	
+	if (activeDocks.contains(id) && activeDocks[id]) {
+		// Reload active dock
+		// We need to fetch current config just in case, but here we just reload current state?
+		// Better to look up the dock entry to get the "correct" url/script/css from config
+		// in case it drifted or was just edited but not reloaded?
+		// But onEdit updates active dock.
+		// So active dock state should be current.
+		// We'll just call reload with current internal state of dock?
+		// `reload()` without args uses existing URL/Script?
+		// No, `BrowserDock::reload` takes args.
+		// So we must fetch from `docks` list.
+		
+		for (const auto &entry : docks) {
+			if (entry.id == id) {
+				activeDocks[id]->reload(entry.url.toUtf8().constData(), entry.script.toUtf8().constData(), entry.css.toUtf8().constData());
+				break;
+			}
+		}
+	}
+}
+
+void BrowserManager::onVisibility()
+{
+	auto items = dockList->selectedItems();
+	if (items.isEmpty()) return;
+	QString id = items.first()->data(Qt::UserRole).toString();
+
+	if (activeDocks.contains(id) && activeDocks[id]) {
+		// Toggle visibility
+		BrowserDock *dock = activeDocks[id];
+		QWidget *parent = dock->parentWidget();
+		while (parent) {
+			if (QDockWidget *dw = qobject_cast<QDockWidget*>(parent)) {
+				dw->setVisible(!dw->isVisible());
+				if (dw->isVisible()) dw->raise();
+				break;
+			}
+			parent = parent->parentWidget();
+		}
+	} else {
+		// Not active/created => create and show
+		for (const auto &entry : docks) {
+			if (entry.id == id) {
+				createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, true);
+				break;
+			}
+		}
+	}
+}
+
 void BrowserManager::onSelectionChanged()
 {
 	bool hasSel = !dockList->selectedItems().isEmpty();
 	editBtn->setEnabled(hasSel);
+	reloadBtn->setEnabled(hasSel);
+	visibilityBtn->setEnabled(hasSel);
 	removeBtn->setEnabled(hasSel);
 }
 
-void BrowserManager::createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css)
+void BrowserManager::createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css, bool visible)
 {
 	// ID must be unique
 	QString dockId = "SuperSuite_BrowserDock_" + id;
@@ -413,6 +481,19 @@ void BrowserManager::createBrowserDock(const QString &id, const QString &title, 
 	obs_frontend_add_dock_by_id(dockId.toUtf8().constData(), title.toUtf8().constData(), dock);
 	
 	activeDocks[id] = dock;
+
+	if (visible) {
+		// Find the QDockWidget parent and show it
+		QWidget *parent = dock->parentWidget();
+		while (parent) {
+			if (QDockWidget *dw = qobject_cast<QDockWidget*>(parent)) {
+				dw->setVisible(true);
+				dw->raise();
+				break;
+			}
+			parent = parent->parentWidget();
+		}
+	}
 }
 
 void BrowserManager::deleteBrowserDock(const QString &id)

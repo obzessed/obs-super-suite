@@ -7,7 +7,7 @@
 #include <QJsonObject>
 #include <QPointer>
 
-#include "../docks/browser-panel.hpp"
+#include "../utils/browser-panel.hpp"
 
 class BrowserDock;
 
@@ -33,12 +33,14 @@ private slots:
 	void onAdd();
 	void onEdit();
 	void onRemove();
+	void onReload();
+	void onVisibility();
 	void onSelectionChanged();
 
 private:
 	void setupUi();
 	void refreshList();
-	void createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css);
+	void createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css, bool visible = false);
 	void deleteBrowserDock(const QString &id);
 
 	struct BrowserPreset {
@@ -67,6 +69,8 @@ private:
 	QListWidget *dockList;
 	QPushButton *addBtn;
 	QPushButton *editBtn;
+	QPushButton *reloadBtn;
+	QPushButton *visibilityBtn;
 	QPushButton *removeBtn;
 
 	bool deferred_load;

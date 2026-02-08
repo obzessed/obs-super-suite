@@ -1,8 +1,8 @@
 #pragma once
 
 #include <obs-frontend-api.h>
-#include "../docks/browser-dock.hpp"
 #include "plugin-support.h"
+#include "browser-panel.hpp"
 
 static QCef *x_cef_ = nullptr;
 static QCefCookieManager *x_cef_ck_mgr = nullptr;
@@ -12,20 +12,9 @@ typedef QCef* (create_qcef_ft)();
 static std::pair<QCef*, QCefCookieManager*> get_cef_instance()
 {
 	if (!x_cef_) {
-		if (obs_module_t *browserModule = obs_get_module("obs-browser")) {
-			const auto create_qcef = reinterpret_cast<create_qcef_ft*>(
-				os_dlsym(obs_get_module_lib(browserModule), "obs_browser_create_qcef")
-			);
-			if (create_qcef) {
-				x_cef_ = create_qcef();
-				if (!x_cef_) {
-					obs_log(LOG_ERROR, "error creating cef instance.");
-				}
-			} else {
-				obs_log(LOG_DEBUG, "obs_browser_create_qcef proc in obs-browser module is not found");
-			}
-		} else {
-			obs_log(LOG_DEBUG, "obs-browser module is not found");
+		x_cef_ = obs_browser_init_panel();
+		if (!x_cef_) {
+			obs_log(LOG_ERROR, "error creating cef instance.");
 		}
 	}
 

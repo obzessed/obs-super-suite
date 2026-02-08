@@ -80,13 +80,13 @@ void BrowserDock::reload(const char *url, const char *script, const char *css)
 	url_ = url;
 	script_ = script;
 	css_ = css;
-
-	cefWidget->setURL(url_.toStdString());
 	
 	// Always update startup script with latest combination of script and CSS
 	cefWidget->setStartupScript(get_injection_script(script_, css_));
+
+	cefWidget->setURL(url_.toStdString());
 	
-	cefWidget->reloadPage();
+	// cefWidget->reloadPage();
 }
 
 void BrowserDock::onOBSBrowserReady()

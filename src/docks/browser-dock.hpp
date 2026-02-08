@@ -1,6 +1,5 @@
 #pragma once
 
-#include "browser-panel.hpp"
 #include "../dialogs/browser_manager.h"
 
 #include <QWidget>
