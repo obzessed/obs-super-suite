@@ -2,6 +2,20 @@
   - Super Suite?
   - Power Suite?
   - Ultra Suite?
+- Refs
+  - https://github.com/featherbear/obs-vix
+  - https://blog.featherbear.cc/post/obs-toolkit/
+  - https://github.com/featherbear/obs-mv-stat
+  - https://github.com/featherbear/NDI-Telestrator
+  - https://github.com/Vhonowslend/StreamFX-Public
+  - https://git.vrsal.cc/alex/iros
+  - https://git.vrsal.cc/alex/obs-mdk
+  - https://git.vrsal.cc/alex/bitrate-dock
+  - https://git.vrsal.cc/alex/gpu-dock
+  - https://git.vrsal.cc/alex/muted-notification
+  - https://git.vrsal.cc/alex/bitrate-notify
+  - https://git.vrsal.cc/alex/silent-notify
+  - https://git.vrsal.cc/alex/obs-detect (can be used alt to obs-face-tracker)
 - [ ] Bugs
   - ???
 - [ ] Audio Inputs
@@ -16,6 +30,11 @@
 - [ ] Browser Dock using Webview Runtime.
 - [ ] Advanced MultiView.
   - https://obsproject.com/forum/resources/durchblick.1484/
+  - https://git.vrsal.cc/alex/Durchblick
+  - https://github.com/univrsal/durchblick
+  - https://git.vrsal.cc/alex/widget-test (durchblick custom widget)
+- [ ] Visual Scenes and Sources Docks.
+  - Prism Live Style. (use obs-source-dock for ref)
 - [ ] Interactive Audio Mixer.
 - [ ] Matrix Audio Router.
 - [ ] Master Fader.
@@ -24,6 +43,13 @@
   - [ ] '???'
 - [ ] Audio Source types.
   - [ ] '???'
+- Docks
+  - [ ] Advanced Dock Manager.
+  - [ ] Custom Browser Docks using a custom obs-browser plugin which has cef as well as webview2 runtime powered webviews.
+  - [ ] Live Scenes dock (to switch in studio mode just like non-studio mode)
+- [ ] NDI
+  - [ ] Source Capture for NDI.
+  - [ ] Multi Canvas.
 - [ ] Channel Override detection
   - [ ] 'channel_change' signal on canvas
   - Other plugin might overwrite on channels.

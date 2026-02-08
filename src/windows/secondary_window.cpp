@@ -20,6 +20,7 @@ SecondaryWindow::SecondaryWindow(int index, QWidget *parent)
 {
 	setWindowTitle(QString(obs_module_text("SecondaryWindow.Title")) + " " + QString::number(index + 1));
 	setObjectName(QString("SuperSuiteSecondaryWindow%1").arg(index + 1));
+	setWindowFlags(Qt::Window);
 	resize(1280, 720);
 	
 	// Enable docking features
@@ -73,6 +74,20 @@ void SecondaryWindow::checkCentralWidgetVisibility()
 void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 {
 	QMenu menu(this);
+
+	// Fullscreen toggle
+	QAction *fullscreenAction = menu.addAction("Fullscreen");
+	fullscreenAction->setCheckable(true);
+	fullscreenAction->setChecked(isFullScreen());
+	connect(fullscreenAction, &QAction::triggered, [this](bool checked) {
+		if (checked) {
+			showFullScreen();
+		} else {
+			showNormal();
+		}
+	});
+
+	menu.addSeparator();
 	
 	// Add "Import Dock" submenu
 	QMenu *importMenu = menu.addMenu("Import Dock");
@@ -87,10 +102,16 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 		QMap<QWidget *, QList<QDockWidget *>> docksByWindow;
 		
 		for (QDockWidget *dock : allDocks) {
-			if (dock->isFloating() || !dock->isVisible()) continue;
+			if (!dock->isVisible()) continue;
 			
 			// We want to group by the WINDOW the dock is currently in
 			QWidget *topLevel = dock->window();
+			
+			// If floating, use its parent (which should be the main/secondary window)
+			if (dock->isFloating() && dock->parentWidget()) {
+				topLevel = dock->parentWidget()->window();
+			}
+
 			docksByWindow[topLevel].append(dock);
 		}
 
@@ -101,11 +122,16 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 			QList<QDockWidget *> docks = docksByWindow[window];
 			if (docks.isEmpty()) return;
 
-			importMenu->addSection(headerTitle);
+			QMenu *windowMenu = importMenu->addMenu(headerTitle);
 
 			for (QDockWidget *dock : docks) {
 				QString title = dock->windowTitle().isEmpty() ? dock->objectName() : dock->windowTitle();
-				QAction *action = importMenu->addAction(title);
+				
+				if (dock->isFloating()) {
+					title += " (undocked)";
+				}
+				
+				QAction *action = windowMenu->addAction(title);
 				
 				bool alreadyHere = (dock->window() == this);
 				
@@ -144,6 +170,65 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 		importMenu->addSeparator();
 		importMenu->addAction("Hint: Enable docks in View -> Docks")->setEnabled(false);
 		importMenu->addAction("      and ensure they are docked in main window.")->setEnabled(false);
+	}
+
+	menu.addSeparator();
+
+	// Add "Send Dock to..." submenu
+	QMenu *sendMenu = menu.addMenu("Send Dock to Window");
+	
+	// Find docks belonging to THIS window
+	QList<QDockWidget *> myDocks;
+	for (QDockWidget *dock : findChildren<QDockWidget *>()) {
+		if (dock->isVisible()) {
+			myDocks.append(dock);
+		}
+	}
+
+	if (myDocks.isEmpty()) {
+		sendMenu->addAction("No docks in this window")->setEnabled(false);
+	} else {
+		// Find potential targets
+		QList<QMainWindow *> targets;
+		targets.append(mainWindow); // Main Window
+
+		// Find other SecondaryWindows
+		if (mainWindow) {
+			QList<SecondaryWindow *> secWindows = mainWindow->findChildren<SecondaryWindow *>();
+			for (SecondaryWindow *sec : secWindows) {
+				if (sec != this && sec->isVisible()) {
+					targets.append(sec);
+				}
+			}
+		}
+
+		for (QDockWidget *dock : myDocks) {
+			QString localTitle = dock->windowTitle().isEmpty() ? dock->objectName() : dock->windowTitle();
+			if (dock->isFloating()) {
+				localTitle += " (undocked)";
+			}
+			QMenu *dockSubMenu = sendMenu->addMenu(localTitle);
+
+			for (QMainWindow *target : targets) {
+				QString targetName = (target == mainWindow) ? "Main OBS Window" : target->windowTitle();
+				
+				connect(dockSubMenu->addAction(targetName), &QAction::triggered, [this, dock, target]() {
+					// Check if target is another SecondaryWindow
+					if (auto *secTarget = qobject_cast<SecondaryWindow*>(target)) {
+						secTarget->reparentDock(dock);
+					} else {
+						// Fallback for Main Window or others
+						dock->setParent(target);
+						target->addDockWidget(Qt::RightDockWidgetArea, dock);
+						dock->setFloating(false);
+						dock->show();
+					}
+					
+					// Check our own visibility after moving dock out
+					checkCentralWidgetVisibility();
+				});
+			}
+		}
 	}
 
 	menu.exec(event->globalPos());

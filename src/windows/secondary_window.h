@@ -7,6 +7,7 @@
 #include <QEvent>
 #include <QLabel>
 #include <QCloseEvent>
+#include <QDockWidget> // Added this include for QDockWidget
 
 class SecondaryWindow : public QMainWindow {
 	Q_OBJECT
@@ -14,6 +15,8 @@ class SecondaryWindow : public QMainWindow {
 public:
 	explicit SecondaryWindow(int index, QWidget *parent = nullptr);
 	~SecondaryWindow() override;
+	
+	void reparentDock(QDockWidget *dock);
 
 protected:
 	void contextMenuEvent(QContextMenuEvent *event) override;
@@ -21,7 +24,6 @@ protected:
 
 private:
 	void setupUi();
-	void reparentDock(QDockWidget *dock);
 	void checkCentralWidgetVisibility();
 	
 	QLabel *instructionLabel = nullptr;
