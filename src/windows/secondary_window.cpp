@@ -20,7 +20,6 @@ SecondaryWindow::SecondaryWindow(int index, QWidget *parent)
 {
 	setWindowTitle(QString(obs_module_text("SecondaryWindow.Title")) + " " + QString::number(index + 1));
 	setObjectName(QString("SuperSuiteSecondaryWindow%1").arg(index + 1));
-	setWindowFlags(Qt::Window);
 	resize(1280, 720);
 	
 	// Enable docking features
@@ -74,6 +73,21 @@ void SecondaryWindow::checkCentralWidgetVisibility()
 void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 {
 	QMenu menu(this);
+
+	// Stay on Top toggle
+	QAction *stayOnTopAction = menu.addAction("Stay on Top");
+	stayOnTopAction->setCheckable(true);
+	stayOnTopAction->setChecked(windowFlags() & Qt::WindowStaysOnTopHint);
+	connect(stayOnTopAction, &QAction::triggered, [this](bool checked) {
+		Qt::WindowFlags flags = windowFlags();
+		if (checked) {
+			flags |= Qt::WindowStaysOnTopHint;
+		} else {
+			flags &= ~Qt::WindowStaysOnTopHint;
+		}
+		setWindowFlags(flags);
+		show();
+	});
 
 	// Fullscreen toggle
 	QAction *fullscreenAction = menu.addAction("Fullscreen");

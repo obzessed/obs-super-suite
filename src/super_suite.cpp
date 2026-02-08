@@ -13,7 +13,7 @@
 #include "dialogs/channels_viewer.h"
 #include "dialogs/outputs_viewer.h"
 #include "dialogs/encoders_viewer.h"
-#include "windows/secondary_window.h"
+#include "windows/dock_window_manager.h"
 #include "docks/mixer_dock.h"
 #include "docks/wrapper_test_dock.h"
 #include "dialogs/canvas_manager.h"
@@ -57,7 +57,7 @@ static QPointer<AudioChannelsDialog> settings_dialog;
 static QPointer<ChannelsDialog> channels_view;
 static QPointer<OutputsViewer> outputs_viewer;
 static QPointer<EncodersViewer> encoders_viewer;
-static QPointer<SecondaryWindow> secondary_windows[3];
+static QPointer<DockWindowManager> dock_window_manager;
 static QPointer<MixerDock> mixer_dock;
 static QPointer<WrapperTestDock> wrapper_test_dock;
 static QPointer<CanvasManager> canvas_manager;
@@ -916,18 +916,17 @@ static void show_encoders_viewer(void* data)
 	encoders_viewer->activateWindow();
 }
 
-static void show_secondary_window(void* data)
+static void show_dock_window_manager(void* data)
 {
-	int index = (int)(intptr_t)data;
-	if (index < 0 || index >= 3) return;
-
-	if (!secondary_windows[index]) {
+	UNUSED_PARAMETER(data);
+	
+	if (!dock_window_manager) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		secondary_windows[index] = new SecondaryWindow(index, mainWindow);
+		dock_window_manager = new DockWindowManager(mainWindow);
 	}
-	secondary_windows[index]->show();
-	secondary_windows[index]->raise();
-	secondary_windows[index]->activateWindow();
+	dock_window_manager->show();
+	dock_window_manager->raise();
+	dock_window_manager->activateWindow();
 }
 
 #ifdef __cplusplus
@@ -979,21 +978,11 @@ void on_plugin_loaded()
 		nullptr
 	);
 
-	// Add Secondary Window menu items
+	// Add Dock Window Manager menu item
 	obs_frontend_add_tools_menu_item(
-		"Secondary Dock Window 1",
-		show_secondary_window,
-		(void*)(intptr_t)0
-	);
-	obs_frontend_add_tools_menu_item(
-		"Secondary Dock Window 2",
-		show_secondary_window,
-		(void*)(intptr_t)1
-	);
-	obs_frontend_add_tools_menu_item(
-		"Secondary Dock Window 3",
-		show_secondary_window,
-		(void*)(intptr_t)2
+		obs_module_text("DockWindowManager.Title"),
+		show_dock_window_manager,
+		nullptr
 	);
 	
 	// Create and register docks

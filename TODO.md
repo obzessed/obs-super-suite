@@ -16,6 +16,7 @@
   - https://git.vrsal.cc/alex/bitrate-notify
   - https://git.vrsal.cc/alex/silent-notify
   - https://git.vrsal.cc/alex/obs-detect (can be used alt to obs-face-tracker)
+  - https://github.com/OPENSPHERE-Inc/branch-output
 - [ ] Bugs
   - ???
 - [ ] Audio Inputs
