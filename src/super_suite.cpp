@@ -835,12 +835,43 @@ void refreshAsioSources()
 	createSources();
 }
 
+static void save_callback(obs_data_t *save_data, bool saving, void *)
+{
+	if (saving) {
+		if (dock_window_manager) {
+			QJsonObject data = dock_window_manager->saveToConfig();
+			QJsonDocument doc(data);
+			QString jsonStr = doc.toJson(QJsonDocument::Compact);
+			obs_data_set_string(save_data, "DockWindowManager", jsonStr.toUtf8().constData());
+		}
+	} else {
+		// Loading
+		const char *jsonStr = obs_data_get_string(save_data, "DockWindowManager");
+		if (jsonStr && *jsonStr) {
+			if (!dock_window_manager) {
+				auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+				dock_window_manager = new DockWindowManager(mainWindow);
+			}
+			
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(jsonStr));
+			if (!doc.isNull() && doc.isObject()) {
+				dock_window_manager->loadFromConfig(doc.object());
+			}
+		}
+	}
+}
+
 void on_obs_evt(obs_frontend_event event, void *data)
 {
 	UNUSED_PARAMETER(data);
 
 	switch (event) {
 	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
+		// save_callback with saving=false is called by OBS frontend automatically 
+		// during profile load, which happens before or around FINISHED_LOADING.
+		// So we don't need manual load here if save_callback works as expected.
+		createSources();
+		break;
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
 		createSources();
 		break;
@@ -984,6 +1015,15 @@ void on_plugin_loaded()
 		show_dock_window_manager,
 		nullptr
 	);
+	
+	obs_frontend_add_save_callback(save_callback, nullptr);
+
+	// Try to load initial state
+	// Note: obs_frontend_add_save_callback is called for save, but for load we need to
+	// explicitly ask for data or wait for a specific event?
+	// standard practice: use a separate config file or use the passed save_data?
+	// Actually, the save_callback is called with saving=false when loading?
+	// Documentation says: "Functions assigned with this are called when saving/loading... "
 	
 	// Create and register docks
 	auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());

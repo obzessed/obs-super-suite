@@ -4,7 +4,12 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QLabel>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
+#include <QByteArray>
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 
 DockWindowManager::DockWindowManager(QWidget *parent)
 	: QDialog(parent)
@@ -191,5 +196,118 @@ void DockWindowManager::onWindowDestroyed(QObject *obj)
 			break;
 		}
 	}
+	refreshWindowList();
+}
+
+QJsonObject DockWindowManager::saveToConfig()
+{
+	QJsonObject root;
+	QJsonArray windowsArray;
+
+	for (SecondaryWindow *win : managedWindows) {
+		if (!win) continue;
+		
+		QJsonObject winObj;
+		winObj["title"] = win->windowTitle();
+		winObj["objectName"] = win->objectName();
+		winObj["geometry"] = QString(win->saveGeometry().toBase64());
+		winObj["state"] = QString(win->saveState().toBase64());
+		winObj["fullscreen"] = win->isFullScreen();
+		winObj["stayOnTop"] = (bool)(win->windowFlags() & Qt::WindowStaysOnTopHint);
+		
+		// Save dock list to reclaim them later
+		QJsonArray ownedDocks;
+		QList<QDockWidget *> docks = win->findChildren<QDockWidget *>();
+		for (QDockWidget *dock : docks) {
+			if (dock->isVisible() && !dock->isFloating()) {
+				if (!dock->objectName().isEmpty()) {
+					ownedDocks.append(dock->objectName());
+				}
+			}
+		}
+		winObj["ownedDocks"] = ownedDocks;
+
+		windowsArray.append(winObj);
+	}
+	
+	root["windows"] = windowsArray;
+	root["nextId"] = nextId;
+	
+	return root;
+}
+
+void DockWindowManager::loadFromConfig(const QJsonObject &data)
+{
+	if (data.contains("nextId")) {
+		nextId = data["nextId"].toInt();
+	}
+
+	if (data.contains("windows")) {
+		QJsonArray windowsArray = data["windows"].toArray();
+		
+		QMainWindow *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		
+		// Find all Main Docks to potentially reclaim
+		QList<QDockWidget *> allMainDocks = mainWindow->findChildren<QDockWidget *>();
+		QMap<QString, QDockWidget*> dockMap;
+		for (auto *dock : allMainDocks) {
+			if (!dock->objectName().isEmpty()) {
+				dockMap[dock->objectName()] = dock;
+			}
+		}
+
+		for (const QJsonValue &val : windowsArray) {
+			QJsonObject winObj = val.toObject();
+			
+			// Recreate window (nullptr parent for taskbar)
+			SecondaryWindow *win = new SecondaryWindow(0, nullptr);
+			
+			if (winObj.contains("objectName")) {
+				win->setObjectName(winObj["objectName"].toString());
+			}
+			if (winObj.contains("title")) {
+				win->setWindowTitle(winObj["title"].toString());
+			}
+			
+			// Restore geometry/state
+			// We restore geometry first to set size
+			if (winObj.contains("geometry")) {
+				win->restoreGeometry(QByteArray::fromBase64(winObj["geometry"].toString().toUtf8()));
+			}
+			
+			// Restore docks
+			// We must reparent them BEFORE restoring state, otherwise state restore won't know about them
+			if (winObj.contains("ownedDocks")) {
+				QJsonArray dockNames = winObj["ownedDocks"].toArray();
+				for (const QJsonValue &dockVal : dockNames) {
+					QString name = dockVal.toString();
+					if (dockMap.contains(name)) {
+						win->reparentDock(dockMap[name]);
+					}
+				}
+			}
+			
+			// Restore state (dock positions)
+			if (winObj.contains("state")) {
+				win->restoreState(QByteArray::fromBase64(winObj["state"].toString().toUtf8()));
+			}
+			
+			// Restore flags
+			bool stayOnTop = winObj["stayOnTop"].toBool(false);
+			if (stayOnTop) {
+				win->setWindowFlags(win->windowFlags() | Qt::WindowStaysOnTopHint);
+			}
+			
+			if (winObj["fullscreen"].toBool(false)) {
+				win->showFullScreen();
+			} else {
+				win->show();
+			}
+			
+			connect(win, &QObject::destroyed, this, &DockWindowManager::onWindowDestroyed);
+			managedWindows.append(win);
+		}
+	}
+	
 	refreshWindowList();
 }

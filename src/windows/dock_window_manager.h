@@ -5,6 +5,7 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QPointer>
+#include <QJsonObject>
 #include "secondary_window.h"
 
 class DockWindowManager : public QDialog {
@@ -18,6 +19,10 @@ public:
 	
 public slots:
 	void refreshWindowList();
+
+	// Persistence methods
+	QJsonObject saveToConfig();
+	void loadFromConfig(const QJsonObject &data);
 
 private:
 	void setupUi();

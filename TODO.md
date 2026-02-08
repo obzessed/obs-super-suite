@@ -15,8 +15,18 @@
   - https://git.vrsal.cc/alex/muted-notification
   - https://git.vrsal.cc/alex/bitrate-notify
   - https://git.vrsal.cc/alex/silent-notify
+  - https://github.com/univrsal/obs-mpv
+  - https://github.com/univrsal/libgamepad
+  - https://github.com/univrsal/detect-filter
+  - https://github.com/univrsal/downstream-watermark
+  - https://github.com/univrsal/music-detect
+  - https://github.com/univrsal/scrab
+  - https://github.com/univrsal/winhide
+  - https://github.com/royshil/obs-detect
   - https://git.vrsal.cc/alex/obs-detect (can be used alt to obs-face-tracker)
   - https://github.com/OPENSPHERE-Inc/branch-output
+  - https://github.com/norihiro/obs-async-source-duplication
+- https://www.shadertastic.com/
 - [ ] Bugs
   - ???
 - [ ] Audio Inputs
