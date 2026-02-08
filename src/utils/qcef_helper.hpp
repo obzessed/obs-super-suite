@@ -1,0 +1,64 @@
+#pragma once
+
+#include <obs-frontend-api.h>
+#include "../docks/browser-dock.hpp"
+#include "plugin-support.h"
+
+static QCef *x_cef_ = nullptr;
+static QCefCookieManager *x_cef_ck_mgr = nullptr;
+
+typedef QCef* (create_qcef_ft)();
+
+static std::pair<QCef*, QCefCookieManager*> get_cef_instance()
+{
+	if (!x_cef_) {
+		if (obs_module_t *browserModule = obs_get_module("obs-browser")) {
+			const auto create_qcef = reinterpret_cast<create_qcef_ft*>(
+				os_dlsym(obs_get_module_lib(browserModule), "obs_browser_create_qcef")
+			);
+			if (create_qcef) {
+				x_cef_ = create_qcef();
+				if (!x_cef_) {
+					obs_log(LOG_ERROR, "error creating cef instance.");
+				}
+			} else {
+				obs_log(LOG_DEBUG, "obs_browser_create_qcef proc in obs-browser module is not found");
+			}
+		} else {
+			obs_log(LOG_DEBUG, "obs-browser module is not found");
+		}
+	}
+
+	// Note: must be after: OBS_FRONTEND_EVENT_FINISHED_LOADING
+	if (!x_cef_ck_mgr && x_cef_) {
+		// created by obs-browser on obs_browser_create_qcef ?
+		if (const char *cookie_id = config_get_string(obs_frontend_get_profile_config(), "Panels", "CookieId");
+		    cookie_id && cookie_id[0] != '\0') {
+			std::string sub_path;
+			sub_path += "obs_profile_cookies-2/";
+			sub_path += cookie_id;
+			x_cef_ck_mgr = x_cef_->create_cookie_manager(sub_path);
+			if (!x_cef_ck_mgr) {
+				obs_log(LOG_ERROR, "error loading cookie manager.");
+			}
+		    }  else {
+		    	obs_log(LOG_DEBUG, "ignoring loading of cookie manager.");
+		    }
+	}
+
+	return {x_cef_, x_cef_ck_mgr};
+}
+
+static void cleanup_cef()
+{
+	if (x_cef_ck_mgr) {
+		x_cef_ck_mgr->FlushStore();
+		delete x_cef_ck_mgr;
+		x_cef_ck_mgr = nullptr;
+	}
+
+	if (x_cef_) {
+		delete x_cef_;
+		x_cef_ = nullptr;
+	}
+}

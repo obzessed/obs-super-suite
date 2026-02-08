@@ -17,6 +17,10 @@ CPMAddPackage(
   URI "gh:nlohmann/json@3.12.0"
   OPTIONS "JSON_BuildTests OFF"
 )
+#CPMAddPackage(
+#  URI "gh:CefView/QCefView#v2025.12.28"
+#  OPTIONS "BUILD_STATIC ON;STATIC_CRT ON"
+#)
 
 # Define NOMINMAX on Windows to prevent min/max macro conflicts
 if(WIN32)
@@ -38,6 +42,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
   #  fmt::fmt
   nlohmann_json::nlohmann_json
+#  QCefView
 )
 
 if(ENABLE_FRONTEND_API)

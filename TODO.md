@@ -3,6 +3,10 @@
   - Power Suite?
   - Ultra Suite?
 - Refs
+  - https://manyatechnologies.com/integrate-webview2-in-qt-cpp/
+  - https://github.com/winsoft666/QWebView
+  - https://github.com/Zaarrg/stremio-community-v5/blob/webview-windows/src/webview/webview.cpp
+  - https://cefview.github.io/QCefView/
   - https://github.com/featherbear/obs-vix
   - https://blog.featherbear.cc/post/obs-toolkit/
   - https://github.com/featherbear/obs-mv-stat

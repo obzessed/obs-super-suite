@@ -4,6 +4,8 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QSlider>
+#include <QLabel>
 #include <QPointer>
 #include <QJsonObject>
 #include "secondary_window.h"
@@ -13,16 +15,26 @@ class DockWindowManager : public QDialog {
 
 public:
 	explicit DockWindowManager(QWidget *parent = nullptr);
-	~DockWindowManager();
+	~DockWindowManager() override;
 
 	// Global instance accessor if needed, or just managed by main plugin
 	
 public slots:
 	void refreshWindowList();
+	void onOpacityChanged(int value);
 
 	// Persistence methods
 	QJsonObject saveToConfig();
 	void loadFromConfig(const QJsonObject &data);
+
+	// Snapshot methods
+	void saveSnapshot(const QString &name, const QJsonObject &data);
+	void deleteSnapshot(const QString &name);
+	QStringList getSnapshotNames() const;
+	
+	// Prompts user if conflicts are detected.
+	// Returns true if restore was successful or cancelled (handled internally).
+	bool requestRestoreSnapshot(const QString &name, SecondaryWindow *target);
 
 private:
 	void setupUi();
@@ -39,8 +51,13 @@ private:
 	QPushButton *removeBtn;
 	QPushButton *showHideBtn;
 
+	QSlider *opacitySlider;
+	QLabel *opacityLabel;
+
 	// We need to track our windows.
 	// We can't rely solely on QObject parentage if we want to manage them specifically.
 	QList<SecondaryWindow*> managedWindows;
 	int nextId = 0;
+	
+	QMap<QString, QJsonObject> snapshots;
 };

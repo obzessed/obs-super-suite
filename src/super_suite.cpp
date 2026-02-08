@@ -17,6 +17,7 @@
 #include "docks/mixer_dock.h"
 #include "docks/wrapper_test_dock.h"
 #include "dialogs/canvas_manager.h"
+#include "dialogs/browser_manager.h"
 
 #include <vector>
 #include <utility>
@@ -61,6 +62,7 @@ static QPointer<DockWindowManager> dock_window_manager;
 static QPointer<MixerDock> mixer_dock;
 static QPointer<WrapperTestDock> wrapper_test_dock;
 static QPointer<CanvasManager> canvas_manager;
+static QPointer<BrowserManager> browser_manager;
 
 // Guard flag to prevent signal handlers from modifying config during createSources()
 static bool creating_sources = false;
@@ -844,20 +846,63 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 			QString jsonStr = doc.toJson(QJsonDocument::Compact);
 			obs_data_set_string(save_data, "DockWindowManager", jsonStr.toUtf8().constData());
 		}
+
+		if (browser_manager) {
+			QJsonObject data = browser_manager->saveToConfig();
+			QJsonDocument doc(data);
+			QString jsonStr = doc.toJson(QJsonDocument::Compact);
+			obs_data_set_string(save_data, "BrowserManager", jsonStr.toUtf8().constData());
+		}
 	} else {
 		// Loading
-		const char *jsonStr = obs_data_get_string(save_data, "DockWindowManager");
-		if (jsonStr && *jsonStr) {
+		const char *dockWindowJsonStr = obs_data_get_string(save_data, "DockWindowManager");
+		if (dockWindowJsonStr && *dockWindowJsonStr) {
 			if (!dock_window_manager) {
 				auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 				dock_window_manager = new DockWindowManager(mainWindow);
 			}
 			
-			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(jsonStr));
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(dockWindowJsonStr));
 			if (!doc.isNull() && doc.isObject()) {
 				dock_window_manager->loadFromConfig(doc.object());
 			}
 		}
+
+
+		const char *browserJsonStr = obs_data_get_string(save_data, "BrowserManager");
+		if (browserJsonStr && *browserJsonStr) {
+			// Defer loading until OBS_FRONTEND_EVENT_FINISHED_LOADING
+			auto browser_manager_config_data = QByteArray(browserJsonStr);
+			// Load Browser Manager Config
+			if (!browser_manager_config_data.isEmpty()) {
+				if (!browser_manager) {
+					auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+					browser_manager = new BrowserManager(mainWindow);
+				}
+				if (const QJsonDocument doc = QJsonDocument::fromJson(browser_manager_config_data);
+				    !doc.isNull() && doc.isObject()) {
+					browser_manager->setDeferredLoad(true);
+					browser_manager->loadFromConfig(doc.object());
+				}
+			}
+		}
+
+	}
+}
+
+void load_browser_docks()
+{
+	if (browser_manager) {
+		browser_manager->onOBSBrowserReady();
+	} else {
+		// TODO: recreate of dead
+	}
+}
+
+void unload_browser_docks()
+{
+	if (browser_manager) {
+		delete browser_manager;
 	}
 }
 
@@ -871,12 +916,24 @@ void on_obs_evt(obs_frontend_event event, void *data)
 		// during profile load, which happens before or around FINISHED_LOADING.
 		// So we don't need manual load here if save_callback works as expected.
 		createSources();
+		load_browser_docks();
+
 		break;
+	case OBS_FRONTEND_EVENT_PROFILE_CHANGED: {
+		load_browser_docks();
+		break;
+	}
+	case OBS_FRONTEND_EVENT_PROFILE_CHANGING: {
+		unload_browser_docks();
+		break;
+	}
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
 		createSources();
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP:
+	case OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN:
 	case OBS_FRONTEND_EVENT_EXIT:
+		unload_browser_docks();
 		cleanup();
 		break;
 	default:
@@ -960,6 +1017,19 @@ static void show_dock_window_manager(void* data)
 	dock_window_manager->activateWindow();
 }
 
+static void show_browser_manager(void* data)
+{
+	UNUSED_PARAMETER(data);
+	
+	if (!browser_manager) {
+		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		browser_manager = new BrowserManager(mainWindow);
+	}
+	browser_manager->show();
+	browser_manager->raise();
+	browser_manager->activateWindow();
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1016,6 +1086,13 @@ void on_plugin_loaded()
 		nullptr
 	);
 	
+	// Add Browser Manager menu item
+	obs_frontend_add_tools_menu_item(
+		obs_module_text("BrowserManager.Title"),
+		show_browser_manager,
+		nullptr
+	);
+
 	obs_frontend_add_save_callback(save_callback, nullptr);
 
 	// Try to load initial state
@@ -1067,6 +1144,8 @@ void on_plugin_unload()
 
 	// Clean up config singleton last
 	AudioChSrcConfig::cleanup();
+
+	BrowserManager::cleanup();
 }
 
 #ifdef __cplusplus
