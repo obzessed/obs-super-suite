@@ -19,14 +19,22 @@ CPMAddPackage(
   URI "gh:nlohmann/json@3.12.0"
   OPTIONS "JSON_BuildTests OFF"
 )
+
 #CPMAddPackage(
 #  URI "gh:winsoft666/QWebView#v2.0.1"
 #  OPTIONS "QWEBVIEW_ENABLE_WEBVIEW2 ON" "QWEBVIEW_STATIC_MSVC_CRT ON" "QWEBVIEW_BUILD_SAMPLES OFF"
 #)
+
 #set(CEF_SDK_VERSION "144.0.13+g9f739aa+chromium-144.0.7559.133")
 #CPMAddPackage(
 #  URI "gh:CefView/QCefView#v2025.12.28"
 #  OPTIONS "BUILD_STATIC OFF" "STATIC_CRT OFF" "BUILD_DEMO OFF"
+#)
+
+#set(CEF_SDK_VERSION "142.0.15+g6dfdb28+chromium-142.0.7444.176")
+#CPMAddPackage(
+#  URI "gh:CefView/CefViewCore#454c7246d1dd1c1a1888580e8972fac6691a5f44"
+#  OPTIONS "STATIC_CRT OFF"
 #)
 
 #if(TARGET CefViewWing)
@@ -38,7 +46,7 @@ CPMAddPackage(
 # Add the 'cmake' directory to the module search path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# Use the module
+# Use the module (cmake/FindWebView2.cmake)
 find_package(WebView2 REQUIRED)
 
 # Define NOMINMAX on Windows to prevent min/max macro conflicts
@@ -48,11 +56,11 @@ endif()
 
 add_library(${CMAKE_PROJECT_NAME} MODULE)
 
-if(TARGET ${CMAKE_PROJECT_NAME})
-    if(MSVC)
-        target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "/IGNORE:4199")
-    endif()
-endif()
+#if(TARGET ${CMAKE_PROJECT_NAME})
+#    if(MSVC)
+#        target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "/IGNORE:4199")
+#    endif()
+#endif()
 
 # Enable C++20
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
@@ -68,6 +76,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
   #  fmt::fmt
   nlohmann_json::nlohmann_json
   WebView2::WebView2
+#  CefViewCore
 #  QCefView
 #  QWebView.CEF
 )

@@ -32,13 +32,15 @@
 include(FetchContent)
 include(FindPackageHandleStandardArgs)
 
-# 1. Architecture Detection
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(WV2_ARCH "x64")
-elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
-    set(WV2_ARCH "x86")
-else()
-    set(WV2_ARCH "arm64")
+# Determine the project architecture.
+if(NOT DEFINED WV2_ARCH)
+    if(OS_WINDOWS AND "${CMAKE_GENERATOR_PLATFORM}" STREQUAL "arm64")
+        set(WV2_ARCH "arm64")
+    elseif(CMAKE_SIZEOF_VOID_P MATCHES 8)
+        set(WV2_ARCH "x64")
+    else()
+        set(WV2_ARCH "x86")
+    endif()
 endif()
 
 FetchContent_Declare(

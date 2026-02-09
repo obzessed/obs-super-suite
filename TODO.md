@@ -4,6 +4,8 @@
   - Ultra Suite?
   - Open Stream Suite/Studio?
 - Refs
+  - https://github.com/obsproject/obs-browser
+  - https://github.com/streamlabs/obs-sl-browser
   - https://manyatechnologies.com/integrate-webview2-in-qt-cpp/
   - https://github.com/chromiumembedded/cef-project
   - https://www.youtube.com/watch?v=0ALLRitFE34
@@ -23,6 +25,8 @@
   - https://github.com/featherbear/obs-mv-stat
   - https://github.com/featherbear/NDI-Telestrator
   - https://github.com/Vhonowslend/StreamFX-Public
+  - https://github.com/dcmouser/obsPlugins/tree/main/jr/jrdockie
+  - https://github.com/dcmouser/obsPlugins
   - https://git.vrsal.cc/alex/iros
   - https://git.vrsal.cc/alex/obs-mdk
   - https://git.vrsal.cc/alex/bitrate-dock
@@ -41,6 +45,8 @@
   - https://git.vrsal.cc/alex/obs-detect (can be used alt to obs-face-tracker)
   - https://github.com/OPENSPHERE-Inc/branch-output
   - https://github.com/norihiro/obs-async-source-duplication
+  - https://github.com/stbmaster97-cmyk/VDeck-Grid-for-Aitum-Suite
+  - https://github.com/stbmaster97-cmyk/VDeck-for-Aitum-Suite
 - https://www.shadertastic.com/
 - [ ] Bugs
   - ???
@@ -62,8 +68,9 @@
   - https://git.vrsal.cc/alex/widget-test (durchblick custom widget)
 - [ ] Visual Scenes and Sources Docks.
   - Prism Live Style. (use obs-source-dock for ref)
-- [ ] Interactive Audio Mixer.
+- [ ] Interactive Audio Mixer. (Meld style)
 - [ ] Matrix Audio Router.
+- [ ] Meld style encoder view and possibly interactive.
 - [ ] Master Fader.
 - [ ] Channels Viewer.
 - [ ] Multi Audio Output (obs_output_t)
