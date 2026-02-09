@@ -17,10 +17,12 @@ public:
 	void runJavaScript(const std::string& script) override;
 	void clearCookies() override;
 	void setOnReady(BrowserReadyCallback callback) override { m_readyCallback = callback; }
+	void setOnNavigationStart(NavigationStartingCallback callback) override { m_navigationStartingCallback = callback; }
 	uint32_t getCapabilities() override { return (uint32_t)(BrowserCapabilities::JavaScript | BrowserCapabilities::Transparency | BrowserCapabilities::OSR); }
 
 private:
 	QCefView* m_view = nullptr;
 	BrowserReadyCallback m_readyCallback;
+	NavigationStartingCallback m_navigationStartingCallback;
 	std::string m_startupScript;
 };

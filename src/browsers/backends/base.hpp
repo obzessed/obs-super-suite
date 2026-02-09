@@ -62,6 +62,7 @@ public:
 	};
 
 	using BrowserReadyCallback = std::function<void()>;
+	using NavigationStartingCallback = std::function<void(const std::string& url)>;
 
 	// Initialize the backend (create window/control)
 	virtual void init(const InitParams& params) = 0;
@@ -81,6 +82,7 @@ public:
 
 	// Callbacks
 	virtual void setOnReady(BrowserReadyCallback callback) = 0;
+	virtual void setOnNavigationStart(NavigationStartingCallback callback) = 0;
 
 	// Capabilities
 	virtual uint32_t getCapabilities() = 0;

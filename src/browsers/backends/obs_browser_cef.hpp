@@ -18,6 +18,7 @@ public:
 	void runJavaScript(const std::string& script) override;
 	void clearCookies() override;
 	void setOnReady(BrowserReadyCallback callback) override { m_readyCallback = callback; }
+	void setOnNavigationStart(NavigationStartingCallback callback) override { m_navigationStartingCallback = callback; }
 	uint32_t getCapabilities() override;
 
 	// Specific to CEF wrapper: handle onOBSBrowserReady? 
@@ -29,6 +30,7 @@ public:
 private:
 	QCefWidget* m_cefWidget = nullptr;
 	BrowserReadyCallback m_readyCallback;
+	NavigationStartingCallback m_navigationStartingCallback;
 	QString m_script;
 	QString m_css; // We don't have separate CSS setter in interface yet, but init might pass it?
 	// Interface has setStartupScript. We assume it combines JS+CSS or we add setCSS to interface?

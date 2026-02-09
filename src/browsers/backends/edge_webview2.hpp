@@ -24,12 +24,14 @@ public:
 	void runJavaScript(const std::string& script) override;
 	void clearCookies() override;
 	void setOnReady(BrowserReadyCallback callback) override { m_readyCallback = callback; }
+	void setOnNavigationStart(NavigationStartingCallback callback) override { m_navigationStartingCallback = callback; }
 	uint32_t getCapabilities() override;
 
 private:
 	wrl::ComPtr<ICoreWebView2> m_webview;
 	wrl::ComPtr<ICoreWebView2Controller> m_controller;
 	BrowserReadyCallback m_readyCallback;
+	NavigationStartingCallback m_navigationStartingCallback;
 	InitParams m_params;
 
 	void initWebView(HWND hwnd);

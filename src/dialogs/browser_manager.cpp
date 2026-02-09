@@ -12,6 +12,10 @@
 #include <QPlainTextEdit>
 #include <QComboBox>
 #include <QDockWidget>
+#include <QIcon>
+#include <QPainter>
+#include <QBrush>
+#include <QPen>
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -97,9 +101,53 @@ void BrowserManager::setupUi()
 void BrowserManager::refreshList()
 {
 	dockList->clear();
+	auto getBackendIcon = [](BackendType type) -> QIcon {
+		QPixmap pixmap(24, 24);
+		pixmap.fill(Qt::transparent);
+
+		QPainter painter(&pixmap);
+		painter.setRenderHint(QPainter::Antialiasing);
+
+		QColor bgColor;
+		QString letter;
+
+		switch (type) {
+		case BackendType::ObsBrowserCEF:
+			bgColor = QColor(60, 60, 60); // Dark Grey
+			letter = "O";
+			break;
+		case BackendType::EdgeWebView2:
+			bgColor = QColor(0, 120, 215); // Edge Blue-ish
+			letter = "E";
+			break;
+		case BackendType::StandaloneCEF:
+			bgColor = QColor(255, 140, 0); // Orange-ish
+			letter = "C";
+			break;
+		default:
+			bgColor = Qt::gray;
+			letter = "?";
+			break;
+		}
+
+		painter.setPen(Qt::NoPen);
+		painter.setBrush(bgColor);
+		painter.drawRoundedRect(0, 0, 24, 24, 4, 4);
+
+		painter.setPen(Qt::white);
+		QFont font = painter.font();
+		font.setBold(true);
+		font.setPixelSize(14);
+		painter.setFont(font);
+		painter.drawText(pixmap.rect(), Qt::AlignCenter, letter);
+
+		return QIcon(pixmap);
+	};
+
 	for (const auto &entry : docks) {
 		QListWidgetItem *item = new QListWidgetItem(QString("%1 (%2)").arg(entry.title, entry.url));
 		item->setData(Qt::UserRole, entry.id);
+		item->setIcon(getBackendIcon(entry.backend));
 		dockList->addItem(item);
 	}
 }

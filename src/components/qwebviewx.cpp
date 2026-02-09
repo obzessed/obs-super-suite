@@ -1,5 +1,6 @@
 #include "qwebviewx.hpp"
 
+#include "plugin-support.h"
 #include "browsers/backends/edge_webview2.hpp"
 #include "browsers/backends/obs_browser_cef.hpp"
 #include "browsers/backends/standalone_cef.hpp"
@@ -94,6 +95,10 @@ void QWebViewX::showEvent(QShowEvent* event)
 				bounds.bottom - bounds.top
 			);
 		}
+
+		backend->setOnNavigationStart([](const std::string& url) {
+			obs_log(LOG_INFO, "Navigating browser dock to: %s", url.c_str());
+		});
 		
 		// Re-apply pending calls?
 		// We need to store them in QWebViewX members.

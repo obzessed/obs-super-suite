@@ -5,10 +5,16 @@
   - Open Stream Suite/Studio?
 - Refs
   - https://manyatechnologies.com/integrate-webview2-in-qt-cpp/
+  - https://github.com/chromiumembedded/cef-project
+  - https://www.youtube.com/watch?v=0ALLRitFE34
   - https://svistunov.dev/blog/2024/06/24/how-to-link-webview2-statically-to-a-native-c-application-using-cmake-26
   - https://github.com/winsoft666/QWebView
   - https://github.com/CefView/QCefView
   - https://github.com/CefView/CefViewCore
+  - https://github.com/hiitiger/QtCef
+  - https://github.com/cretz/qt_cef_poc
+  - https://github.com/lyterrific/QSimpleCefBrowser
+  - https://github.com/wang-bin/obs-browser
   - https://github.com/Zaarrg/stremio-community-v5/blob/webview-windows/src/webview/webview.cpp
   - https://cefview.github.io/QCefView/
   - https://github.com/KevinEmiya/EmbeddedBrowserDemo

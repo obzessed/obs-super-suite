@@ -5,6 +5,8 @@
 
 // https://github.com/Atliac/WebView2SampleCMake/blob/master/WebView2SampleCMake/main.cpp
 
+#include "util/platform.h"
+
 #include <stdexcept>
 
 EdgeWebview2Backend::EdgeWebview2Backend() = default;
@@ -96,6 +98,65 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
                                 Settings->put_IsScriptEnabled(TRUE);
                                 Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
                                 Settings->put_IsWebMessageEnabled(TRUE);
+
+                                {
+                                	// Step 4 - Navigation events
+					// register an ICoreWebView2NavigationStartingEventHandler to cancel any non-https
+					// navigation
+					EventRegistrationToken token;
+					m_webview->add_NavigationStarting(
+						wrl::Callback<ICoreWebView2NavigationStartingEventHandler>(
+					    [this](ICoreWebView2 *webview,
+					       ICoreWebView2NavigationStartingEventArgs *args) -> HRESULT
+					    {
+						PWSTR uri;
+						args->get_Uri(&uri);
+						std::wstring source(uri);
+						// if (source.substr(0, 5) != L"https")
+						// {
+						//     args->put_Cancel(true);
+						// }
+					    	if (m_navigationStartingCallback) {
+					    		m_navigationStartingCallback(QString::fromStdWString(source).toStdString());
+					    	}
+						CoTaskMemFree(uri);
+						return S_OK;
+					    })
+					    .Get(),
+					&token);
+
+                                	// Step 6 - Communication between host and web content
+				// Set an event handler for the host to return received message back to the web content
+				m_webview->add_WebMessageReceived(
+				wrl::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+				    [](ICoreWebView2 *webview,
+				       ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT
+				    {
+					PWSTR message;
+					args->TryGetWebMessageAsString(&message);
+					// processMessage(&message);
+					webview->PostWebMessageAsString(message);
+					CoTaskMemFree(message);
+					return S_OK;
+				    })
+				    .Get(),
+				&token);
+
+                                	// startup script
+				    m_webview->AddScriptToExecuteOnDocumentCreated(L"Object.freeze(Object);", nullptr);
+
+				    // Schedule an async task to get the document URL
+				m_webview->ExecuteScript(
+					L"window.document.URL;",
+				wrl::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+				    [](HRESULT errorCode, LPCWSTR resultObjectAsJson) -> HRESULT
+				    {
+					LPCWSTR URL = resultObjectAsJson;
+					// doSomethingWithURL(URL);
+					return S_OK;
+				    })
+				    .Get());
+                                }
 
                                 // Set initial bounds
                                 RECT bounds;
