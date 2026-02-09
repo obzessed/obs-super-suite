@@ -124,7 +124,8 @@ void BrowserManager::onAdd()
 	cssEdit->setPlaceholderText("/* Custom CSS */");
 
 	QComboBox *backendCombo = new QComboBox(&dlg);
-	backendCombo->addItem("OBS Browser (CEF)", "obs-browser-cef");
+	backendCombo->addItem("OBS Browser (CEF)", QVariant::fromValue((int)BackendType::CEF));
+	backendCombo->addItem("Edge WebView2", QVariant::fromValue((int)BackendType::EdgeWebView2));
 	backendCombo->setCurrentIndex(0);
 
 	QComboBox *presetCombo = new QComboBox(&dlg);
@@ -206,7 +207,7 @@ void BrowserManager::onAdd()
 		QString url = urlEdit->text().trimmed();
 		QString script = scriptEdit->toPlainText();
 		QString css = cssEdit->toPlainText();
-		QString backend = backendCombo->currentData().toString();
+		BackendType backend = (BackendType)backendCombo->currentData().toInt();
 		
 		QString id = QUuid::createUuid().toString().remove("{").remove("}");
 		
@@ -260,8 +261,10 @@ void BrowserManager::onEdit()
 	cssEdit->setPlainText(entry.css);
 
 	QComboBox *backendCombo = new QComboBox(&dlg);
-	backendCombo->addItem("OBS Browser (CEF)", "obs-browser-cef");
-	int bIdx = backendCombo->findData(entry.backend);
+	backendCombo->addItem("OBS Browser (CEF)", QVariant::fromValue((int)BackendType::CEF));
+	backendCombo->addItem("Edge WebView2", QVariant::fromValue((int)BackendType::EdgeWebView2));
+	
+	int bIdx = backendCombo->findData((int)entry.backend);
 	if (bIdx != -1) backendCombo->setCurrentIndex(bIdx);
 	else backendCombo->setCurrentIndex(0);
 	backendCombo->setEnabled(false);
@@ -485,13 +488,13 @@ void BrowserManager::onSelectionChanged()
 	removeBtn->setEnabled(hasSel);
 }
 
-void BrowserManager::createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css, const QString &backend, bool visible)
+void BrowserManager::createBrowserDock(const QString &id, const QString &title, const QString &url, const QString &script, const QString &css, BackendType backend, bool visible)
 {
 	// ID must be unique
 	QString dockId = "SuperSuite_BrowserDock_" + id;
 	
 	QMainWindow *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	BrowserDock *dock = new BrowserDock(*this, url.toUtf8().constData(), script.toUtf8().constData(), css.toUtf8().constData(), backend.toUtf8().constData(), deferred_load, mainWin);
+	BrowserDock *dock = new BrowserDock(*this, url.toUtf8().constData(), script.toUtf8().constData(), css.toUtf8().constData(), backend, deferred_load, mainWin);
 	
 	obs_frontend_add_dock_by_id(dockId.toUtf8().constData(), title.toUtf8().constData(), dock);
 	
@@ -529,7 +532,7 @@ QJsonObject BrowserManager::saveToConfig()
 		obj["url"] = entry.url;
 		obj["script"] = entry.script;
 		obj["css"] = entry.css;
-		obj["backend"] = entry.backend;
+		obj["backend"] = QString::fromStdString(BackendHelpers::ToString(entry.backend));
 		arr.append(obj);
 	}
 	root["docks"] = arr;
@@ -554,8 +557,12 @@ void BrowserManager::loadFromConfig(const QJsonObject &data)
 			entry.url = obj["url"].toString();
 			entry.script = obj["script"].toString();
 			entry.css = obj["css"].toString();
-			entry.backend = obj["backend"].toString();
-			if (entry.backend.isEmpty()) entry.backend = "obs-browser-cef";
+			entry.script = obj["script"].toString();
+			entry.css = obj["css"].toString();
+			
+			QString backendStr = obj["backend"].toString();
+			if (backendStr.isEmpty()) backendStr = "obs-browser-cef";
+			entry.backend = BackendHelpers::FromString(backendStr.toStdString());
 			
 			docks.append(entry);
 			createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, entry.backend);

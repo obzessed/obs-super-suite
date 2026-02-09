@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../dialogs/browser_manager.h"
+#include "../components/qwebviewx.hpp"
 
 #include <QWidget>
 #include <QVBoxLayout>
@@ -9,7 +10,7 @@ class BrowserDock : public QWidget {
 	Q_OBJECT
 
 private:
-	QCefWidget *cefWidget = nullptr;
+	QWebViewX* webView_ = nullptr;
 	QVBoxLayout *layout = nullptr;
 
 	QString script_;
@@ -19,9 +20,9 @@ private:
 	BrowserManager& manager_;
 
 	bool deferred_;
-	QString backend_;
+	BackendType backend_;
 public:
-	BrowserDock(BrowserManager& manager, const char *url, const char *script = nullptr, const char *css = nullptr, const char *backend = "obs-browser-cef", bool deferred_load = false, QWidget *parent = nullptr);
+	BrowserDock(BrowserManager& manager, const char *url, const char *script = nullptr, const char *css = nullptr, BackendType backend = BackendType::CEF, bool deferred_load = false, QWidget *parent = nullptr);
 	~BrowserDock() override;
 	
 	void reload(const char *url = nullptr, const char *script = nullptr, const char *css = nullptr);

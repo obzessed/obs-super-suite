@@ -4,9 +4,13 @@
   - Ultra Suite?
 - Refs
   - https://manyatechnologies.com/integrate-webview2-in-qt-cpp/
+  - https://svistunov.dev/blog/2024/06/24/how-to-link-webview2-statically-to-a-native-c-application-using-cmake-26
   - https://github.com/winsoft666/QWebView
+  - https://github.com/CefView/QCefView
+  - https://github.com/CefView/CefViewCore
   - https://github.com/Zaarrg/stremio-community-v5/blob/webview-windows/src/webview/webview.cpp
   - https://cefview.github.io/QCefView/
+  - https://github.com/KevinEmiya/EmbeddedBrowserDemo
   - https://github.com/featherbear/obs-vix
   - https://blog.featherbear.cc/post/obs-toolkit/
   - https://github.com/featherbear/obs-mv-stat
@@ -43,6 +47,7 @@
   - [ ] Secondary Studio Frontend.
 - [ ] WhatsApp Browser Dock.
 - [ ] Browser Dock using Webview Runtime.
+- [ ] Browser Source using Webview Runtime.
 - [ ] Advanced MultiView.
   - https://obsproject.com/forum/resources/durchblick.1484/
   - https://git.vrsal.cc/alex/Durchblick

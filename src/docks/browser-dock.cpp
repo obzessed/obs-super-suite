@@ -1,6 +1,7 @@
 #include "browser-dock.hpp"
 
 #include "plugin-support.h"
+
 #include <util/dstr.h>
 
 #include <QVBoxLayout>
@@ -38,22 +39,28 @@ static std::string get_injection_script(const QString &script, const QString &cs
 
 bool BrowserDock::createBrowser()
 {
-	if (const auto [cef, panel_cookies] = this->manager_.getQCef(); cef && panel_cookies) {
-		cefWidget = cef->create_widget(this, url_.toUtf8().constData(), panel_cookies);
+	// QWebViewX handles backend creation.
+	// We just instantiate QWebViewX.
+	
+	if (webView_) return true;
 
-		cefWidget->setStartupScript(get_injection_script(script_, css_));
-
-		layout->addWidget(cefWidget);
-
-		return true;
-	}
-
-	obs_log(LOG_ERROR, "error creating browser widget. qcef or it's cookie manager is not initialized yet.");
-
-	return false;
+	webView_ = new QWebViewX(backend_, this);
+	
+	// Connect readiness if needed?
+	// QWebViewX emits browserReady.
+	
+	// Set initial script
+	webView_->setStartupScript(QString::fromStdString(get_injection_script(script_, css_)));
+	
+	// Load URL
+	webView_->loadUrl(url_);
+	
+	layout->addWidget(webView_);
+	
+	return true;
 }
 
-BrowserDock::BrowserDock(BrowserManager& manager, const char *url, const char *script, const char *css, const char *backend, bool deferred_load, QWidget *parent) : QWidget(parent), manager_(manager)
+BrowserDock::BrowserDock(BrowserManager& manager, const char *url, const char *script, const char *css, BackendType backend, bool deferred_load, QWidget *parent) : QWidget(parent), manager_(manager)
 {
 	url_ = url;
 	script_ = script;
@@ -74,29 +81,31 @@ BrowserDock::BrowserDock(BrowserManager& manager, const char *url, const char *s
 
 BrowserDock::~BrowserDock()
 {
-	layout->removeWidget(cefWidget);
-	cefWidget->setParent(nullptr);
-	cefWidget->deleteLater();
+	if (webView_) {
+		layout->removeWidget(webView_);
+		webView_->setParent(nullptr);
+		delete webView_;
+		webView_ = nullptr;
+	}
 }
 
 void BrowserDock::reload(const char *url, const char *script, const char *css)
 {
-	if (!cefWidget) return;
-
 	// Update internal state
 	url_ = url;
 	script_ = script;
 	css_ = css;
 	
-	// Always update startup script with latest combination of script and CSS
-	cefWidget->setStartupScript(get_injection_script(script_, css_));
+	if (webView_) {
+		webView_->setStartupScript(QString::fromStdString(get_injection_script(script_, css_)));
 
-	cefWidget->setURL(url_.toStdString());
+		webView_->loadUrl(url_);
+	}
 }
 
 void BrowserDock::onOBSBrowserReady()
 {
-	if (deferred_ && !cefWidget) {
+	if (deferred_ && !webView_) {
 		createBrowser();
 		deferred_ = false;
 	}
