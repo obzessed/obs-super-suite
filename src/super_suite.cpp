@@ -892,18 +892,16 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 
 void load_browser_docks()
 {
-	if (browser_manager) {
-		browser_manager->onOBSBrowserReady();
-	} else {
+	if (!browser_manager) {
 		// TODO: recreate of dead
+	} else {
+		browser_manager->onOBSBrowserReady();
 	}
 }
 
 void unload_browser_docks()
 {
-	if (browser_manager) {
-		delete browser_manager;
-	}
+	delete browser_manager;
 }
 
 void on_obs_evt(obs_frontend_event event, void *data)
@@ -916,10 +914,13 @@ void on_obs_evt(obs_frontend_event event, void *data)
 		// during profile load, which happens before or around FINISHED_LOADING.
 		// So we don't need manual load here if save_callback works as expected.
 		createSources();
-		load_browser_docks();
+		if (browser_manager) {
+			browser_manager->onOBSBrowserReady();
+		}
 
 		break;
 	case OBS_FRONTEND_EVENT_PROFILE_CHANGED: {
+		BrowserManager::cleanup(false);
 		load_browser_docks();
 		break;
 	}
@@ -931,9 +932,22 @@ void on_obs_evt(obs_frontend_event event, void *data)
 		createSources();
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP:
+		cleanup();
+		break;
 	case OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN:
 	case OBS_FRONTEND_EVENT_EXIT:
-		unload_browser_docks();
+		obs_queue_task(
+			OBS_TASK_GRAPHICS,
+			[](void *) {
+				obs_queue_task(
+					OBS_TASK_UI,
+					[](void *) {
+						unload_browser_docks();
+						BrowserManager::cleanup();
+					},
+					nullptr, false);
+			},
+			nullptr, false);
 		cleanup();
 		break;
 	default:
@@ -1130,6 +1144,10 @@ void on_plugin_unload()
 			delete channels_view;
 		}
 
+		if (browser_manager) {
+			delete browser_manager;
+		}
+
 		if (mixer_dock) {
 			// Dock is managed by OBS frontend, just remove our reference
 			obs_frontend_remove_dock("SuperMixerDock");
@@ -1142,7 +1160,6 @@ void on_plugin_unload()
 		}
 	}
 
-	// Clean up config singleton last
 	AudioChSrcConfig::cleanup();
 
 	BrowserManager::cleanup();

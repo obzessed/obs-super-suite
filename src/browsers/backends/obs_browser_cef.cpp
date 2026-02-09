@@ -19,29 +19,29 @@ void OBSBrowserCEFBackend::init(const InitParams& params) {
 	}
 
 	auto* parent = static_cast<QWidget*>(params.qtParentWidget);
-	
+
 	const auto [cef, panel_cookies] = get_cef_instance();
 	if (cef && panel_cookies) {
 		std::string url = params.initialUrl.empty() ? "about:blank" : params.initialUrl;
 		m_cefWidget = cef->create_widget(parent, url, panel_cookies);
 
 		if (m_cefWidget) {
-			// Ensure it fills the parent if no layout provided? 
+			// Ensure it fills the parent if no layout provided?
 			// Parent QWebViewX should handle layout?
 			// But QWebViewX implementation (which I haven't written yet) will probably use a layout.
 			// If QWebViewX manages layout, we just return.
 			// But we need to add it to QWebViewX's layout?
-			// QWebViewX will likely add `backend->getWidget()`? 
+			// QWebViewX will likely add `backend->getWidget()`?
 			// But `BrowserBackend` interface does NOT return a widget.
 			// It returns void init.
-			// So `QWebViewX` passes itself as parent. 
+			// So `QWebViewX` passes itself as parent.
 			// The child widget (m_cefWidget) is now a child of QWebViewX.
 			// QWebViewX needs to resize it manually in resizeEvent, OR use a layout.
 			// Since `BrowserBackend` interface has `resize(x,y,w,h)`, QWebViewX will call that.
 			// So we implement resize here.
 
 			m_cefWidget->setStartupScript(m_script.toStdString());
-			
+
 			if (m_readyCallback) {
 				m_readyCallback();
 			}

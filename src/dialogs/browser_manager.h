@@ -19,7 +19,7 @@ public:
 	explicit BrowserManager(QWidget *parent = nullptr);
 	~BrowserManager() override;
 
-	static void cleanup();
+	static void cleanup(bool full = true);
 
 	void onOBSBrowserReady();
 

@@ -3,22 +3,29 @@
 #include <string>
 #include <functional>
 
+#define BBKE_OBS_BROWSER_CEF "obs-browser-cef"
+#define BBKE_EGDE_WEBVIEW2 "edge-webview2"
+#define BBKE_STANDALONE_CEF "standalone-cef"
+
 enum class BackendType {
-	CEF,
+	ObsBrowserCEF,
+	StandaloneCEF,
 	EdgeWebView2
 };
 
 struct BackendHelpers {
 	static std::string ToString(BackendType type) {
 		switch (type) {
-			case BackendType::EdgeWebView2: return "edge_webview2";
-			case BackendType::CEF: default: return "obs-browser-cef";
+			case BackendType::EdgeWebView2: return BBKE_EGDE_WEBVIEW2;
+			case BackendType::StandaloneCEF: return BBKE_STANDALONE_CEF;
+			case BackendType::ObsBrowserCEF: default: return BBKE_OBS_BROWSER_CEF;
 		}
 	}
 
 	static BackendType FromString(const std::string& str) {
-		if (str == "edge_webview2") return BackendType::EdgeWebView2;
-		return BackendType::CEF;
+		if (str == BBKE_EGDE_WEBVIEW2) return BackendType::EdgeWebView2;
+		if (str == BBKE_STANDALONE_CEF) return BackendType::StandaloneCEF;
+		return BackendType::ObsBrowserCEF;
 	}
 };
 

@@ -21,9 +21,15 @@ CPMAddPackage(
 )
 #set(CEF_SDK_VERSION "144.0.13+g9f739aa+chromium-144.0.7559.133")
 #CPMAddPackage(
-#  URI "gh:CefView/QCefView#v2025.12.28"
+#  URI "gh:CefView/QCefView#v1.2.1"
 #  OPTIONS "BUILD_STATIC ON" "STATIC_CRT OFF" "BUILD_DEMO OFF"
 #)
+
+#if(TARGET CefViewWing)
+#    if(MSVC)
+#        target_link_options(CefViewWing PRIVATE "/IGNORE:4199")
+#    endif()
+#endif()
 
 # Microsoft.Windows.ImplementationLibrary
 # The Windows Implementation Libraries (wil) were created to improve productivity and solve problems commonly seen by Windows developers. by: Microsoft WindowsImplementationLibraryTeam

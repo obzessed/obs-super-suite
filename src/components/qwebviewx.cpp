@@ -2,6 +2,7 @@
 
 #include "browsers/backends/edge_webview2.hpp"
 #include "browsers/backends/obs_browser_cef.hpp"
+#include "browsers/backends/standalone_cef.hpp"
 
 #include <QResizeEvent>
 #include <QShowEvent>
@@ -54,11 +55,13 @@ void QWebViewX::showEvent(QShowEvent* event)
 		
 		if (backend_type_ == BackendType::EdgeWebView2) {
 			backend = std::make_unique<EdgeWebview2Backend>();
+		} else if (backend_type_ == BackendType::StandaloneCEF) {
+			backend = std::make_unique<StandaloneCEFBackend>();
 		} else {
 			backend = std::make_unique<OBSBrowserCEFBackend>();
 		}
 
-		backend->setOnReady([this]() { emit browserReady(); });
+		backend->setOnReady([this] { emit browserReady(); });
 
 		BrowserBackend::InitParams params;
 		params.parentWindowId = reinterpret_cast<void *>(winId());
@@ -68,8 +71,7 @@ void QWebViewX::showEvent(QShowEvent* event)
 		params.width = width();
 		params.height = height();
 		// params.initialUrl = ? (If we had it).
-		
-		
+
 		backend->init(params);
 		
 		if (!m_pendingScript.isEmpty()) {

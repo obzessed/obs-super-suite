@@ -28,7 +28,7 @@ bool obs_module_load(void)
 {
 	obs_log(LOG_INFO, "Super Suite plugin loaded successfully (version %s)", PLUGIN_VERSION);
 
-	return mlm_on_obs_module_load() && on_plugin_load();
+	return /*mlm_on_obs_module_load() &&*/ on_plugin_load();
 }
 
 void obs_module_post_load(void)
@@ -38,7 +38,7 @@ void obs_module_post_load(void)
 
 void obs_module_unload(void)
 {
-	mlm_on_obs_module_unload();
+	// mlm_on_obs_module_unload();
 
 	on_plugin_unload();
 

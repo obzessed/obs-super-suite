@@ -1,4 +1,5 @@
 #include "dock_window_manager.h"
+
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QInputDialog>

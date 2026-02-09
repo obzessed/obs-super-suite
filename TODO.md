@@ -2,6 +2,7 @@
   - Super Suite?
   - Power Suite?
   - Ultra Suite?
+  - Open Stream Suite/Studio?
 - Refs
   - https://manyatechnologies.com/integrate-webview2-in-qt-cpp/
   - https://svistunov.dev/blog/2024/06/24/how-to-link-webview2-statically-to-a-native-c-application-using-cmake-26

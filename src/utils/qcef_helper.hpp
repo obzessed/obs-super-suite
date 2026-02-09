@@ -9,7 +9,7 @@ static QCefCookieManager *x_cef_ck_mgr = nullptr;
 
 typedef QCef* (create_qcef_ft)();
 
-static std::pair<QCef*, QCefCookieManager*> get_cef_instance()
+static void init_cef()
 {
 	if (!x_cef_) {
 		x_cef_ = obs_browser_init_panel();
@@ -24,21 +24,33 @@ static std::pair<QCef*, QCefCookieManager*> get_cef_instance()
 		if (const char *cookie_id = config_get_string(obs_frontend_get_profile_config(), "Panels", "CookieId");
 		    cookie_id && cookie_id[0] != '\0') {
 			std::string sub_path;
-			sub_path += "obs_profile_cookies-2/";
+			sub_path += "super-dock-cookies/";
 			sub_path += cookie_id;
 			x_cef_ck_mgr = x_cef_->create_cookie_manager(sub_path);
 			if (!x_cef_ck_mgr) {
 				obs_log(LOG_ERROR, "error loading cookie manager.");
 			}
 		    }  else {
-		    	obs_log(LOG_DEBUG, "ignoring loading of cookie manager.");
+		    	obs_log(LOG_INFO, "ignoring loading of cookie manager.");
 		    }
+	}
+
+	obs_log(LOG_INFO, "CEF INITIALIZED: %p, %p", x_cef_, x_cef_ck_mgr);
+}
+
+static std::pair<QCef*, QCefCookieManager*> get_cef_instance()
+{
+	if (!x_cef_) {
+		obs_log(LOG_ERROR, "cef: usage before init");
+	}
+	if (!x_cef_ck_mgr) {
+		obs_log(LOG_ERROR, "cef cookie manager: usage before init");
 	}
 
 	return {x_cef_, x_cef_ck_mgr};
 }
 
-static void cleanup_cef()
+static void cleanup_cef(bool full)
 {
 	if (x_cef_ck_mgr) {
 		x_cef_ck_mgr->FlushStore();
@@ -46,7 +58,7 @@ static void cleanup_cef()
 		x_cef_ck_mgr = nullptr;
 	}
 
-	if (x_cef_) {
+	if (full && x_cef_) {
 		delete x_cef_;
 		x_cef_ = nullptr;
 	}

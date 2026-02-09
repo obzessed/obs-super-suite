@@ -36,14 +36,14 @@ BrowserManager::~BrowserManager()
 	docks.clear();
 }
 
-void BrowserManager::cleanup()
+void BrowserManager::cleanup(bool full)
 {
-	cleanup_cef();
+	cleanup_cef(full);
 }
 
 void BrowserManager::onOBSBrowserReady()
 {
-	getQCef(); // just initializes it beforehand.
+	init_cef();
 
 	deferred_load = false;
 
@@ -124,8 +124,9 @@ void BrowserManager::onAdd()
 	cssEdit->setPlaceholderText("/* Custom CSS */");
 
 	QComboBox *backendCombo = new QComboBox(&dlg);
-	backendCombo->addItem("OBS Browser (CEF)", QVariant::fromValue((int)BackendType::CEF));
-	backendCombo->addItem("Edge WebView2", QVariant::fromValue((int)BackendType::EdgeWebView2));
+	backendCombo->addItem("Builtin (OBS Browser)", QVariant::fromValue((int)BackendType::ObsBrowserCEF));
+	backendCombo->addItem("System (Edge WebView2)", QVariant::fromValue((int)BackendType::EdgeWebView2));
+	backendCombo->addItem("Chromium (Embedded)", QVariant::fromValue((int)BackendType::StandaloneCEF));
 	backendCombo->setCurrentIndex(0);
 
 	QComboBox *presetCombo = new QComboBox(&dlg);
@@ -135,9 +136,9 @@ void BrowserManager::onAdd()
 		presetCombo->addItem(p.name, p.name);
 	}
 
-	layout->addRow("Preset:", presetCombo);
-	layout->addRow("Backend:", backendCombo);
 	layout->addRow("Title:", titleEdit);
+	layout->addRow("Backend:", backendCombo);
+	layout->addRow("Preset:", presetCombo);
 	layout->addRow("URL:", urlEdit);
 	layout->addRow("Startup Script:", scriptEdit);
 	layout->addRow("Custom CSS:", cssEdit);
@@ -261,8 +262,9 @@ void BrowserManager::onEdit()
 	cssEdit->setPlainText(entry.css);
 
 	QComboBox *backendCombo = new QComboBox(&dlg);
-	backendCombo->addItem("OBS Browser (CEF)", QVariant::fromValue((int)BackendType::CEF));
+	backendCombo->addItem("OBS Browser (CEF)", QVariant::fromValue((int)BackendType::ObsBrowserCEF));
 	backendCombo->addItem("Edge WebView2", QVariant::fromValue((int)BackendType::EdgeWebView2));
+	backendCombo->addItem("Standalone CEF", QVariant::fromValue((int)BackendType::StandaloneCEF));
 	
 	int bIdx = backendCombo->findData((int)entry.backend);
 	if (bIdx != -1) backendCombo->setCurrentIndex(bIdx);
@@ -276,9 +278,9 @@ void BrowserManager::onEdit()
 		presetCombo->addItem(p.name, p.name);
 	}
 	
-	layout->addRow("Preset:", presetCombo);
-	layout->addRow("Backend:", backendCombo);
 	layout->addRow("Title:", titleEdit);
+	layout->addRow("Backend:", backendCombo);
+	layout->addRow("Preset:", presetCombo);
 	layout->addRow("URL:", urlEdit);
 	layout->addRow("Startup Script:", scriptEdit);
 	layout->addRow("Custom CSS:", cssEdit);
@@ -561,8 +563,11 @@ void BrowserManager::loadFromConfig(const QJsonObject &data)
 			entry.css = obj["css"].toString();
 			
 			QString backendStr = obj["backend"].toString();
-			if (backendStr.isEmpty()) backendStr = "obs-browser-cef";
-			entry.backend = BackendHelpers::FromString(backendStr.toStdString());
+			if (backendStr.isEmpty()) {
+				entry.backend = BackendType::ObsBrowserCEF;
+			} else {
+				entry.backend = BackendHelpers::FromString(backendStr.toStdString());
+			}
 			
 			docks.append(entry);
 			createBrowserDock(entry.id, entry.title, entry.url, entry.script, entry.css, entry.backend);
