@@ -13,6 +13,23 @@ enum class BackendType {
 	EdgeWebView2
 };
 
+enum class BrowserCapabilities : uint32_t {
+	None = 0,
+	JavaScript = (1 << 0),       // Can execute JS
+	Transparency = (1 << 1),     // Supports transparent background
+	OSR = (1 << 2),              // Off-screen rendering support
+	AudioControl = (1 << 3),     // Can control audio volume/mute
+	InputEvents = (1 << 4)       // Can inject input events
+};
+
+inline BrowserCapabilities operator|(BrowserCapabilities a, BrowserCapabilities b) {
+	return static_cast<BrowserCapabilities>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+
+inline bool operator&(BrowserCapabilities a, BrowserCapabilities b) {
+	return (static_cast<uint32_t>(a) & static_cast<uint32_t>(b)) != 0;
+}
+
 struct BackendHelpers {
 	static std::string ToString(BackendType type) {
 		switch (type) {
@@ -41,6 +58,7 @@ public:
 		int width;
 		int height;
 		std::string initialUrl;
+		std::string userDataPath; // Path to store cookies/cache/etc
 	};
 
 	using BrowserReadyCallback = std::function<void()>;
@@ -58,7 +76,12 @@ public:
 	// Scripting
 	virtual void setStartupScript(const std::string& script) = 0; // Injects JS/CSS combination
 	virtual void runJavaScript(const std::string& script) = 0;
+	
+	virtual void clearCookies() = 0;
 
 	// Callbacks
 	virtual void setOnReady(BrowserReadyCallback callback) = 0;
+
+	// Capabilities
+	virtual uint32_t getCapabilities() = 0;
 };

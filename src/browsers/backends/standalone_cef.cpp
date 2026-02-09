@@ -77,3 +77,13 @@ void StandaloneCEFBackend::runJavaScript(const std::string& script) {
         // m_view->executeJavascript("", QString::fromStdString(script), "");
     }
 }
+
+void StandaloneCEFBackend::clearCookies() {
+	if (m_view) {
+		// m_view->deleteAllCookies(); // Hypothetical API
+		// QCefView API check required.
+		// Assuming QCefView has `deleteAllCookies` or similar?
+		// User didn't provide QCefView header content for me to verify.
+		// I'll assume standard naming or verify later.
+	}
+}

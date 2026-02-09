@@ -17,6 +17,8 @@ public:
 	void setStartupScript(const QString& script);
 	void runJavaScript(const QString& script);
 	void reload();
+	void setUserDataPath(const QString& path);
+	void clearCookies();
 
 signals:
 	void browserReady();
@@ -36,4 +38,5 @@ private:
 
 	QString m_pendingUrl;
 	QString m_pendingScript;
+	QString m_userDataPath;
 };

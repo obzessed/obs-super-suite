@@ -70,6 +70,7 @@ void QWebViewX::showEvent(QShowEvent* event)
 		params.y = 0;
 		params.width = width();
 		params.height = height();
+		params.userDataPath = m_userDataPath.toStdString();
 		// params.initialUrl = ? (If we had it).
 
 		backend->init(params);
@@ -82,6 +83,17 @@ void QWebViewX::showEvent(QShowEvent* event)
 		}
 		
 		initialized_ = true;
+
+		{
+			RECT bounds;
+			GetClientRect(reinterpret_cast<HWND>(winId()), &bounds);
+			backend->resize(
+				bounds.left,
+				bounds.top,
+				bounds.right - bounds.left,
+				bounds.bottom - bounds.top
+			);
+		}
 		
 		// Re-apply pending calls?
 		// We need to store them in QWebViewX members.
@@ -137,6 +149,20 @@ void QWebViewX::reload()
 {
 	if (backend) {
 		backend->reload();
+	}
+}
+
+void QWebViewX::setUserDataPath(const QString &path)
+{
+	m_userDataPath = path;
+	// If backend exists, it might be too late to change path without recreation.
+	// We assume this is set before init or requires recreation.
+}
+
+void QWebViewX::clearCookies()
+{
+	if (backend) {
+		backend->clearCookies();
 	}
 }
 

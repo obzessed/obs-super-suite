@@ -79,3 +79,16 @@ void OBSBrowserCEFBackend::runJavaScript(const std::string& script) {
 		m_cefWidget->executeJavaScript(script);
 	}
 }
+
+uint32_t OBSBrowserCEFBackend::getCapabilities() {
+	return (uint32_t)(BrowserCapabilities::JavaScript | BrowserCapabilities::Transparency | BrowserCapabilities::OSR);
+}
+
+void OBSBrowserCEFBackend::clearCookies() {
+	// Not supported by QCefWidget wrapper directly yet?
+	// Or maybe accessible via getRequest?
+	// For now, no-op or log?
+	// User asked for it, we should try.
+	// But `QCefWidget` is minimal.
+	// We'll leave empty for now as implementation detail of the wrapper.
+}

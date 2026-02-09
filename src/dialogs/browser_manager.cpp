@@ -138,7 +138,14 @@ void BrowserManager::onAdd()
 
 	layout->addRow("Title:", titleEdit);
 	layout->addRow("Backend:", backendCombo);
-	layout->addRow("Preset:", presetCombo);
+	
+	QHBoxLayout *presetLayout = new QHBoxLayout();
+	presetLayout->addWidget(presetCombo);
+	QPushButton *deletePresetBtn = new QPushButton("Delete", &dlg);
+	deletePresetBtn->setEnabled(false);
+	presetLayout->addWidget(deletePresetBtn);
+	layout->addRow("Preset:", presetLayout);
+	
 	layout->addRow("URL:", urlEdit);
 	layout->addRow("Startup Script:", scriptEdit);
 	layout->addRow("Custom CSS:", cssEdit);
@@ -150,6 +157,7 @@ void BrowserManager::onAdd()
 
 	// Preset logic
 	connect(presetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [&](int index) {
+		deletePresetBtn->setEnabled(index > 0);
 		if (index <= 0) return;
 		QString name = presetCombo->itemData(index).toString();
 		for (const auto &p : presets) {
@@ -175,6 +183,31 @@ void BrowserManager::onAdd()
 		presets.append(p);
 		presetCombo->addItem(p.name, p.name);
 		presetCombo->setCurrentIndex(presetCombo->count() - 1);
+		saveToConfig(); // Persist changes
+	});
+
+	connect(deletePresetBtn, &QPushButton::clicked, [&]() {
+		int idx = presetCombo->currentIndex();
+		if (idx <= 0) return; // Can't delete placeholder
+
+		QString name = presetCombo->itemData(idx).toString();
+		// Confirm
+		if (QMessageBox::question(&dlg, "Delete Preset", QString("Are you sure you want to delete preset '%1'?").arg(name), QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+			return;
+		}
+
+		// Remove from presets
+		for (int i = 0; i < presets.size(); ++i) {
+			if (presets[i].name == name) {
+				presets.removeAt(i);
+				break;
+			}
+		}
+
+		// Remove from combo
+		presetCombo->removeItem(idx);
+		presetCombo->setCurrentIndex(0);
+		saveToConfig(); // Persist changes
 	});
 	
 	// Validation logic
@@ -280,17 +313,26 @@ void BrowserManager::onEdit()
 	
 	layout->addRow("Title:", titleEdit);
 	layout->addRow("Backend:", backendCombo);
-	layout->addRow("Preset:", presetCombo);
+	
+	QHBoxLayout *presetLayout = new QHBoxLayout();
+	presetLayout->addWidget(presetCombo);
+	QPushButton *deletePresetBtn = new QPushButton("Delete", &dlg);
+	deletePresetBtn->setEnabled(false);
+	presetLayout->addWidget(deletePresetBtn);
+	layout->addRow("Preset:", presetLayout);
+
 	layout->addRow("URL:", urlEdit);
 	layout->addRow("Startup Script:", scriptEdit);
 	layout->addRow("Custom CSS:", cssEdit);
 	
 	QDialogButtonBox *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
 	QPushButton *savePresetBtn = btns->addButton("Save as Preset", QDialogButtonBox::ActionRole);
+	QPushButton *clearDataBtn = btns->addButton("Clear Data", QDialogButtonBox::ActionRole);
 	layout->addRow(btns);
 
 	// Preset logic
 	connect(presetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [&](int index) {
+		deletePresetBtn->setEnabled(index > 0);
 		if (index <= 0) return;
 		QString name = presetCombo->itemData(index).toString();
 		for (const auto &p : presets) {
@@ -316,8 +358,44 @@ void BrowserManager::onEdit()
 		presets.append(p);
 		presetCombo->addItem(p.name, p.name);
 		presetCombo->setCurrentIndex(presetCombo->count() - 1);
+		saveToConfig(); // Persist changes
+	});
+
+	connect(deletePresetBtn, &QPushButton::clicked, [&]() {
+		int idx = presetCombo->currentIndex();
+		if (idx <= 0) return; // Can't delete placeholder
+
+		QString name = presetCombo->itemData(idx).toString();
+		// Confirm
+		if (QMessageBox::question(&dlg, "Delete Preset", QString("Are you sure you want to delete preset '%1'?").arg(name), QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+			return;
+		}
+
+		// Remove from presets
+		for (int i = 0; i < presets.size(); ++i) {
+			if (presets[i].name == name) {
+				presets.removeAt(i);
+				break;
+			}
+		}
+
+		// Remove from combo
+		presetCombo->removeItem(idx);
+		presetCombo->setCurrentIndex(0);
+		saveToConfig(); // Persist changes
 	});
 	
+	connect(clearDataBtn, &QPushButton::clicked, [&]() {
+		if (activeDocks.contains(entry.id) && activeDocks[entry.id]) {
+			if (QMessageBox::question(&dlg, "Clear Data", "Are you sure you want to clear cookies and cache for this browser?\nThis action cannot be undone.", QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes) {
+				activeDocks[entry.id]->webBrowser()->clearCookies();
+				QMessageBox::information(&dlg, "Data Cleared", "Browser data has been cleared.");
+			}
+		} else {
+			QMessageBox::warning(&dlg, "Not Active", "The browser dock must be open and active to clear data.");
+		}
+	});
+
 	connect(btns, &QDialogButtonBox::accepted, [&]() {
 		QString newTitle = titleEdit->text().trimmed();
 		QString newUrl = urlEdit->text().trimmed();
@@ -496,7 +574,7 @@ void BrowserManager::createBrowserDock(const QString &id, const QString &title, 
 	QString dockId = "SuperSuite_BrowserDock_" + id;
 	
 	QMainWindow *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	BrowserDock *dock = new BrowserDock(*this, url.toUtf8().constData(), script.toUtf8().constData(), css.toUtf8().constData(), backend, deferred_load, mainWin);
+	BrowserDock *dock = new BrowserDock(*this, id, url.toUtf8().constData(), script.toUtf8().constData(), css.toUtf8().constData(), backend, deferred_load, mainWin);
 	
 	obs_frontend_add_dock_by_id(dockId.toUtf8().constData(), title.toUtf8().constData(), dock);
 	
@@ -590,24 +668,24 @@ void BrowserManager::initBuiltInPresets()
 	if (!presets.isEmpty()) return;
 
 	BrowserPreset p1;
-	p1.name = "OBS Browser Source (Default)";
-	p1.url = "https://obsproject.com/browser-source";
+	p1.name = "Google";
+	p1.url = "https://google.com";
 	p1.script = "";
-	p1.css = "body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }";
+	p1.css = "";
 	presets.append(p1);
 
 	BrowserPreset p2;
-	p2.name = "Google (Dark Mode)";
-	p2.url = "https://google.com";
+	p2.name = "WhatsApp Web";
+	p2.url = "https://web.whatsapp.com";
 	p2.script = "";
-	p2.css = "html { filter: invert(0.9) hue-rotate(180deg); } img { filter: invert(1) hue-rotate(180deg); }";
+	p2.css = "";
 	presets.append(p2);
 
 	BrowserPreset p3;
-	p3.name = "Simple Clock";
-	p3.url = "data:text/html,<html><body style='color:white; font-size:40px; font-family:monospace; display:flex; justify-content:center; align-items:center; height:100%;'>12:00:00</body></html>";
-	p3.script = "setInterval(function(){ document.body.innerText = new Date().toLocaleTimeString(); }, 1000);";
-	p3.css = "body { background: transparent; }";
+	p3.name = "Telegram Web";
+	p3.url = "https://web.telegram.org";
+	p3.script = "";
+	p3.css = "";
 	presets.append(p3);
 }
 

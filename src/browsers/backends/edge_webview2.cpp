@@ -1,5 +1,10 @@
 #include "edge_webview2.hpp"
 
+// #include <wil/com.h>
+// #include <WebView2.h>
+
+// https://github.com/Atliac/WebView2SampleCMake/blob/master/WebView2SampleCMake/main.cpp
+
 #include <stdexcept>
 
 EdgeWebview2Backend::EdgeWebview2Backend() = default;
@@ -53,10 +58,27 @@ void EdgeWebview2Backend::runJavaScript(const std::string& script) {
         m_webview->ExecuteScript(wscript.c_str(), nullptr);
     }
 }
+uint32_t EdgeWebview2Backend::getCapabilities()
+{
+	return (uint32_t)(BrowserCapabilities::JavaScript | BrowserCapabilities::Transparency | BrowserCapabilities::OSR);
+}
+
+void EdgeWebview2Backend::clearCookies() {
+    if (m_webview) {
+        // TODO
+    }
+}
 
 void EdgeWebview2Backend::initWebView(HWND hwnd) {
+    std::wstring userDataFolder;
+    if (!m_params.userDataPath.empty()) {
+        userDataFolder = std::wstring(m_params.userDataPath.begin(), m_params.userDataPath.end());
+    }
+
     CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, nullptr, nullptr,
+        nullptr, 
+        userDataFolder.empty() ? nullptr : userDataFolder.c_str(), 
+        nullptr,
         wrl::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [this, hwnd](HRESULT, ICoreWebView2Environment* env) -> HRESULT {
                 env->CreateCoreWebView2Controller(
@@ -74,7 +96,7 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
                                 Settings->put_IsScriptEnabled(TRUE);
                                 Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
                                 Settings->put_IsWebMessageEnabled(TRUE);
-                                
+
                                 // Set initial bounds
                                 RECT bounds;
                                 bounds.left = m_params.x;
@@ -82,6 +104,8 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
                                 bounds.right = m_params.x + m_params.width;
                                 bounds.bottom = m_params.y + m_params.height;
                                 m_controller->put_Bounds(bounds);
+
+                            	resizeWebView();
 
                                 if (!m_params.initialUrl.empty()) {
                                     loadUrl(m_params.initialUrl);
@@ -98,5 +122,9 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
 }
 
 void EdgeWebview2Backend::resizeWebView() {
-    // Redundant if resize(x,y,w,h) is used
+	if (m_controller) {
+		RECT bounds;
+		GetClientRect(static_cast<HWND>(m_params.parentWindowId), &bounds);
+		m_controller->put_Bounds(bounds);
+	}
 }

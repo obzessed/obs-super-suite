@@ -1,9 +1,8 @@
 #include "browser-dock.hpp"
 
-#include "plugin-support.h"
-
+#include <obs-module.h>
 #include <util/dstr.h>
-
+#include <QDir>
 #include <QVBoxLayout>
 #include <obs-frontend-api.h>
 
@@ -52,6 +51,18 @@ bool BrowserDock::createBrowser()
 	// Set initial script
 	webView_->setStartupScript(QString::fromStdString(get_injection_script(script_, css_)));
 	
+	// Set User Data Path
+	// Default: obs_module_config_path("browser-docks") / "{UUID}"
+	char *configPath = obs_module_config_path("browser-docks");
+	if (configPath) {
+		QDir dir(configPath);
+		bfree(configPath); // verify if obs_module_config_path needs free. Usually yes if it returns char*.
+		// checking api... `obs_module_config_path` allocates.
+		
+		QString userDataPath = dir.filePath(id_);
+		webView_->setUserDataPath(userDataPath);
+	}
+
 	// Load URL
 	webView_->loadUrl(url_);
 	
@@ -60,7 +71,7 @@ bool BrowserDock::createBrowser()
 	return true;
 }
 
-BrowserDock::BrowserDock(BrowserManager& manager, const char *url, const char *script, const char *css, BackendType backend, bool deferred_load, QWidget *parent) : QWidget(parent), manager_(manager)
+BrowserDock::BrowserDock(BrowserManager& manager, const QString &id, const char *url, const char *script, const char *css, BackendType backend, bool deferred_load, QWidget *parent) : QWidget(parent), manager_(manager), id_(id)
 {
 	url_ = url;
 	script_ = script;

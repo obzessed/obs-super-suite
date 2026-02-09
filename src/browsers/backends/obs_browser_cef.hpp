@@ -16,7 +16,9 @@ public:
 	void reload() override;
 	void setStartupScript(const std::string& script) override;
 	void runJavaScript(const std::string& script) override;
+	void clearCookies() override;
 	void setOnReady(BrowserReadyCallback callback) override { m_readyCallback = callback; }
+	uint32_t getCapabilities() override;
 
 	// Specific to CEF wrapper: handle onOBSBrowserReady? 
 	// The manager calls onOBSBrowserReady which calls activeDocks->onOBSBrowserReady.

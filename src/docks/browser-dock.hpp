@@ -21,12 +21,15 @@ private:
 
 	bool deferred_;
 	BackendType backend_;
+	QString id_;
 public:
-	BrowserDock(BrowserManager& manager, const char *url, const char *script = nullptr, const char *css = nullptr, BackendType backend = BackendType::ObsBrowserCEF, bool deferred_load = false, QWidget *parent = nullptr);
+	BrowserDock(BrowserManager& manager, const QString &id, const char *url, const char *script = nullptr, const char *css = nullptr, BackendType backend = BackendType::ObsBrowserCEF, bool deferred_load = false, QWidget *parent = nullptr);
 	~BrowserDock() override;
 	
 	void reload(const char *url = nullptr, const char *script = nullptr, const char *css = nullptr);
 	void onOBSBrowserReady();
+
+	[[nodiscard]] QWebViewX* webBrowser() const { return webView_; }
 
 private:
 	bool createBrowser();
