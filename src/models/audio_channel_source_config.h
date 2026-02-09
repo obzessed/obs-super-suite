@@ -65,6 +65,11 @@ public:
 	void addSource(const AsioSourceConfig &config);
 	void removeSource(int index);
 	void updateSource(int index, const AsioSourceConfig &config);
+	void moveSource(int fromIndex, int toIndex);
+	void swapSources(const QString &uuid1, const QString &uuid2);
+
+	bool canMoveSourceLeft(const QString &uuid) const;
+	bool canMoveSourceRight(const QString &uuid) const;
 
 private:
 	AudioChSrcConfig();

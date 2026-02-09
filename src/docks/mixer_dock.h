@@ -32,4 +32,10 @@ private:
 	QHBoxLayout *m_channelsLayout;
 	QScrollArea *m_scrollArea;
 	QVector<MixerChannel*> m_channels;
+
+	bool m_effectsVisible = true;
+	bool m_fadersVisible = true;
+
+protected:
+	void contextMenuEvent(QContextMenuEvent *event) override;
 };

@@ -189,3 +189,68 @@ void AudioChSrcConfig::updateSource(int index, const AsioSourceConfig &cfg)
 		save();
 	}
 }
+
+void AudioChSrcConfig::moveSource(int from, int to)
+{
+	if (from < 0 || from >= sources.size()) return;
+	if (to < 0 || to >= sources.size()) return;
+	if (from == to) return;
+	
+	AsioSourceConfig item = sources.takeAt(from);
+	sources.insert(to, item);
+	save();
+}
+
+void AudioChSrcConfig::swapSources(const QString &uuid1, const QString &uuid2)
+{
+	int idx1 = -1;
+	int idx2 = -1;
+	
+	for (int i = 0; i < sources.size(); i++) {
+		if (sources[i].sourceUuid == uuid1) idx1 = i;
+		if (sources[i].sourceUuid == uuid2) idx2 = i;
+	}
+	
+	if (idx1 != -1 && idx2 != -1 && idx1 != idx2) {
+		sources.swapItemsAt(idx1, idx2);
+		save();
+	}
+}
+
+bool AudioChSrcConfig::canMoveSourceLeft(const QString &uuid) const
+{
+	int idx = -1;
+	for (int i = 0; i < sources.size(); i++) {
+		if (sources[i].sourceUuid == uuid) {
+			idx = i;
+			break;
+		}
+	}
+	
+	if (idx <= 0) return false;
+	
+	for (int i = idx - 1; i >= 0; i--) {
+		if (sources[i].enabled && !sources[i].sourceUuid.isEmpty()) return true;
+	}
+	
+	return false;
+}
+
+bool AudioChSrcConfig::canMoveSourceRight(const QString &uuid) const
+{
+	int idx = -1;
+	for (int i = 0; i < sources.size(); i++) {
+		if (sources[i].sourceUuid == uuid) {
+			idx = i;
+			break;
+		}
+	}
+	
+	if (idx == -1 || idx >= sources.size() - 1) return false;
+	
+	for (int i = idx + 1; i < sources.size(); i++) {
+		if (sources[i].enabled && !sources[i].sourceUuid.isEmpty()) return true;
+	}
+	
+	return false;
+}

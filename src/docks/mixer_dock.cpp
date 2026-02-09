@@ -4,6 +4,9 @@
 #include <plugin-support.h>
 
 #include <QLabel>
+#include <QMenu>
+#include <QAction>
+#include <QContextMenuEvent>
 
 MixerDock::MixerDock(QWidget *parent)
 	: QWidget(parent)
@@ -70,6 +73,35 @@ void MixerDock::refresh()
 		
 		// Create channel strip
 		auto *channel = new MixerChannel(source, this);
+		// Apply global visibility settings
+		channel->setEffectsVisible(m_effectsVisible);
+		channel->setFadersVisible(m_fadersVisible);
+		
+		int currentIndex = m_channels.size();
+		
+		connect(channel, &MixerChannel::moveLeftRequest, this, [this, currentIndex] {
+			if (currentIndex > 0) {
+				MixerChannel *current = m_channels[currentIndex];
+				MixerChannel *prev = m_channels[currentIndex - 1];
+				AudioChSrcConfig::get()->swapSources(current->getSourceUuid(), prev->getSourceUuid());
+				refresh();
+			}
+		}, Qt::QueuedConnection);
+		
+		connect(channel, &MixerChannel::moveRightRequest, this, [this, currentIndex] {
+			// Check safe bounds (created at lambda capture time)
+			if (currentIndex < m_channels.size() - 1) {
+				MixerChannel *current = m_channels[currentIndex];
+				MixerChannel *next = m_channels[currentIndex + 1];
+				AudioChSrcConfig::get()->swapSources(current->getSourceUuid(), next->getSourceUuid());
+				refresh();
+			}
+		}, Qt::QueuedConnection);
+		
+		connect(channel, &MixerChannel::renameRequest, this, [this] {
+			refresh();
+		}, Qt::QueuedConnection);
+		
 		m_channels.append(channel);
 		
 		// Insert before the stretch
@@ -134,4 +166,33 @@ void MixerDock::updateSourceBalance(const QString &sourceUuid, float balance)
 	if (auto *channel = findChannelByUuid(sourceUuid)) {
 		channel->updateBalance(balance);
 	}
+}
+
+void MixerDock::contextMenuEvent(QContextMenuEvent *event)
+{
+	QMenu menu(this);
+	
+	QAction *showEffects = menu.addAction("Show Effects");
+	showEffects->setCheckable(true);
+	showEffects->setChecked(m_effectsVisible);
+	
+	connect(showEffects, &QAction::toggled, this, [this](bool checked) {
+		m_effectsVisible = checked;
+		for (auto *channel : m_channels) {
+			channel->setEffectsVisible(checked);
+		}
+	});
+	
+	QAction *showFaders = menu.addAction("Show Faders");
+	showFaders->setCheckable(true);
+	showFaders->setChecked(m_fadersVisible);
+	
+	connect(showFaders, &QAction::toggled, this, [this](bool checked) {
+		m_fadersVisible = checked;
+		for (auto *channel : m_channels) {
+			channel->setFadersVisible(checked);
+		}
+	});
+	
+	menu.exec(event->globalPos());
 }

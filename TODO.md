@@ -3,6 +3,7 @@
   - Power Suite?
   - Ultra Suite?
   - Open Stream Suite/Studio?
+  - Power Console?
 - Refs
   - https://github.com/obsproject/obs-browser
   - https://github.com/streamlabs/obs-sl-browser
