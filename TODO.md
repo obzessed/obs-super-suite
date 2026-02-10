@@ -3,7 +3,7 @@
   - Power Suite?
   - Ultra Suite?
   - Open Stream Suite/Studio?
-  - Power Console?
+  - Power/Pro Console?
 - Refs
   - https://github.com/obsproject/obs-browser
   - https://github.com/streamlabs/obs-sl-browser
@@ -48,6 +48,16 @@
   - https://github.com/norihiro/obs-async-source-duplication
   - https://github.com/stbmaster97-cmyk/VDeck-Grid-for-Aitum-Suite
   - https://github.com/stbmaster97-cmyk/VDeck-for-Aitum-Suite
+- VAD
+  - https://github.com/JannesP/AudioMirror
+  - https://github.com/VirtualDrivers/Virtual-Audio-Driver
+  - https://github.com/daavllc/Aural
+  - https://github.com/duncanthrax/scream
+  - https://github.com/Vengarioth/route-audio
+  - https://github.com/HSpear/virtual-audio-wire
+  - https://github.com/microsoft/Windows-driver-samples/tree/main/audio/sysvad
+  - https://github.com/syams86/Virtual-Audio-Pipeline
+  - https://github.com/eiz/SynchronousAudioRouter
 - https://www.shadertastic.com/
 - [ ] Bugs
   - ???
@@ -56,6 +66,16 @@
   - [ ] KS (Kernel Streaming)
   - [ ] MME (Multimedia)
   - [x] ASIO (Steinberg)
+- [ ] Browsers
+  - [ ] System (Webview2/Gtk WebKit/Apple WebKit)
+  - [ ] Built-in (CEF: obs-browser)
+  - [ ] CEF (self-hosted)
+  - [ ] QtWebEngine & QtWebView
+- Custom Widgets
+  - [ ] QtQuick
+  - [ ] QtQml
+  - [ ] QtWebEngine
+  - [ ] obs-browser source.
 - [ ] Canvas Manager.
 - [x] Secondary Dockable Windows
   - [ ] Secondary Studio Frontend.

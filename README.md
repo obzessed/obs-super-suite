@@ -1,4 +1,4 @@
-# OBS Super Suite
+# OBS Super Suite / OBS Power Console
 
 ## Introduction
 

@@ -9,12 +9,22 @@ static QCefCookieManager *x_cef_ck_mgr = nullptr;
 
 typedef QCef* (create_qcef_ft)();
 
-static void init_cef()
+static void _init_cef()
 {
 	if (!x_cef_) {
 		x_cef_ = obs_browser_init_panel();
 		if (!x_cef_) {
 			obs_log(LOG_ERROR, "error creating cef instance.");
+		} else {
+			if (!x_cef_->initialized()) {
+				obs_log(LOG_ERROR, "cef is not yet initialized!, waiting for it.");
+
+				x_cef_->init_browser();
+
+				if (!x_cef_->wait_for_browser_init()) {
+					obs_log(LOG_ERROR, "error initializing browser init.");
+				}
+			}
 		}
 	}
 
@@ -40,6 +50,8 @@ static void init_cef()
 
 static std::pair<QCef*, QCefCookieManager*> get_cef_instance()
 {
+	_init_cef();
+
 	if (!x_cef_) {
 		obs_log(LOG_ERROR, "cef: usage before init");
 	}

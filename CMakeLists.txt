@@ -10,9 +10,10 @@ option(ENABLE_QT "Use Qt functionality" OFF)
 include(compilerconfig)
 include(defaults)
 include(helpers)
-include(cpm) # Our CMake Package Manager
 
 include(FetchContent)
+
+include(cpm) # Our CMake Package Manager
 
 #CPMAddPackage("gh:fmtlib/fmt#12.1.0")
 CPMAddPackage(
@@ -25,16 +26,20 @@ CPMAddPackage(
 #  OPTIONS "QWEBVIEW_ENABLE_WEBVIEW2 ON" "QWEBVIEW_STATIC_MSVC_CRT ON" "QWEBVIEW_BUILD_SAMPLES OFF"
 #)
 
+# https://cef-builds.spotifycdn.com/index.html
+
 #set(CEF_SDK_VERSION "144.0.13+g9f739aa+chromium-144.0.7559.133")
+#set(CEF_SDK_VERSION "142.0.15+g6dfdb28+chromium-142.0.7444.176")
+
 #CPMAddPackage(
 #  URI "gh:CefView/QCefView#v2025.12.28"
 #  OPTIONS "BUILD_STATIC OFF" "STATIC_CRT OFF" "BUILD_DEMO OFF"
 #)
 
-#set(CEF_SDK_VERSION "142.0.15+g6dfdb28+chromium-142.0.7444.176")
+#set(CEFVIEW_WING_NAME "cef-helper-wing")
 #CPMAddPackage(
 #  URI "gh:CefView/CefViewCore#454c7246d1dd1c1a1888580e8972fac6691a5f44"
-#  OPTIONS "STATIC_CRT OFF"
+#  OPTIONS "STATIC_CRT ON"
 #)
 
 #if(TARGET CefViewWing)
@@ -87,8 +92,8 @@ if(ENABLE_FRONTEND_API)
 endif()
 
 if(ENABLE_QT)
-  find_package(Qt6 COMPONENTS Widgets Core)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
+  find_package(Qt6 COMPONENTS Widgets Core Gui Svg Xml Network)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Gui Qt6::Svg Qt6::Xml Qt6::Widgets Qt6::Network)
   target_compile_options(
     ${CMAKE_PROJECT_NAME}
     PRIVATE $<$<C_COMPILER_ID:Clang,AppleClang>:-Wno-quoted-include-in-framework-header -Wno-comma>

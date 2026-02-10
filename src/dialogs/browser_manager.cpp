@@ -47,8 +47,6 @@ void BrowserManager::cleanup(bool full)
 
 void BrowserManager::onOBSBrowserReady()
 {
-	init_cef();
-
 	deferred_load = false;
 
 	for (const auto &entry : docks) {
