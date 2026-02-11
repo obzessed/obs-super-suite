@@ -8,7 +8,7 @@
 #include <QGraphicsSceneMouseEvent>
 #include <obs.h>
 
-enum class NodeType { Canvas, AudioMixer, VideoSource, AudioSource, AudioTrack, Encoder, Output };
+enum class NodeType { Canvas, AudioMixer, VideoInput, AudioInput, MediaInput, Scene, Transition, Encoder, Output };
 
 class GraphEdge;
 
@@ -109,6 +109,7 @@ private:
 	GraphNode *m_end;
 	QString m_startPortId;
 	QString m_endPortId;
+	QColor m_baseColor;
 };
 
 class GraphScene : public QGraphicsScene {

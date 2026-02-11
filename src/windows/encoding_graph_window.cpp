@@ -48,6 +48,12 @@ GraphNode::GraphNode(const QString &title, NodeType type, const QString &subtext
 	} else if (m_type == NodeType::AudioMixer) {
 		m_width = 200;
 		m_height = 160; // Tall enough for tracks
+	} else if (m_type == NodeType::Scene) {
+		m_width = 220;
+		m_height = 80;
+	} else if (m_type == NodeType::Transition) {
+		m_width = 200;
+		m_height = 70;
 	} else {
 		m_width = 200;
 		m_height = 70;
@@ -132,7 +138,8 @@ void GraphNode::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 {
 	QGraphicsItem::mouseDoubleClickEvent(event);
 
-	if (m_type == NodeType::VideoSource || m_type == NodeType::AudioSource) {
+	if (m_type == NodeType::VideoInput || m_type == NodeType::AudioInput || m_type == NodeType::MediaInput ||
+	    m_type == NodeType::Scene || m_type == NodeType::Transition) {
 		obs_source_t *source = getSourceRef();
 		if (source) {
 			obs_frontend_open_source_properties(source);
@@ -198,7 +205,7 @@ void GraphNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 {
 	QGraphicsItem::mouseReleaseEvent(event);
 
-	if (m_type == NodeType::VideoSource) {
+	if (m_type == NodeType::VideoInput || m_type == NodeType::MediaInput || m_type == NodeType::Scene) {
 		// Check for drop on Canvas
 		QList<QGraphicsItem *> collisions = collidingItems();
 		for (QGraphicsItem *item : collisions) {
@@ -268,11 +275,15 @@ QColor GraphNode::getHeaderColor() const
 	switch (m_type) {
 	case NodeType::Canvas:
 		return QColor(30, 30, 30);
-	case NodeType::VideoSource:
+	case NodeType::VideoInput:
 		return QColor(30, 30, 30);
-	case NodeType::AudioSource:
+	case NodeType::AudioInput:
 		return QColor(30, 30, 30);
-	case NodeType::AudioTrack:
+	case NodeType::MediaInput:
+		return QColor(30, 30, 30);
+	case NodeType::Scene:
+		return QColor(40, 30, 40); // Slightly reddish dark
+	case NodeType::Transition:
 		return QColor(30, 30, 30);
 	case NodeType::Encoder:
 		return QColor(30, 30, 30);
@@ -293,12 +304,16 @@ QColor GraphNode::getBorderColor() const
 	switch (m_type) {
 	case NodeType::Canvas:
 		return QColor(200, 200, 200); // White/Grey
-	case NodeType::VideoSource:
+	case NodeType::VideoInput:
 		return QColor(60, 100, 160); // Blue
-	case NodeType::AudioSource:
+	case NodeType::AudioInput:
 		return QColor(60, 160, 100); // Green
-	case NodeType::AudioTrack:
-		return QColor(160, 160, 60); // Yellow
+	case NodeType::MediaInput:
+		return QColor(60, 160, 160); // Cyan/Teal
+	case NodeType::Scene:
+		return QColor(160, 60, 100); // Magenta/Reddish
+	case NodeType::Transition:
+		return QColor(100, 100, 100); // Grey
 	case NodeType::Encoder:
 		return QColor(160, 100, 60); // Orange
 	case NodeType::Output:
@@ -376,7 +391,59 @@ void GraphNode::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidg
 {
 	QRectF bodyRect(0, 0, m_width, m_height);
 
-	// Card Look
+	// ---------------------------------------------------------
+	// 1. Draw Port Dots (BEHIND Body)
+	// ---------------------------------------------------------
+	painter->setPen(Qt::NoPen);
+
+	constexpr int PORT_RADIUS = 8; // For drawing, actual hit area is larger in shape()
+
+	// Input Ports Dots
+	for (const auto &p : m_inputPorts) {
+		QPointF pos(0, p.yOffset);
+
+		// Color Code
+		QColor portColor(220, 220, 220); // Default Grey
+		if (p.id.contains("video", Qt::CaseInsensitive))
+			portColor = QColor(100, 150, 255); // Blue
+		else if (p.id.contains("audio", Qt::CaseInsensitive) || p.id.startsWith("track"))
+			portColor = QColor(100, 255, 150); // Green
+
+		painter->setBrush(portColor);
+		painter->drawEllipse(pos, PORT_RADIUS, PORT_RADIUS);
+	}
+
+	// Output Ports Dots
+	for (const auto &p : m_outputPorts) {
+		QPointF pos(m_width, p.yOffset);
+
+		QColor portColor(220, 220, 220);
+		if (p.id.contains("video", Qt::CaseInsensitive))
+			portColor = QColor(100, 150, 255);
+		else if (p.id.contains("audio", Qt::CaseInsensitive) || p.id.startsWith("track"))
+			portColor = QColor(100, 255, 150);
+
+		painter->setBrush(portColor);
+		painter->drawEllipse(pos, PORT_RADIUS, PORT_RADIUS);
+	}
+
+	// Default Ports (if no specific ports)
+	// TODO: no longer needed?
+	if (m_inputPorts.isEmpty() && m_outputPorts.isEmpty()) {
+		painter->setBrush(QColor(220, 220, 220));
+		if (m_type != NodeType::Canvas && m_type != NodeType::AudioMixer) {
+			if (m_type != NodeType::VideoInput && m_type != NodeType::AudioInput &&
+			    m_type != NodeType::MediaInput && m_type != NodeType::Scene &&
+			    m_type != NodeType::Transition)
+				painter->drawEllipse(leftPort() + QPointF(-2.5, -2.5), 5, 5);
+			if (m_type != NodeType::Output)
+				painter->drawEllipse(rightPort() + QPointF(-2.5, -2.5), 5, 5);
+		}
+	}
+
+	// ---------------------------------------------------------
+	// 2. Draw Body
+	// ---------------------------------------------------------
 	painter->setBrush(getBodyColor());
 	if (isSelected()) {
 		painter->setPen(QPen(QColor(255, 200, 0), 2));
@@ -384,6 +451,10 @@ void GraphNode::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidg
 		painter->setPen(QPen(getBorderColor(), 1));
 	}
 	painter->drawRoundedRect(bodyRect, 6, 6);
+
+	// ---------------------------------------------------------
+	// 3. Decorations
+	// ---------------------------------------------------------
 
 	// Type Indicator (Small Colored Dot)
 	QColor indicatorColor = getBorderColor();
@@ -413,73 +484,32 @@ void GraphNode::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidg
 	painter->setPen(QPen(QColor(60, 60, 60), 1));
 	painter->drawLine(10, 28, m_width - 10, 28);
 
-	// Draw Ports
+	// ---------------------------------------------------------
+	// 4. Port Labels (Text)
+	// ---------------------------------------------------------
 	QFont portFont = painter->font();
 	portFont.setPointSize(8);
 	portFont.setBold(false);
 	painter->setFont(portFont);
+	painter->setPen(QColor(200, 200, 200));
 
-	// Input Ports
+	const int LABEL_MARGIN = 12;
+
+	// Input Labels
 	for (const auto &p : m_inputPorts) {
-		QPointF pos(0, p.yOffset);
-
-		// Color Code
-		QColor portColor(220, 220, 220); // Default Grey
-		if (p.id.contains("video", Qt::CaseInsensitive))
-			portColor = QColor(100, 150, 255); // Blue
-		else if (p.id.contains("audio", Qt::CaseInsensitive) || p.id.startsWith("track"))
-			portColor = QColor(100, 255, 150); // Green
-
-		painter->setBrush(portColor);
-		painter->setPen(Qt::NoPen);
-		painter->drawEllipse(pos + QPointF(-4, -4), 8, 8); // Circle on edge
-
-		// Label
-		painter->setPen(QColor(200, 200, 200));
-		painter->drawText(QRectF(10, p.yOffset - 10, m_width / 2 - 10, 20), Qt::AlignLeft | Qt::AlignVCenter,
-				  p.label);
+		painter->drawText(QRectF(LABEL_MARGIN, p.yOffset - 10, m_width / 2 - LABEL_MARGIN, 20),
+				  Qt::AlignLeft | Qt::AlignVCenter, p.label);
 	}
 
-	// Output Ports
+	// Output Labels
 	for (const auto &p : m_outputPorts) {
-		QPointF pos(m_width, p.yOffset);
-
-		QColor portColor(220, 220, 220);
-		if (p.id.contains("video", Qt::CaseInsensitive))
-			portColor = QColor(100, 150, 255);
-		else if (p.id.contains("audio", Qt::CaseInsensitive) || p.id.startsWith("track"))
-			portColor = QColor(100, 255, 150);
-
-		painter->setBrush(portColor);
-		painter->setPen(Qt::NoPen);
-		painter->drawEllipse(pos + QPointF(-4, -4), 8, 8);
-
-		// Label
-		painter->setPen(QColor(200, 200, 200));
-		painter->drawText(QRectF(m_width / 2, p.yOffset - 10, m_width / 2 - 10, 20),
+		painter->drawText(QRectF(m_width / 2, p.yOffset - 10, m_width / 2 - LABEL_MARGIN, 20),
 				  Qt::AlignRight | Qt::AlignVCenter, p.label);
-	}
-
-	// Default Ports (if no specific ports)
-	if (m_inputPorts.isEmpty() && m_outputPorts.isEmpty()) {
-		// Just standard ports
-		if (m_type != NodeType::Canvas && m_type != NodeType::AudioMixer) {
-			// Logic for drawing generic ports if none exist
-			if (m_type != NodeType::VideoSource && m_type != NodeType::AudioSource)
-				painter->drawEllipse(leftPort(), 5, 5);
-			if (m_type != NodeType::Output)
-				painter->drawEllipse(rightPort(), 5, 5);
-		}
-	} else {
-		// Draw Main Ports still?
-		// If we have specific ports, we probably don't want the default ones unless specified.
-		// Sources still use defaults (no addInputPort called on them).
 	}
 
 	// Canvas Content Display (Always draw if Canvas)
 	if (m_type == NodeType::Canvas) {
 		// Draw a preview rectangle in the middle
-		// Adjust rect based on ports if needed, but let's just center it for now
 		QRectF previewRect(10, 35, m_width - 20, m_height - 45);
 		painter->setBrush(Qt::black);
 		painter->setPen(QPen(QColor(60, 60, 60), 1));
@@ -529,7 +559,16 @@ GraphEdge::GraphEdge(GraphNode *start, GraphNode *end, const QString &startPortI
 	setFlags(ItemIsSelectable);
 	setAcceptHoverEvents(true);
 	setZValue(0);
-	setPen(QPen(QColor(150, 150, 150), 2));
+
+	// Determine color based on port ID (similar to NodePort logic)
+	m_baseColor = QColor(150, 150, 150); // Default Grey
+	if (m_startPortId.contains("video", Qt::CaseInsensitive)) {
+		m_baseColor = QColor(100, 150, 255); // Blue
+	} else if (m_startPortId.contains("audio", Qt::CaseInsensitive) || m_startPortId.startsWith("track")) {
+		m_baseColor = QColor(100, 255, 150); // Green
+	}
+
+	setPen(QPen(m_baseColor, 2));
 	updatePath();
 }
 
@@ -545,7 +584,7 @@ QVariant GraphEdge::itemChange(GraphicsItemChange change, const QVariant &value)
 		if (value.toBool()) {
 			setPen(QPen(QColor(255, 200, 0), 3)); // Gold, thicker when selected
 		} else {
-			setPen(QPen(QColor(150, 150, 150), 2)); // Default
+			setPen(QPen(m_baseColor, 2)); // Default
 		}
 	}
 	return QGraphicsPathItem::itemChange(change, value);
@@ -1014,8 +1053,16 @@ void EncodingGraphWindow::refresh()
 
 				// Determine type (Video or Audio)
 				const uint32_t flags = obs_source_get_output_flags(source);
-				const NodeType nodeType = (flags & OBS_SOURCE_VIDEO) ? NodeType::VideoSource
-										     : NodeType::AudioSource;
+				NodeType nodeType;
+				if (obs_scene_from_source(source)) {
+					nodeType = NodeType::Scene;
+				} else if ((flags & OBS_SOURCE_VIDEO) && (flags & OBS_SOURCE_AUDIO)) {
+					nodeType = NodeType::MediaInput;
+				} else if (flags & OBS_SOURCE_VIDEO) {
+					nodeType = NodeType::VideoInput;
+				} else {
+					nodeType = NodeType::AudioInput;
+				}
 
 				GraphNode *srcNode = getOrCreateNode(
 					QString("SRC:%1:%2").arg(srcName).arg(srcUuid), srcName, nodeType,
@@ -1035,7 +1082,9 @@ void EncodingGraphWindow::refresh()
 					srcNode->addOutputPort("audio", "Audio");
 				}
 
-				addEdge(srcNode, canvasNode, "video", "video");
+				if (flags & OBS_SOURCE_VIDEO) {
+					addEdge(srcNode, canvasNode, "video", "video");
+				}
 
 				// Link to Audio Mixer ONLY if Canvas supports MIX_AUDIO
 				if ((flags & OBS_SOURCE_AUDIO) && canvasMixesAudio) {
@@ -1086,7 +1135,16 @@ void EncodingGraphWindow::refresh()
 
 		// Determine type and ID prefix
 		bool isScene = obs_scene_from_source(source) != nullptr;
-		NodeType type = (flags & OBS_SOURCE_VIDEO) ? NodeType::VideoSource : NodeType::AudioSource;
+		NodeType type;
+		if (isScene) {
+			type = NodeType::Scene;
+		} else if ((flags & OBS_SOURCE_VIDEO) && (flags & OBS_SOURCE_AUDIO)) {
+			type = NodeType::MediaInput;
+		} else if (flags & OBS_SOURCE_VIDEO) {
+			type = NodeType::VideoInput;
+		} else {
+			type = NodeType::AudioInput;
+		}
 
 		QString nodeId;
 		QString subText;
@@ -1115,13 +1173,14 @@ void EncodingGraphWindow::refresh()
 			ctx->dlg->addEdge(srcNode, ctx->sceneNode, "video", "video");
 		}
 
-		// Link Audio: Source -> Audio Mixer (Direct Mixing)
+		// Link Audio: Source -> Scene (Pass-through)
 		if (flags & OBS_SOURCE_AUDIO) {
 			uint32_t mixers = obs_source_get_audio_mixers(source);
 			for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
 				if (mixers & (1 << i)) {
-					QString trackPort = QString("track%1").arg(i + 1);
-					ctx->dlg->addEdge(srcNode, ctx->audioMixerNode, "audio", trackPort);
+					// Connect Source Output (Audio) -> Scene Input (Track N)
+					QString sceneInputPort = QString("audio_track%1").arg(i + 1);
+					ctx->dlg->addEdge(srcNode, ctx->sceneNode, "audio", sceneInputPort);
 				}
 			}
 		}
@@ -1147,13 +1206,25 @@ void EncodingGraphWindow::refresh()
 
 		// Create Scene Node
 		GraphNode *sceneNode = ctx->dlg->getOrCreateNode(QString("SCN:%1:%2").arg(name).arg(uuid), name,
-								 NodeType::VideoSource, "Type: Scene");
+								 NodeType::Scene, "Type: Scene");
 		sceneNode->setSource(sceneSource);
 		sceneNode->setNodeGroup(ctx->canvasNode->nodeGroup());
 
-		// Add Ports - Scene only handles Video Composition
+		// Add Ports - Scene handles Video Composition & Audio Pass-through
 		sceneNode->addInputPort("video", "Video Input");
 		sceneNode->addOutputPort("video", "Video Output");
+
+		// Scene Audio Ports (Pass-through for 6 tracks)
+		for (int i = 1; i <= MAX_AUDIO_MIXES; i++) {
+			QString trackId = QString("audio_track%1").arg(i);
+			sceneNode->addInputPort(trackId, QString("Track %1").arg(i));
+			sceneNode->addOutputPort(trackId, QString("Track %1").arg(i));
+
+			// Link Scene -> Global Mixer (Default Flow)
+			// Note: This implies the Scene outputs to the main mix.
+			// In nested scenes, this might need adjustment, but for top-level scenes, this is correct.
+			ctx->dlg->addEdge(sceneNode, ctx->audioMixerNode, trackId, QString("track%1").arg(i));
+		}
 
 		// Link Scene -> Canvas (Video)
 		ctx->dlg->addEdge(sceneNode, ctx->canvasNode, "video", "video");
@@ -1215,14 +1286,17 @@ void EncodingGraphWindow::refresh()
 				return true;
 			}
 
-			NodeType type;
-			if (hasVideo) {
-				type = NodeType::VideoSource;
-			} else {
-				type = NodeType::AudioSource;
-			}
-
 			const bool isScene = obs_scene_from_source(source) != nullptr;
+			NodeType type;
+			if (isScene) {
+				type = NodeType::Scene;
+			} else if (hasVideo && hasAudio) {
+				type = NodeType::MediaInput;
+			} else if (hasVideo) {
+				type = NodeType::VideoInput;
+			} else {
+				type = NodeType::AudioInput;
+			}
 			QString nodeId;
 			QString subText;
 
@@ -1437,18 +1511,22 @@ void EncodingGraphWindow::refresh()
 
 				bool found = false;
 
-				// Encoder -> Output
-				for (size_t enc_idx = 0; enc_idx < MAX_OUTPUT_VIDEO_ENCODERS; enc_idx++) {
-					if (obs_encoder_t *video_encoder =
-						    obs_output_get_video_encoder2(output, enc_idx)) {
-						if (const auto encNode = ed->encoderNodes.value(video_encoder)) {
-							QString trackPortIn = QString("video_track%1").arg(enc_idx + 1);
-							dialog->addEdge(encNode, outNode, "video", trackPortIn);
+				if (flags & OBS_OUTPUT_ENCODED) {
+					// Encoder -> Output
+					for (size_t enc_idx = 0; enc_idx < MAX_OUTPUT_VIDEO_ENCODERS; enc_idx++) {
+						if (obs_encoder_t *video_encoder =
+							    obs_output_get_video_encoder2(output, enc_idx)) {
+							if (const auto encNode =
+								    ed->encoderNodes.value(video_encoder)) {
+								QString trackPortIn =
+									QString("video_track%1").arg(enc_idx + 1);
+								dialog->addEdge(encNode, outNode, "video", trackPortIn);
+							}
+							found = true;
 						}
-						found = true;
+						if (!multitrack_video)
+							break;
 					}
-					if (!multitrack_video)
-						break;
 				}
 
 				if (!found) {
@@ -1489,7 +1567,7 @@ void EncodingGraphWindow::refresh()
 						break;
 				}
 
-				// TODO: what are these?
+				// TODO: what are these? (maybe direct output fr mixer?)
 				{
 					uint32_t output_mixer = static_cast<uint32_t>(obs_output_get_mixer(output));
 					uint32_t output_mixers = static_cast<uint32_t>(obs_output_get_mixers(output));
@@ -1498,28 +1576,35 @@ void EncodingGraphWindow::refresh()
 						output_mixers);
 				}
 
-				for (size_t enc_idx = 0; enc_idx < MAX_OUTPUT_AUDIO_ENCODERS; enc_idx++) {
-					if (obs_encoder_t *audio_encoder = obs_output_get_audio_encoder(
-						    output, enc_idx)) { // input index where encoder out is routed to
-						if (const auto encNode = ed->encoderNodes.value(audio_encoder)) {
-							const auto mixer_index = obs_encoder_get_mixer_index(
-								audio_encoder); // encoder mixer input
+				if (flags & OBS_OUTPUT_ENCODED) {
+					for (size_t enc_idx = 0; enc_idx < MAX_OUTPUT_AUDIO_ENCODERS; enc_idx++) {
+						if (obs_encoder_t *audio_encoder = obs_output_get_audio_encoder(
+							    output,
+							    enc_idx)) { // input index where encoder out is routed to
+							if (const auto encNode =
+								    ed->encoderNodes.value(audio_encoder)) {
+								const auto mixer_index = obs_encoder_get_mixer_index(
+									audio_encoder); // encoder mixer input
 
-							obs_log(LOG_INFO, "[audio] mixer index: %d, output index: %d",
-								mixer_index, enc_idx);
+								obs_log(LOG_INFO,
+									"[audio] mixer index: %d, output index: %d",
+									mixer_index, enc_idx);
 
-							// Encoder -> Output (encoded)
-							QString trackPortIn = QString("audio_track%1").arg(enc_idx + 1);
-							dialog->addEdge(encNode, outNode, "audio", trackPortIn);
+								// Encoder -> Output (encoded)
+								QString trackPortIn =
+									QString("audio_track%1").arg(enc_idx + 1);
+								dialog->addEdge(encNode, outNode, "audio", trackPortIn);
 
-							// Mixer -> Encoder (un-encoded)
-							QString trackPortOut = QString("track%1").arg(mixer_index + 1);
-							dialog->addEdge(ed->audioMixerNode, encNode, trackPortOut,
-									"audio");
+								// Mixer -> Encoder (un-encoded)
+								QString trackPortOut =
+									QString("track%1").arg(mixer_index + 1);
+								dialog->addEdge(ed->audioMixerNode, encNode,
+										trackPortOut, "audio");
+							}
 						}
+						if (!multitrack_audio)
+							break;
 					}
-					if (!multitrack_audio)
-						break;
 				}
 			}
 
@@ -1569,16 +1654,16 @@ void EncodingGraphWindow::layoutGraph()
 		GraphNode *node = it.value();
 
 		switch (node->nodeType()) {
-		case NodeType::VideoSource:
-		case NodeType::AudioSource:
-			if (id.startsWith("SCN:")) {
-				scenes.append(node);
-			} else {
-				rawSources.append(node);
-			}
+		case NodeType::VideoInput:
+		case NodeType::AudioInput:
+		case NodeType::MediaInput:
+			rawSources.append(node);
+			break;
+		case NodeType::Scene:
+		case NodeType::Transition:
+			scenes.append(node);
 			break;
 		case NodeType::Canvas:
-		case NodeType::AudioTrack:
 		case NodeType::AudioMixer:
 			canvases.append(node);
 			break;
