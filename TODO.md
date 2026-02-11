@@ -94,6 +94,8 @@
 - [ ] Meld style encoder view and possibly interactive.
 - [ ] Master Fader.
 - [ ] Channels Viewer.
+- [ ] Encoder View.
+  - Snake for multi-tracks audio wires.
 - [ ] Multi Audio Output (obs_output_t)
   - [ ] '???'
 - [ ] Audio Source types.
