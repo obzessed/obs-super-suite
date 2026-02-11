@@ -1567,14 +1567,7 @@ void EncodingGraphWindow::refresh()
 						break;
 				}
 
-				// TODO: what are these? (maybe direct output fr mixer?)
-				{
-					uint32_t output_mixer = static_cast<uint32_t>(obs_output_get_mixer(output));
-					uint32_t output_mixers = static_cast<uint32_t>(obs_output_get_mixers(output));
-
-					obs_log(LOG_INFO, "[audio] %s(%s) output mix, %d|%d", name, id, output_mixer,
-						output_mixers);
-				}
+				bool found = false;
 
 				if (flags & OBS_OUTPUT_ENCODED) {
 					for (size_t enc_idx = 0; enc_idx < MAX_OUTPUT_AUDIO_ENCODERS; enc_idx++) {
@@ -1601,29 +1594,47 @@ void EncodingGraphWindow::refresh()
 								dialog->addEdge(ed->audioMixerNode, encNode,
 										trackPortOut, "audio");
 							}
+							found = true;
 						}
 						if (!multitrack_audio)
 							break;
 					}
 				}
-			}
 
-			// audio
-			// if (flags & OBS_OUTPUT_AUDIO) {
-			// 	const auto output_audio = obs_output_audio(output);
-			//
-			// 	// mixer -> output (audio)
-			// 	if (output_audio == obs_get_audio()) {
-			// 		for (size_t i = 0; i < MAX_AUDIO_MIXES; i++) {
-			// 			uint32_t output_mixers = static_cast<uint32_t>(obs_output_get_mixers(output));
-			// 			if (output_mixers & (1 << i)) {
-			// 				QString trackPort = QString("track%1").arg(i + 1);
-			// 				dialog->addEdge(ed->audioMixerNode, outNode, trackPort, "audio");
-			// 			}
-			//
-			// 		}
-			// 	}
-			// }
+				// // TODO: what are these? (maybe direct output fr mixer?)
+				// {
+				// 	uint32_t output_mixer = static_cast<uint32_t>(obs_output_get_mixer(output));
+				// 	uint32_t output_mixers = static_cast<uint32_t>(obs_output_get_mixers(output));
+				//
+				// 	obs_log(LOG_INFO, "[audio] %s(%s) output mix, %d|%d", name, id, output_mixer,
+				// 		output_mixers);
+				// }
+
+				if (!found) {
+					// Mixer -> Output (un-encoded)
+					const auto output_audio = obs_output_audio(output);
+					if (output_audio == obs_get_audio()) {
+						for (size_t i = 0; i < MAX_AUDIO_MIXES; i++) {
+							uint32_t output_mixers = static_cast<uint32_t>(obs_output_get_mixers(output));
+							if (output_mixers & (1 << i)) {
+								QString trackPort = QString("track%1").arg(i + 1);
+								dialog->addEdge(ed->audioMixerNode, outNode, trackPort, "audio");
+							}
+
+						}
+						found = true;
+					}
+				}
+
+				// TODO: Source -> Output ???
+				if (!found) {
+					obs_log(LOG_WARNING, "AUDIO SOURCE NOT FOUND: %s (%s)", name, id);
+
+					// audio_output_connect(output_audio);
+					// audio_output_active(output_audio);
+					// audio_output_get_info(output_audio);
+				}
+			}
 
 			return true;
 		},
