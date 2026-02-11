@@ -220,6 +220,7 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 							QString::fromUtf8(oldName), &ok);
 		if (ok && !newName.isEmpty()) {
 			obs_source_set_name(source, newName.toUtf8().constData());
+			UpdateName();
 		}
 	});
 

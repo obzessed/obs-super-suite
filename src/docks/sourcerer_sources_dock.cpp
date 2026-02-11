@@ -267,7 +267,6 @@ void SourcererSourcesDock::mousePressEvent(QMouseEvent *event)
 	QWidget::mousePressEvent(event);
 }
 
-
 void SourcererSourcesDock::UpdateZoom(int delta_steps)
 {
 	int newWidth = itemWidth + (delta_steps * ZOOM_STEP);
@@ -354,10 +353,9 @@ bool SourcererSourcesDock::EnumSources(void *data, obs_source_t *source)
 	const char *id = obs_source_get_id(source);
 	if (strcmp(id, "scene") == 0)
 		return true; // Skip scenes
-	if (strcmp(id, "group") == 0)
-		return true; // Skip groups
 
 	SourcererItem *item = new SourcererItem(source);
+
 	item->SetItemWidth(dock->itemWidth);
 	// item->SetSourceActive(obs_source_enabled(source)); // Handled internally
 	item->SetSceneItemVisible(true);
@@ -390,15 +388,15 @@ bool SourcererSourcesDock::EnumSceneItems(obs_scene_t *scene, obs_sceneitem_t *i
 	const char *id = obs_source_get_id(source);
 	if (strcmp(id, "scene") == 0)
 		return true;
-	if (strcmp(id, "group") == 0)
-		return true;
 
 	SourcererItem *widget = new SourcererItem(source);
+
 	widget->SetItemWidth(dock->itemWidth);
 	widget->SetSceneItemVisible(obs_sceneitem_visible(item));
 	dock->items.push_back(widget);
 
 	connect(widget, &SourcererItem::Clicked, dock, &SourcererSourcesDock::OnItemClicked);
+	connect(widget, &SourcererItem::DoubleClicked, dock, &SourcererSourcesDock::OnItemDoubleClicked);
 	connect(widget, &SourcererItem::MenuRequested, dock, &SourcererSourcesDock::OnItemMenuRequested);
 
 	dock->flowLayout->addWidget(widget);
@@ -415,7 +413,7 @@ void SourcererSourcesDock::FrontendEvent(enum obs_frontend_event event, void *da
 		    event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED ||
 		    event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
 			dock->Refresh();
-		    }
+		}
 	} else {
 		// Even if not filtering, we might need to update the connected scene if it changed,
 		// because we want to show highlights for the current scene's items.
@@ -423,7 +421,7 @@ void SourcererSourcesDock::FrontendEvent(enum obs_frontend_event event, void *da
 		    event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED ||
 		    event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
 			dock->UpdateSceneConnection();
-		    }
+		}
 	}
 }
 
