@@ -20,6 +20,8 @@ public:
 	void UpdateZoom(int delta_steps);
 	void ResetZoom();
 	void SetZoom(int width);
+	QJsonObject Save() const;
+	void Load(const QJsonObject &obj);
 
 protected:
 	void showEvent(QShowEvent *event) override;

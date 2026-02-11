@@ -2,7 +2,11 @@
 #include <QVBoxLayout>
 #include <QPainter>
 #include <QMouseEvent>
+#include <QInputDialog>
+#include <QLineEdit>
+#include <QMenu>
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 
 class SourcererDisplay : public OBSQTDisplay {
 public:
@@ -65,6 +69,11 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 
 	// Create the display now (or it happens on show)
 	display->CreateDisplay();
+
+	signal_handler_t *sh = obs_source_get_signal_handler(source);
+	signal_handler_connect(sh, "rename", SourceRenamed, this);
+	signal_handler_connect(sh, "enable", SourceEnabled, this);
+	signal_handler_connect(sh, "disable", SourceDisabled, this);
 }
 
 SourcererItem::~SourcererItem()
@@ -72,6 +81,12 @@ SourcererItem::~SourcererItem()
 	if (display && display->GetDisplay()) {
 		obs_display_remove_draw_callback(display->GetDisplay(), SourcererItem::DrawPreview, this);
 	}
+
+	signal_handler_t *sh = obs_source_get_signal_handler(source);
+	signal_handler_disconnect(sh, "rename", SourceRenamed, this);
+	signal_handler_disconnect(sh, "enable", SourceEnabled, this);
+	signal_handler_disconnect(sh, "disable", SourceDisabled, this);
+
 	obs_source_release(source);
 }
 
@@ -112,6 +127,24 @@ void SourcererItem::SetProgram(bool program)
 	update();
 }
 
+void SourcererItem::SetSceneItemVisible(bool visible)
+{
+	if (isSceneItemVisible == visible)
+		return;
+	isSceneItemVisible = visible;
+	UpdateStatus();
+}
+
+void SourcererItem::UpdateStatus()
+{
+	bool active = isSourceEnabled && isSceneItemVisible;
+	if (label) {
+		label->setEnabled(active);
+	}
+
+	update();
+}
+
 void SourcererItem::paintEvent(QPaintEvent *event)
 {
 	Q_UNUSED(event);
@@ -133,28 +166,31 @@ void SourcererItem::paintEvent(QPaintEvent *event)
 		p.setPen(QPen(Qt::red, 2));
 		p.drawRoundedRect(r.adjusted(2, 2, -2, -2), radius - 1, radius - 1);
 		return;
-	}
-
-	if (isProgram) {
+	} else if (isProgram) {
 		borderColor = Qt::red;
 		borderWidth = 4;
+		p.setPen(QPen(borderColor, borderWidth));
+		p.drawRoundedRect(r, radius, radius);
 	} else if (isSelected) {
 		borderColor = Qt::blue;
 		borderWidth = 4;
+		p.setPen(QPen(borderColor, borderWidth));
+		p.drawRoundedRect(r, radius, radius);
 	} else {
 		// Default
 		borderColor = QColor(60, 60, 60); // Dark Gray
 		borderWidth = 1;
+		p.setPen(QPen(borderColor, borderWidth));
+		p.drawRoundedRect(r, radius, radius);
 	}
-
-	p.setPen(QPen(borderColor, borderWidth));
-	p.drawRoundedRect(r, radius, radius);
 }
 
 void SourcererItem::mousePressEvent(QMouseEvent *event)
 {
 	if (event->button() == Qt::LeftButton) {
 		emit Clicked(this);
+		event->accept();
+		return;
 	}
 	QWidget::mousePressEvent(event);
 }
@@ -163,12 +199,51 @@ void SourcererItem::mouseDoubleClickEvent(QMouseEvent *event)
 {
 	if (event->button() == Qt::LeftButton) {
 		emit DoubleClicked(this);
+		event->accept();
+		return;
 	}
 	QWidget::mouseDoubleClickEvent(event);
 }
 
-void SourcererItem::DrawPreview(void *data, uint32_t cx, uint32_t cy)
+void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
+{
+	QMenu menu(this);
 
+	// Standard Source Actions
+	QAction *renameAction = menu.addAction(tr("Rename"));
+	connect(renameAction, &QAction::triggered, [this]() {
+		if (!source)
+			return;
+		const char *oldName = obs_source_get_name(source);
+		bool ok;
+		QString newName = QInputDialog::getText(this, tr("Rename Source"), tr("Name:"), QLineEdit::Normal,
+							QString::fromUtf8(oldName), &ok);
+		if (ok && !newName.isEmpty()) {
+			obs_source_set_name(source, newName.toUtf8().constData());
+		}
+	});
+
+	menu.addSeparator();
+
+	QAction *filtersAction = menu.addAction(tr("Filters"));
+	connect(filtersAction, &QAction::triggered, [this]() {
+		if (source)
+			obs_frontend_open_source_filters(source);
+	});
+
+	QAction *propsAction = menu.addAction(tr("Properties"));
+	connect(propsAction, &QAction::triggered, [this]() {
+		if (source)
+			obs_frontend_open_source_properties(source);
+	});
+
+	// Allow parent to add items (e.g., "Hide from Scene")
+	emit MenuRequested(this, &menu);
+
+	menu.exec(event->globalPos());
+}
+
+void SourcererItem::DrawPreview(void *data, uint32_t cx, uint32_t cy)
 {
 	SourcererItem *item = static_cast<SourcererItem *>(data);
 	if (!item || !item->source)
@@ -199,4 +274,37 @@ void SourcererItem::DrawPreview(void *data, uint32_t cx, uint32_t cy)
 	obs_source_video_render(source);
 
 	gs_matrix_pop();
+}
+
+void SourcererItem::SourceRenamed(void *data, calldata_t *cd)
+{
+	Q_UNUSED(cd);
+	SourcererItem *item = static_cast<SourcererItem *>(data);
+	QMetaObject::invokeMethod(item, "UpdateName", Qt::QueuedConnection);
+}
+
+void SourcererItem::SourceEnabled(void *data, calldata_t *cd)
+{
+	Q_UNUSED(cd);
+	SourcererItem *item = static_cast<SourcererItem *>(data);
+	QMetaObject::invokeMethod(
+		item,
+		[item]() {
+			item->isSourceEnabled = true;
+			item->UpdateStatus();
+		},
+		Qt::QueuedConnection);
+}
+
+void SourcererItem::SourceDisabled(void *data, calldata_t *cd)
+{
+	Q_UNUSED(cd);
+	SourcererItem *item = static_cast<SourcererItem *>(data);
+	QMetaObject::invokeMethod(
+		item,
+		[item]() {
+			item->isSourceEnabled = false;
+			item->UpdateStatus();
+		},
+		Qt::QueuedConnection);
 }

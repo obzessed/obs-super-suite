@@ -5,6 +5,7 @@
 #include <QKeyEvent>
 #include <QWheelEvent>
 #include <QContextMenuEvent>
+#include <QJsonObject>
 #include <QMenu>
 #include <QAction>
 #include <obs-module.h>
@@ -303,4 +304,36 @@ void SourcererScenesDock::HighlightCurrentScene() const
 		obs_source_release(programScene);
 	if (previewScene)
 		obs_source_release(previewScene);
+}
+
+QJsonObject SourcererScenesDock::Save() const
+{
+	QJsonObject obj;
+	obj["itemWidth"] = itemWidth;
+	obj["showZoomControls"] = statusBar->isVisible();
+	obj["syncWithMain"] = syncWithMain;
+	obj["isReadOnly"] = isReadOnly;
+	obj["doubleClickToProgram"] = doubleClickToProgram;
+	return obj;
+}
+
+void SourcererScenesDock::Load(const QJsonObject &obj)
+{
+	if (obj.contains("itemWidth")) {
+		SetZoom(obj["itemWidth"].toInt(160));
+	}
+	if (obj.contains("showZoomControls")) {
+		statusBar->setVisible(obj["showZoomControls"].toBool(true));
+	}
+	if (obj.contains("syncWithMain")) {
+		syncWithMain = obj["syncWithMain"].toBool(true);
+		if (syncWithMain)
+			HighlightCurrentScene();
+	}
+	if (obj.contains("isReadOnly")) {
+		isReadOnly = obj["isReadOnly"].toBool(false);
+	}
+	if (obj.contains("doubleClickToProgram")) {
+		doubleClickToProgram = obj["doubleClickToProgram"].toBool(true);
+	}
 }

@@ -58,6 +58,13 @@ SourcererSourcesDock::SourcererSourcesDock(QWidget *parent) : QWidget(parent)
 
 SourcererSourcesDock::~SourcererSourcesDock()
 {
+	if (connectedScene) {
+		signal_handler_t *sh = obs_source_get_signal_handler(connectedScene);
+		signal_handler_disconnect(sh, "item_select", SceneItemSelect, this);
+		signal_handler_disconnect(sh, "item_deselect", SceneItemDeselect, this);
+		signal_handler_disconnect(sh, "item_visible", SceneItemVisible, this);
+		obs_source_release(connectedScene);
+	}
 	obs_frontend_remove_event_callback(FrontendEvent, this);
 	Clear();
 }
@@ -124,6 +131,143 @@ void SourcererSourcesDock::keyPressEvent(QKeyEvent *event)
 	QWidget::keyPressEvent(event);
 }
 
+void SourcererSourcesDock::OnItemClicked(SourcererItem *item)
+{
+	// Local UI update
+	if (selectedItem) {
+		selectedItem->SetSelected(false);
+	}
+
+	if (item && item != selectedItem) {
+		selectedItem = item;
+		selectedItem->SetSelected(true);
+	} else {
+		selectedItem = item;
+		if (selectedItem)
+			selectedItem->SetSelected(true);
+	}
+
+	// Sync back to OBS
+	if (!connectedScene || !item)
+		return;
+
+	obs_source_t *source = item->GetSource();
+	if (!source)
+		return;
+
+	obs_scene_t *scene = obs_scene_from_source(connectedScene);
+	if (!scene)
+		return;
+
+	const char *name = obs_source_get_name(source);
+
+	// We need to find the scene item for this source in the current scene
+	obs_sceneitem_t *sceneItem = obs_scene_find_source_recursive(scene, name);
+
+	if (sceneItem) {
+		// If we are holding Ctrl (Multi-select) support could be added here,
+		// but for now let's mimic single click exclusive selection unless user asks otherwise.
+		// Actually, obs_sceneitem_select just selects it.
+		// To replicate standard behavior: clear others then select this one.
+
+		// Ideally we should check modifiers, but let's assume exclusive for now
+		// or just add to selection if we want flexible behavior.
+		// Let's try exclusive select for single click.
+
+		// We need to deselect all others first?
+		// obs_scene_enum_items can do that.
+
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
+				obs_sceneitem_select(item, false);
+				return true;
+			},
+			nullptr);
+
+		obs_sceneitem_select(sceneItem, true);
+	}
+}
+
+void SourcererSourcesDock::OnItemDoubleClicked(SourcererItem *item)
+{
+	if (!item)
+		return;
+	obs_source_t *source = item->GetSource();
+	if (source) {
+		obs_frontend_open_source_properties(source);
+	}
+}
+
+void SourcererSourcesDock::OnItemMenuRequested(SourcererItem *item, QMenu *menu)
+{
+	if (!item || !menu)
+		return;
+
+	// Check if we can offer "Show/Hide in Current Scene"
+	obs_source_t *sceneSource = nullptr;
+	if (obs_frontend_preview_program_mode_active()) {
+		sceneSource = obs_frontend_get_current_preview_scene();
+	} else {
+		sceneSource = obs_frontend_get_current_scene();
+	}
+
+	if (sceneSource) {
+		obs_scene_t *scene = obs_scene_from_source(sceneSource);
+		obs_source_t *itemSource = item->GetSource();
+		if (scene && itemSource) {
+			const char *name = obs_source_get_name(itemSource);
+			obs_sceneitem_t *sceneItem = obs_scene_find_source_recursive(scene, name);
+			if (sceneItem) {
+				bool visible = obs_sceneitem_visible(sceneItem);
+
+				QAction *visAction = new QAction(tr("Visible"), menu);
+				visAction->setCheckable(true);
+				visAction->setChecked(visible);
+
+				QAction *firstAction = menu->actions().value(0);
+				if (firstAction) {
+					menu->insertAction(firstAction, visAction);
+					menu->insertSeparator(firstAction);
+				} else {
+					menu->addAction(visAction);
+					menu->addSeparator();
+				}
+
+				connect(visAction, &QAction::toggled,
+					[sceneItem](bool checked) { obs_sceneitem_set_visible(sceneItem, checked); });
+			}
+		}
+		obs_source_release(sceneSource);
+	}
+}
+
+void SourcererSourcesDock::mousePressEvent(QMouseEvent *event)
+{
+	// Deselect if clicking on empty space
+	if (event->button() == Qt::LeftButton) {
+		if (selectedItem) {
+			selectedItem->SetSelected(false);
+			selectedItem = nullptr;
+		}
+
+		if (connectedScene) {
+			obs_scene_t *scene = obs_scene_from_source(connectedScene);
+			if (scene) {
+				obs_scene_enum_items(
+					scene,
+					[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
+						obs_sceneitem_select(item, false);
+						return true;
+					},
+					nullptr);
+			}
+		}
+	}
+	QWidget::mousePressEvent(event);
+}
+
+
 void SourcererSourcesDock::UpdateZoom(int delta_steps)
 {
 	int newWidth = itemWidth + (delta_steps * ZOOM_STEP);
@@ -165,6 +309,8 @@ void SourcererSourcesDock::SetZoom(int width)
 
 void SourcererSourcesDock::Clear()
 {
+	selectedItem = nullptr;
+
 	// Remove all items from layout and delete them
 	QLayoutItem *child;
 	while ((child = flowLayout->takeAt(0)) != nullptr) {
@@ -197,6 +343,7 @@ void SourcererSourcesDock::Refresh()
 	} else {
 		obs_enum_sources(EnumSources, this);
 	}
+	UpdateSceneConnection();
 }
 
 bool SourcererSourcesDock::EnumSources(void *data, obs_source_t *source)
@@ -212,7 +359,13 @@ bool SourcererSourcesDock::EnumSources(void *data, obs_source_t *source)
 
 	SourcererItem *item = new SourcererItem(source);
 	item->SetItemWidth(dock->itemWidth);
+	// item->SetSourceActive(obs_source_enabled(source)); // Handled internally
+	item->SetSceneItemVisible(true);
 	dock->items.push_back(item);
+
+	connect(item, &SourcererItem::Clicked, dock, &SourcererSourcesDock::OnItemClicked);
+	connect(item, &SourcererItem::DoubleClicked, dock, &SourcererSourcesDock::OnItemDoubleClicked);
+	connect(item, &SourcererItem::MenuRequested, dock, &SourcererSourcesDock::OnItemMenuRequested);
 
 	dock->flowLayout->addWidget(item);
 
@@ -242,7 +395,11 @@ bool SourcererSourcesDock::EnumSceneItems(obs_scene_t *scene, obs_sceneitem_t *i
 
 	SourcererItem *widget = new SourcererItem(source);
 	widget->SetItemWidth(dock->itemWidth);
+	widget->SetSceneItemVisible(obs_sceneitem_visible(item));
 	dock->items.push_back(widget);
+
+	connect(widget, &SourcererItem::Clicked, dock, &SourcererSourcesDock::OnItemClicked);
+	connect(widget, &SourcererItem::MenuRequested, dock, &SourcererSourcesDock::OnItemMenuRequested);
 
 	dock->flowLayout->addWidget(widget);
 
@@ -252,11 +409,198 @@ bool SourcererSourcesDock::EnumSceneItems(obs_scene_t *scene, obs_sceneitem_t *i
 void SourcererSourcesDock::FrontendEvent(enum obs_frontend_event event, void *data)
 {
 	SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(data);
-	if (!dock->filterByCurrentScene)
+	// Refresh if filtering is on
+	if (dock->filterByCurrentScene) {
+		if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED ||
+		    event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED ||
+		    event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
+			dock->Refresh();
+		    }
+	} else {
+		// Even if not filtering, we might need to update the connected scene if it changed,
+		// because we want to show highlights for the current scene's items.
+		if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED ||
+		    event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED ||
+		    event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
+			dock->UpdateSceneConnection();
+		    }
+	}
+}
+
+void SourcererSourcesDock::UpdateSceneConnection()
+{
+	obs_source_t *scene_source = nullptr;
+	if (obs_frontend_preview_program_mode_active()) {
+		scene_source = obs_frontend_get_current_preview_scene();
+	} else {
+		scene_source = obs_frontend_get_current_scene();
+	}
+
+	if (scene_source != connectedScene) {
+		if (connectedScene) {
+			signal_handler_t *sh = obs_source_get_signal_handler(connectedScene);
+			signal_handler_disconnect(sh, "item_select", SceneItemSelect, this);
+			signal_handler_disconnect(sh, "item_deselect", SceneItemDeselect, this);
+			signal_handler_disconnect(sh, "item_visible", SceneItemVisible, this);
+			obs_source_release(connectedScene);
+			connectedScene = nullptr;
+		}
+
+		if (scene_source) {
+			connectedScene = scene_source;
+			// We keep the reference (don't release yet, done in destructor or disconnect)
+
+			signal_handler_t *sh = obs_source_get_signal_handler(connectedScene);
+			signal_handler_connect(sh, "item_select", SceneItemSelect, this);
+			signal_handler_connect(sh, "item_deselect", SceneItemDeselect, this);
+			signal_handler_connect(sh, "item_visible", SceneItemVisible, this);
+		}
+	} else {
+		// Same scene, just release the temp reference we got
+		if (scene_source)
+			obs_source_release(scene_source);
+	}
+
+	// Always sync selection when checking connection
+	SyncSelection();
+}
+
+void SourcererSourcesDock::SyncSelection()
+{
+	if (!connectedScene)
 		return;
 
-	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED ||
-	    event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
-		dock->Refresh();
+	obs_scene_t *scene = obs_scene_from_source(connectedScene);
+	if (!scene)
+		return;
+
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
+			SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(param);
+			bool selected = obs_sceneitem_selected(item);
+			obs_source_t *source = obs_sceneitem_get_source(item);
+			if (!source)
+				return true;
+
+			const char *name = obs_source_get_name(source);
+
+			for (SourcererItem *widget : dock->items) {
+				obs_source_t *wSource = widget->GetSource();
+				if (wSource) {
+					const char *wName = obs_source_get_name(wSource);
+					if (strcmp(name, wName) == 0) {
+						widget->SetSelected(selected);
+						if (selected) {
+							dock->selectedItem = widget;
+						}
+					}
+				}
+			}
+			return true;
+		},
+		this);
+}
+
+void SourcererSourcesDock::SceneItemSelect(void *data, calldata_t *cd)
+{
+	SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(data);
+	obs_sceneitem_t *item = (obs_sceneitem_t *)calldata_ptr(cd, "item");
+	if (!item)
+		return;
+
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	if (!source)
+		return;
+
+	const char *name = obs_source_get_name(source);
+
+	// Find in dock items
+	for (SourcererItem *widget : dock->items) {
+		obs_source_t *wSource = widget->GetSource();
+		if (wSource) {
+			const char *wName = obs_source_get_name(wSource);
+			if (strcmp(name, wName) == 0) {
+				widget->SetSelected(true);
+				dock->selectedItem = widget;
+			}
+		}
+	}
+}
+
+void SourcererSourcesDock::SceneItemDeselect(void *data, calldata_t *cd)
+{
+	SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(data);
+	obs_sceneitem_t *item = (obs_sceneitem_t *)calldata_ptr(cd, "item");
+	if (!item)
+		return;
+
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	if (!source)
+		return;
+
+	const char *name = obs_source_get_name(source);
+
+	for (SourcererItem *widget : dock->items) {
+		obs_source_t *wSource = widget->GetSource();
+		if (wSource) {
+			const char *wName = obs_source_get_name(wSource);
+			if (strcmp(name, wName) == 0) {
+				widget->SetSelected(false);
+				if (dock->selectedItem == widget)
+					dock->selectedItem = nullptr;
+			}
+		}
+	}
+}
+
+void SourcererSourcesDock::SceneItemVisible(void *data, calldata_t *cd)
+{
+	SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(data);
+	obs_sceneitem_t *item = (obs_sceneitem_t *)calldata_ptr(cd, "item");
+	if (!item)
+		return;
+
+	bool visible = calldata_bool(cd, "visible");
+
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	if (!source)
+		return;
+
+	const char *name = obs_source_get_name(source);
+
+	for (SourcererItem *widget : dock->items) {
+		obs_source_t *wSource = widget->GetSource();
+		if (wSource) {
+			const char *wName = obs_source_get_name(wSource);
+			if (strcmp(name, wName) == 0) {
+				QMetaObject::invokeMethod(
+					widget, [widget, visible]() { widget->SetSceneItemVisible(visible); },
+					Qt::QueuedConnection);
+			}
+		}
+	}
+}
+
+QJsonObject SourcererSourcesDock::Save() const
+{
+	QJsonObject obj;
+	obj["itemWidth"] = itemWidth;
+	obj["showZoomControls"] = statusBar->isVisible();
+	obj["filterByCurrentScene"] = filterByCurrentScene;
+	return obj;
+}
+
+void SourcererSourcesDock::Load(const QJsonObject &obj)
+{
+	if (obj.contains("itemWidth")) {
+		SetZoom(obj["itemWidth"].toInt(160));
+	}
+	if (obj.contains("showZoomControls")) {
+		statusBar->setVisible(obj["showZoomControls"].toBool(true));
+	}
+	if (obj.contains("filterByCurrentScene")) {
+		filterByCurrentScene = obj["filterByCurrentScene"].toBool(false);
+		Refresh();
 	}
 }

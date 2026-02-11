@@ -912,6 +912,20 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 			QString jsonStr = doc.toJson(QJsonDocument::Compact);
 			obs_data_set_string(save_data, "BrowserManager", jsonStr.toUtf8().constData());
 		}
+
+		if (sourcerer_sources_dock) {
+			QJsonObject data = sourcerer_sources_dock->Save();
+			QJsonDocument doc(data);
+			QString jsonStr = doc.toJson(QJsonDocument::Compact);
+			obs_data_set_string(save_data, "SourcererSources", jsonStr.toUtf8().constData());
+		}
+
+		if (sourcerer_scenes_dock) {
+			QJsonObject data = sourcerer_scenes_dock->Save();
+			QJsonDocument doc(data);
+			QString jsonStr = doc.toJson(QJsonDocument::Compact);
+			obs_data_set_string(save_data, "SourcererScenes", jsonStr.toUtf8().constData());
+		}
 	} else {
 		// Loading
 		const char *dockWindowJsonStr = obs_data_get_string(save_data, "DockWindowManager");
@@ -942,6 +956,22 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 					browser_manager->setDeferredLoad(true);
 					browser_manager->loadFromConfig(doc.object());
 				}
+			}
+		}
+
+		const char *sourcesJsonStr = obs_data_get_string(save_data, "SourcererSources");
+		if (sourcesJsonStr && *sourcesJsonStr && sourcerer_sources_dock) {
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(sourcesJsonStr));
+			if (!doc.isNull() && doc.isObject()) {
+				sourcerer_sources_dock->Load(doc.object());
+			}
+		}
+
+		const char *scenesJsonStr = obs_data_get_string(save_data, "SourcererScenes");
+		if (scenesJsonStr && *scenesJsonStr && sourcerer_scenes_dock) {
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(scenesJsonStr));
+			if (!doc.isNull() && doc.isObject()) {
+				sourcerer_scenes_dock->Load(doc.object());
 			}
 		}
 	}
