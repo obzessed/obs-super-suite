@@ -105,6 +105,8 @@ public:
 	QString startPortId() const { return m_startPortId; }
 	QString endPortId() const { return m_endPortId; }
 
+	QRectF boundingRect() const override;
+
 protected:
 	QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
 	void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
@@ -147,7 +149,6 @@ public slots:
 
 protected:
 	void showEvent(QShowEvent *event) override;
-	void wheelEvent(QWheelEvent *event) override;
 	void keyPressEvent(QKeyEvent *event) override;
 
 private:

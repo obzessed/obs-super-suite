@@ -20,6 +20,7 @@
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QMenu>
+#include <QScrollBar>
 #include <obs-frontend-api.h>
 
 // ----------------------------------------------------------------------------
@@ -458,7 +459,7 @@ void GraphNode::dragLeaveEvent(QGraphicsSceneDragDropEvent *event)
 
 QRectF GraphNode::boundingRect() const
 {
-	return QRectF(-6, -6, m_width + 12, m_height + 12);
+	return QRectF(-10, -10, m_width + 20, m_height + 20);
 }
 
 QColor GraphNode::getHeaderColor() const
@@ -576,7 +577,11 @@ void GraphNode::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidg
 
 	// Card Look
 	painter->setBrush(getBodyColor());
-	painter->setPen(QPen(getBorderColor(), 1));
+	if (isSelected()) {
+		painter->setPen(QPen(QColor(255, 200, 0), 2));
+	} else {
+		painter->setPen(QPen(getBorderColor(), 1));
+	}
 	painter->drawRoundedRect(bodyRect, 6, 6);
 
 	// Type Indicator (Small Colored Dot)
@@ -725,6 +730,12 @@ GraphEdge::GraphEdge(GraphNode *start, GraphNode *end, const QString &startPortI
 	setZValue(0);
 	setPen(QPen(QColor(150, 150, 150), 2));
 	updatePath();
+}
+
+QRectF GraphEdge::boundingRect() const
+{
+	qreal margin = 5.0;
+	return QGraphicsPathItem::boundingRect().adjusted(-margin, -margin, margin, margin);
 }
 
 QVariant GraphEdge::itemChange(GraphicsItemChange change, const QVariant &value)
@@ -887,6 +898,108 @@ void GraphScene::updateDragWire(QGraphicsSceneDragDropEvent *event)
 }
 
 // ----------------------------------------------------------------------------
+// GraphView
+// ----------------------------------------------------------------------------
+
+class GraphView : public QGraphicsView {
+public:
+	GraphView(QWidget *parent = nullptr) : QGraphicsView(parent)
+	{
+		setRenderHint(QPainter::Antialiasing);
+		setDragMode(QGraphicsView::RubberBandDrag);
+		setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+		setResizeAnchor(QGraphicsView::AnchorUnderMouse);
+		viewport()->setCursor(Qt::ArrowCursor);
+	}
+
+protected:
+	void keyPressEvent(QKeyEvent *event) override
+	{
+		if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
+			m_isSpacePressed = true;
+			// When space is pressed, change cursor to indicate panning is available
+			viewport()->setCursor(Qt::OpenHandCursor);
+			event->accept();
+		} else {
+			QGraphicsView::keyPressEvent(event);
+		}
+	}
+
+	void keyReleaseEvent(QKeyEvent *event) override
+	{
+		if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
+			m_isSpacePressed = false;
+			// Reset cursor if not currently dragging
+			if (!m_isPanning) {
+				viewport()->setCursor(Qt::ArrowCursor);
+			}
+			event->accept();
+		} else {
+			QGraphicsView::keyReleaseEvent(event);
+		}
+	}
+
+	void wheelEvent(QWheelEvent *event) override
+	{
+		if (event->modifiers() & Qt::ControlModifier) {
+			const double zoomFactor = 1.1;
+			if (event->angleDelta().y() > 0)
+				scale(zoomFactor, zoomFactor);
+			else
+				scale(1.0 / zoomFactor, 1.0 / zoomFactor);
+			event->accept();
+		} else {
+			QGraphicsView::wheelEvent(event);
+		}
+	}
+
+	void mousePressEvent(QMouseEvent *event) override
+	{
+		if (event->button() == Qt::MiddleButton || (event->button() == Qt::LeftButton && m_isSpacePressed)) {
+			m_isPanning = true;
+			m_lastPanPos = event->pos();
+			viewport()->setCursor(Qt::ClosedHandCursor);
+			event->accept();
+			return;
+		}
+		QGraphicsView::mousePressEvent(event);
+	}
+
+	void mouseMoveEvent(QMouseEvent *event) override
+	{
+		if (m_isPanning) {
+			QPoint delta = event->pos() - m_lastPanPos;
+			m_lastPanPos = event->pos();
+			horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
+			verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+			event->accept();
+			return;
+		}
+		QGraphicsView::mouseMoveEvent(event);
+	}
+
+	void mouseReleaseEvent(QMouseEvent *event) override
+	{
+		if (m_isPanning && (event->button() == Qt::MiddleButton || event->button() == Qt::LeftButton)) {
+			m_isPanning = false;
+			// Restore cursor based on space key state
+			if (m_isSpacePressed)
+				viewport()->setCursor(Qt::OpenHandCursor);
+			else
+				viewport()->setCursor(Qt::ArrowCursor);
+			event->accept();
+			return;
+		}
+		QGraphicsView::mouseReleaseEvent(event);
+	}
+
+private:
+	bool m_isPanning = false;
+	bool m_isSpacePressed = false;
+	QPoint m_lastPanPos;
+};
+
+// ----------------------------------------------------------------------------
 // EncodingGraphWindow
 // ----------------------------------------------------------------------------
 
@@ -903,18 +1016,13 @@ EncodingGraphWindow::EncodingGraphWindow(QWidget *parent) : QMainWindow(parent)
 	setCentralWidget(central);
 	QVBoxLayout *layout = new QVBoxLayout(central);
 
-	m_view = new QGraphicsView(this);
+	m_view = new GraphView(this);
+	m_view->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
 	m_scene = new GraphScene(this);
 
 	// Set dark background
 	m_scene->setBackgroundBrush(QColor(30, 30, 30));
 	m_view->setScene(m_scene);
-	m_view->setRenderHint(QPainter::Antialiasing);
-
-	// Enable dragging/panning
-	m_view->setDragMode(QGraphicsView::ScrollHandDrag);
-	m_view->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
-	m_view->setResizeAnchor(QGraphicsView::AnchorUnderMouse);
 
 	// Context Menu
 	m_view->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -958,20 +1066,6 @@ void EncodingGraphWindow::showEvent(QShowEvent *event)
 {
 	QMainWindow::showEvent(event);
 	refresh();
-}
-
-void EncodingGraphWindow::wheelEvent(QWheelEvent *event)
-{
-	if (event->modifiers() & Qt::ControlModifier) {
-		const qreal zoomFactor = 1.1;
-		if (event->angleDelta().y() > 0)
-			zoom(zoomFactor);
-		else
-			zoom(1.0 / zoomFactor);
-		event->accept();
-	} else {
-		QMainWindow::wheelEvent(event);
-	}
 }
 
 void EncodingGraphWindow::keyPressEvent(QKeyEvent *event)
@@ -1535,8 +1629,9 @@ void EncodingGraphWindow::refresh()
 				subText += QString("\n%1").arg(bitrate);
 
 			// Create Node
-			GraphNode *encNode =
-				dialog->getOrCreateNode(QString("ENC:%1:%2").arg(name).arg(reinterpret_cast<qintptr>(encoder)), name, NodeType::Encoder, subText);
+			GraphNode *encNode = dialog->getOrCreateNode(
+				QString("ENC:%1:%2").arg(name).arg(reinterpret_cast<qintptr>(encoder)), name,
+				NodeType::Encoder, subText);
 			encNode->setEncoder(encoder);
 
 			if (type == OBS_ENCODER_VIDEO) {
@@ -1611,22 +1706,26 @@ void EncodingGraphWindow::refresh()
 			if (flags & OBS_OUTPUT_VIDEO) {
 				// Ports
 				for (size_t i = 0; i < MAX_OUTPUT_VIDEO_ENCODERS; i++) {
-					outNode->addInputPort(QString("video_track%1").arg(i + 1), QString("Video Track %1").arg(i + 1));
-					if (!multitrack_video) break;
+					outNode->addInputPort(QString("video_track%1").arg(i + 1),
+							      QString("Video Track %1").arg(i + 1));
+					if (!multitrack_video)
+						break;
 				}
 
 				bool found = false;
 
 				// Encoder -> Output
 				for (size_t enc_idx = 0; enc_idx < MAX_OUTPUT_VIDEO_ENCODERS; enc_idx++) {
-					if (obs_encoder_t *video_encoder = obs_output_get_video_encoder2(output, enc_idx)) {
+					if (obs_encoder_t *video_encoder =
+						    obs_output_get_video_encoder2(output, enc_idx)) {
 						if (const auto encNode = ed->encoderNodes.value(video_encoder)) {
 							QString trackPortIn = QString("video_track%1").arg(enc_idx + 1);
 							dialog->addEdge(encNode, outNode, "video", trackPortIn);
 						}
 						found = true;
 					}
-					if (!multitrack_video) break;
+					if (!multitrack_video)
+						break;
 				}
 
 				if (!found) {
@@ -1637,7 +1736,8 @@ void EncodingGraphWindow::refresh()
 							// and gets video directly from canvas/sources.
 							if (output_video == obs_canvas_get_video(canvas)) {
 								const auto canvasNode = ed->canvasNodes.value(canvas);
-								dialog->addEdge(canvasNode, outNode, "video_program", "video");
+								dialog->addEdge(canvasNode, outNode, "video_program",
+										"video");
 								found = true;
 								break;
 							}
@@ -1660,8 +1760,10 @@ void EncodingGraphWindow::refresh()
 			if (flags & OBS_OUTPUT_AUDIO) {
 				// Ports
 				for (size_t i = 0; i < MAX_OUTPUT_AUDIO_ENCODERS; i++) {
-					outNode->addInputPort(QString("audio_track%1").arg(i + 1), QString("Audio Track %1").arg(i + 1));
-					if (!multitrack_audio) break;
+					outNode->addInputPort(QString("audio_track%1").arg(i + 1),
+							      QString("Audio Track %1").arg(i + 1));
+					if (!multitrack_audio)
+						break;
 				}
 
 				// TODO: what are these?
@@ -1669,15 +1771,19 @@ void EncodingGraphWindow::refresh()
 					uint32_t output_mixer = static_cast<uint32_t>(obs_output_get_mixer(output));
 					uint32_t output_mixers = static_cast<uint32_t>(obs_output_get_mixers(output));
 
-					obs_log(LOG_INFO, "[audio] %s(%s) output mix, %d|%d", name, id, output_mixer, output_mixers);
+					obs_log(LOG_INFO, "[audio] %s(%s) output mix, %d|%d", name, id, output_mixer,
+						output_mixers);
 				}
 
 				for (size_t enc_idx = 0; enc_idx < MAX_OUTPUT_AUDIO_ENCODERS; enc_idx++) {
-					if (obs_encoder_t *audio_encoder = obs_output_get_audio_encoder(output, enc_idx)) { // input index where encoder out is routed to
+					if (obs_encoder_t *audio_encoder = obs_output_get_audio_encoder(
+						    output, enc_idx)) { // input index where encoder out is routed to
 						if (const auto encNode = ed->encoderNodes.value(audio_encoder)) {
-							const auto mixer_index = obs_encoder_get_mixer_index(audio_encoder); // encoder mixer input
+							const auto mixer_index = obs_encoder_get_mixer_index(
+								audio_encoder); // encoder mixer input
 
-							obs_log(LOG_INFO, "[audio] mixer index: %d, output index: %d", mixer_index, enc_idx);
+							obs_log(LOG_INFO, "[audio] mixer index: %d, output index: %d",
+								mixer_index, enc_idx);
 
 							// Encoder -> Output (encoded)
 							QString trackPortIn = QString("audio_track%1").arg(enc_idx + 1);
@@ -1685,10 +1791,12 @@ void EncodingGraphWindow::refresh()
 
 							// Mixer -> Encoder (un-encoded)
 							QString trackPortOut = QString("track%1").arg(mixer_index + 1);
-							dialog->addEdge(ed->audioMixerNode, encNode, trackPortOut, "audio");
+							dialog->addEdge(ed->audioMixerNode, encNode, trackPortOut,
+									"audio");
 						}
 					}
-					if (!multitrack_audio) break;
+					if (!multitrack_audio)
+						break;
 				}
 			}
 
