@@ -118,7 +118,16 @@ A suite of read-only dialogs for inspecting OBS internal state:
 *   **Files**: `windows/dock_window_manager.cpp`, `windows/secondary_window.cpp`.
 *   **Features**: Layout snapshots, transparency control, "stay on top" toggles.
 
-### 6. OBS C++ Wrapper Library (`src/lib/`)
+### 6. Encoding Graph Tool
+*   **Purpose**: Visualizes the OBS encoding pipeline (Sources -> Tracks -> Encoders -> Outputs).
+*   **Files**: `dialogs/encoding_graph_dialog.cpp/.h`.
+*   **Features**:
+    *   Interactive Node Graph (QGraphicsView).
+    *   Double-click nodes (Sources) to open standard OBS properties.
+    *   Visualizes Audio Mixer bitmask connections.
+    *   Auto-layout with sorting for stability.
+
+### 7. OBS C++ Wrapper Library (`src/lib/`)
 A custom header-only library providing modern C++ wrappers for OBS C API objects.
 *   **Pattern**: V8-style handle system.
     *   `Local<T>`: Move-only owning handle, auto-releases.

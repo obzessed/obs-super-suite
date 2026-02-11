@@ -42,7 +42,7 @@ BrowserManager::~BrowserManager()
 
 void BrowserManager::cleanup(bool full)
 {
-	cleanup_cef(full);
+	QCefHelper::cleanup(full);
 }
 
 void BrowserManager::onOBSBrowserReady()
@@ -702,11 +702,6 @@ void BrowserManager::loadFromConfig(const QJsonObject &data)
 void BrowserManager::setDeferredLoad(bool deferredLoad)
 {
 	deferred_load = deferredLoad;
-}
-
-std::pair<QCef *, QCefCookieManager *> BrowserManager::getQCef()
-{
-	return get_cef_instance();
 }
 
 void BrowserManager::initBuiltInPresets()

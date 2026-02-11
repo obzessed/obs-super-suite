@@ -18,7 +18,7 @@
 #include "docks/wrapper_test_dock.h"
 #include "dialogs/canvas_manager.h"
 #include "dialogs/browser_manager.h"
-#include "dialogs/encoding_graph_dialog.h"
+#include "windows/encoding_graph_window.h"
 
 #include <vector>
 #include <utility>
@@ -64,7 +64,7 @@ static QPointer<MixerDock> mixer_dock;
 static QPointer<WrapperTestDock> wrapper_test_dock;
 static QPointer<CanvasManager> canvas_manager;
 static QPointer<BrowserManager> browser_manager;
-static QPointer<EncodingGraphDialog> encoding_graph;
+static QPointer<EncodingGraphWindow> encoding_graph;
 
 // Guard flag to prevent signal handlers from modifying config during createSources()
 static bool creating_sources = false;
@@ -1103,7 +1103,8 @@ static void show_encoding_graph(void *data)
 
 	if (!encoding_graph) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		encoding_graph = new EncodingGraphDialog(mainWindow);
+		// encoding_graph = new EncodingGraphWindow(mainWindow);
+		encoding_graph = new EncodingGraphWindow(nullptr);
 	}
 	encoding_graph->show();
 	encoding_graph->raise();

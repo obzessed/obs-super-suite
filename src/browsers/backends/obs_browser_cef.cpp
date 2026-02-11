@@ -6,21 +6,23 @@
 
 OBSBrowserCEFBackend::OBSBrowserCEFBackend() = default;
 
-OBSBrowserCEFBackend::~OBSBrowserCEFBackend() {
+OBSBrowserCEFBackend::~OBSBrowserCEFBackend()
+{
 	if (m_cefWidget) {
 		m_cefWidget->setParent(nullptr);
 		m_cefWidget->deleteLater();
 	}
 }
 
-void OBSBrowserCEFBackend::init(const InitParams& params) {
+void OBSBrowserCEFBackend::init(const InitParams &params)
+{
 	if (!params.qtParentWidget) {
 		throw std::runtime_error("OBSBrowserCEFBackend requires a Qt parent widget");
 	}
 
-	auto* parent = static_cast<QWidget*>(params.qtParentWidget);
+	auto *parent = static_cast<QWidget *>(params.qtParentWidget);
 
-	const auto [cef, panel_cookies] = get_cef_instance();
+	const auto [cef, panel_cookies] = QCefHelper::getInstance();
 	if (cef && panel_cookies) {
 		std::string url = params.initialUrl.empty() ? "about:blank" : params.initialUrl;
 		m_cefWidget = cef->create_widget(parent, url, panel_cookies);
@@ -49,42 +51,50 @@ void OBSBrowserCEFBackend::init(const InitParams& params) {
 	}
 }
 
-void OBSBrowserCEFBackend::resize(int x, int y, int width, int height) {
+void OBSBrowserCEFBackend::resize(int x, int y, int width, int height)
+{
 	if (m_cefWidget) {
 		m_cefWidget->setGeometry(x, y, width, height);
 	}
 }
 
-void OBSBrowserCEFBackend::loadUrl(const std::string& url) {
+void OBSBrowserCEFBackend::loadUrl(const std::string &url)
+{
 	if (m_cefWidget) {
 		m_cefWidget->setURL(url);
 	}
 }
 
-void OBSBrowserCEFBackend::reload() {
+void OBSBrowserCEFBackend::reload()
+{
 	if (m_cefWidget) {
 		m_cefWidget->reloadPage();
 	}
 }
 
-void OBSBrowserCEFBackend::setStartupScript(const std::string& script) {
+void OBSBrowserCEFBackend::setStartupScript(const std::string &script)
+{
 	m_script = QString::fromStdString(script);
 	if (m_cefWidget) {
 		m_cefWidget->setStartupScript(script);
 	}
 }
 
-void OBSBrowserCEFBackend::runJavaScript(const std::string& script) {
+void OBSBrowserCEFBackend::runJavaScript(const std::string &script)
+{
 	if (m_cefWidget) {
 		m_cefWidget->executeJavaScript(script);
 	}
 }
 
-uint32_t OBSBrowserCEFBackend::getCapabilities() {
-	return (uint32_t)(BrowserCapabilities::JavaScript | BrowserCapabilities::Transparency | BrowserCapabilities::OSR);
+uint32_t OBSBrowserCEFBackend::getCapabilities()
+{
+	return (uint32_t)(BrowserCapabilities::JavaScript | BrowserCapabilities::Transparency |
+			  BrowserCapabilities::OSR);
 }
 
-void OBSBrowserCEFBackend::clearCookies() {
+void OBSBrowserCEFBackend::clearCookies()
+{
 	// Not supported by QCefWidget wrapper directly yet?
 	// Or maybe accessible via getRequest?
 	// For now, no-op or log?

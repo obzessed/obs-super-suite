@@ -28,8 +28,6 @@ public:
 	void loadFromConfig(const QJsonObject &data);
 	void setDeferredLoad(bool deferredLoad);
 
-	std::pair<QCef*, QCefCookieManager*> getQCef();
-
 private slots:
 	void onAdd();
 	void onEdit();
