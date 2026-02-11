@@ -16,6 +16,8 @@
 #include "windows/dock_window_manager.h"
 #include "docks/mixer_dock.h"
 #include "docks/wrapper_test_dock.h"
+#include "docks/sourcerer_sources_dock.hpp"
+#include "docks/sourcerer_scenes_dock.hpp"
 #include "dialogs/canvas_manager.h"
 #include "dialogs/browser_manager.h"
 #include "windows/encoding_graph_window.h"
@@ -62,6 +64,8 @@ static QPointer<EncodersViewer> encoders_viewer;
 static QPointer<DockWindowManager> dock_window_manager;
 static QPointer<MixerDock> mixer_dock;
 static QPointer<WrapperTestDock> wrapper_test_dock;
+static QPointer<SourcererSourcesDock> sourcerer_sources_dock;
+static QPointer<SourcererScenesDock> sourcerer_scenes_dock;
 static QPointer<CanvasManager> canvas_manager;
 static QPointer<BrowserManager> browser_manager;
 static QPointer<EncodingGraphWindow> encoding_graph;
@@ -1163,8 +1167,12 @@ void on_plugin_loaded()
 	auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	mixer_dock = new MixerDock(mainWindow);
 	wrapper_test_dock = new WrapperTestDock(mainWindow);
+	sourcerer_sources_dock = new SourcererSourcesDock(mainWindow);
+	sourcerer_scenes_dock = new SourcererScenesDock(mainWindow);
 	obs_frontend_add_dock_by_id("SuperMixerDock", obs_module_text("SuperMixer.Title"), mixer_dock);
 	obs_frontend_add_dock_by_id("WrapperTestDock", "OBS Wrapper Test", wrapper_test_dock);
+	obs_frontend_add_dock_by_id("SourcererSources", "Sourcerer Sources", sourcerer_sources_dock);
+	obs_frontend_add_dock_by_id("SourcererScenes", "Sourcerer Scenes", sourcerer_scenes_dock);
 }
 
 void on_plugin_unload()
@@ -1200,6 +1208,16 @@ void on_plugin_unload()
 		if (wrapper_test_dock) {
 			obs_frontend_remove_dock("WrapperTestDock");
 			delete wrapper_test_dock;
+		}
+
+		if (sourcerer_sources_dock) {
+			obs_frontend_remove_dock("SourcererSources");
+			delete sourcerer_sources_dock;
+		}
+
+		if (sourcerer_scenes_dock) {
+			obs_frontend_remove_dock("SourcererScenes");
+			delete sourcerer_scenes_dock;
 		}
 	}
 

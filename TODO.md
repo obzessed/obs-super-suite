@@ -66,18 +66,19 @@
   - [ ] KS (Kernel Streaming)
   - [ ] MME (Multimedia)
   - [x] ASIO (Steinberg)
+- [ ] OBS only-mouse lock
 - [ ] Browsers
   - [ ] System (Webview2/Gtk WebKit/Apple WebKit)
   - [ ] Built-in (CEF: obs-browser)
-  - [ ] CEF (self-hosted)
-  - [ ] QtWebEngine & QtWebView
-- Custom Widgets
+  - [ ] CEF (make it a separate dll plugin dependency along with its resources in a subdirectory)
+  - [ ] QtWebEngine & QtWebView (make it a separate dll plugin dependency along with its resources in a subdirectory)
+- [ ] Custom Widgets
   - [ ] QtQuick
   - [ ] QtQml
   - [ ] QtWebEngine
   - [ ] obs-browser source.
 - [ ] Canvas Manager.
-- [x] Secondary Dockable Windows
+- [x] Secondary Dockable Windows.
   - [ ] Secondary Studio Frontend.
 - [ ] WhatsApp Browser Dock.
 - [ ] Browser Dock using Webview Runtime.
