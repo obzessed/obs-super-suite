@@ -52,14 +52,8 @@ public:
 	void addEdge(GraphEdge *edge);
 
 	void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
-	void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
 
 protected:
-	void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
-	void dragLeaveEvent(QGraphicsSceneDragDropEvent *event) override;
-	void dragMoveEvent(QGraphicsSceneDragDropEvent *event) override;
-	void dropEvent(QGraphicsSceneDragDropEvent *event) override;
-
 	QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
 	void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
 
@@ -69,8 +63,6 @@ private:
 		QString label;
 		qreal yOffset;
 	};
-
-	QString getPortAt(const QPointF &pos, bool *isOutput = nullptr) const;
 
 	QString m_title;
 	QString m_subtext;
@@ -126,15 +118,7 @@ public:
 	explicit GraphScene(QObject *parent = nullptr);
 	~GraphScene() override;
 
-protected:
-	void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
-	void dragMoveEvent(QGraphicsSceneDragDropEvent *event) override;
-	void dragLeaveEvent(QGraphicsSceneDragDropEvent *event) override;
-	void dropEvent(QGraphicsSceneDragDropEvent *event) override;
-
 private:
-	QGraphicsPathItem *m_dragEdge;
-	void updateDragWire(QGraphicsSceneDragDropEvent *event);
 };
 
 class EncodingGraphWindow : public QMainWindow {

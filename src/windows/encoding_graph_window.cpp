@@ -143,6 +143,7 @@ void GraphNode::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 	}
 }
 
+/*
 QString GraphNode::getPortAt(const QPointF &pos, bool *isOutput) const
 {
 	const qreal HIT_RADIUS = 15.0; // Slightly larger for easier hit
@@ -158,7 +159,9 @@ QString GraphNode::getPortAt(const QPointF &pos, bool *isOutput) const
 			return p.id;
 		}
 	}
+*/
 
+/*
 	// Check Outputs
 	for (const auto &p : m_outputPorts) {
 		QPointF pPos(m_width, p.yOffset);
@@ -169,7 +172,9 @@ QString GraphNode::getPortAt(const QPointF &pos, bool *isOutput) const
 			return p.id;
 		}
 	}
+*/
 
+/*
 	// Default Ports
 	if (m_inputPorts.isEmpty() && m_outputPorts.isEmpty()) {
 		if (QVector2D(pos - leftPort()).length() <= HIT_RADIUS) {
@@ -183,204 +188,11 @@ QString GraphNode::getPortAt(const QPointF &pos, bool *isOutput) const
 			return "";
 		}
 	}
-
+*/
+/*
 	return QString(); // Null string
 }
-
-void GraphNode::mousePressEvent(QGraphicsSceneMouseEvent *event)
-{
-	bool isOutput = false;
-	QString portId = getPortAt(event->pos(), &isOutput);
-
-	if (!portId.isNull()) {
-		// Start Drag
-		QDrag *drag = new QDrag(event->widget());
-		QMimeData *mime = new QMimeData;
-
-		QByteArray data;
-		QDataStream stream(&data, QIODevice::WriteOnly);
-		// Format: NodePtr, PortID, IsOutput
-		stream << (quint64)this << portId << isOutput;
-
-		mime->setData("application/x-obs-graph-port", data);
-		drag->setMimeData(mime);
-
-		QPixmap pixmap(10, 10);
-		pixmap.fill(Qt::yellow);
-		drag->setPixmap(pixmap);
-		drag->setHotSpot(QPoint(5, 5));
-
-		drag->exec(Qt::LinkAction);
-		event->accept();
-		return;
-	}
-
-	QGraphicsItem::mousePressEvent(event);
-}
-
-void GraphNode::dragMoveEvent(QGraphicsSceneDragDropEvent *event)
-{
-	if (event->mimeData()->hasFormat("application/x-obs-graph-port")) {
-		QByteArray data = event->mimeData()->data("application/x-obs-graph-port");
-		QDataStream stream(&data, QIODevice::ReadOnly);
-		quint64 ptrVal;
-		QString srcPortId;
-		bool srcIsOutput;
-		stream >> ptrVal >> srcPortId >> srcIsOutput;
-
-		GraphNode *srcNode = (GraphNode *)ptrVal;
-		if (srcNode == this) {
-			event->ignore();
-			return;
-		}
-
-		bool dstIsOutput = false;
-		QString dstPortId = getPortAt(event->pos(), &dstIsOutput);
-
-		if (!dstPortId.isNull() && srcIsOutput != dstIsOutput) {
-			// Compatibility Check
-			QString outId = srcIsOutput ? srcPortId : dstPortId;
-			QString inId = srcIsOutput ? dstPortId : srcPortId;
-
-			bool compatible = true;
-			if (!outId.isEmpty() && !inId.isEmpty()) {
-				bool outVideo = outId.contains("video", Qt::CaseInsensitive);
-				bool inVideo = inId.contains("video", Qt::CaseInsensitive);
-
-				// Video <-> Video only
-				if (outVideo != inVideo) {
-					compatible = false;
-				}
-				// If not video, assume Audio/Other.
-				// Audio -> Track is valid.
-				// Audio -> Video is invalid (caught by above).
-			}
-
-			if (compatible) {
-				event->acceptProposedAction();
-				return;
-			}
-		}
-	}
-	event->ignore();
-}
-
-void GraphNode::dropEvent(QGraphicsSceneDragDropEvent *event)
-{
-	if (event->mimeData()->hasFormat("application/x-obs-graph-port")) {
-		QByteArray data = event->mimeData()->data("application/x-obs-graph-port");
-		QDataStream stream(&data, QIODevice::ReadOnly);
-		quint64 ptrVal;
-		QString srcPortId;
-		bool srcIsOutput;
-		stream >> ptrVal >> srcPortId >> srcIsOutput;
-
-		GraphNode *srcNode = (GraphNode *)ptrVal;
-
-		bool dstIsOutput = false;
-		QString dstPortId = getPortAt(event->pos(), &dstIsOutput);
-
-		if (!dstPortId.isNull() && srcIsOutput != dstIsOutput) {
-			// Compatibility Check
-			QString outId = srcIsOutput ? srcPortId : dstPortId;
-			QString inId = srcIsOutput ? dstPortId : srcPortId;
-
-			bool compatible = true;
-			if (!outId.isEmpty() && !inId.isEmpty()) {
-				bool outVideo = outId.contains("video", Qt::CaseInsensitive);
-				bool inVideo = inId.contains("video", Qt::CaseInsensitive);
-				if (outVideo != inVideo)
-					compatible = false;
-			}
-			if (!compatible) {
-				event->ignore();
-				return;
-			}
-
-			// Determine connection logic
-			GraphNode *sourceNode = srcIsOutput ? srcNode : this;
-			GraphNode *targetNode = srcIsOutput ? this : srcNode;
-			QString outputPort = srcIsOutput ? srcPortId : dstPortId;
-			QString inputPort = srcIsOutput ? dstPortId : srcPortId;
-
-			// 1. Audio Routing: Source -> Canvas Track
-			if (targetNode->nodeType() == NodeType::Canvas && inputPort.startsWith("track")) {
-				int trackIdx = inputPort.mid(5).toInt() - 1;
-				obs_source_t *source = sourceNode->getSourceRef();
-
-				if (trackIdx >= 0 && trackIdx < MAX_AUDIO_MIXES && source) {
-					uint32_t mixers = obs_source_get_audio_mixers(source);
-					// Toggle this track
-					if (mixers & (1 << trackIdx)) {
-						mixers &= ~(1 << trackIdx);
-					} else {
-						mixers |= (1 << trackIdx);
-					}
-					obs_source_set_audio_mixers(source, mixers);
-
-					obs_source_release(source); // Release Ref
-
-					// Trigger Refresh
-					if (scene() && !scene()->views().isEmpty()) {
-						if (const auto *dlg = qobject_cast<EncodingGraphWindow *>(
-							    scene()->views().first()->parentWidget())) {
-							QTimer::singleShot(0, dlg, &EncodingGraphWindow::refresh);
-						}
-					}
-				} else if (source) {
-					obs_source_release(source);
-				}
-			}
-
-			// 2. Video Routing: Source -> Canvas Video
-			else if (targetNode->nodeType() == NodeType::Canvas && inputPort == "video") {
-				// Canvas Set Channel logic
-				obs_canvas_t *canvas = targetNode->getCanvasRef();
-				obs_source_t *source = sourceNode->getSourceRef();
-
-				if (canvas && source) {
-					// Check if already exists on this canvas
-					int existingChannel = -1;
-					for (int i = 0; i < MAX_CHANNELS; i++) {
-						if (obs_canvas_get_channel(canvas, i) == source) {
-							existingChannel = i;
-							break;
-						}
-					}
-
-					if (existingChannel != -1) {
-						// Already exists -> Remove it (Toggle off)
-						obs_canvas_set_channel(canvas, existingChannel, nullptr);
-					} else {
-						// Find free channel and Add
-						for (int i = 0; i < MAX_CHANNELS; i++) {
-							if (!obs_canvas_get_channel(canvas, i)) {
-								obs_canvas_set_channel(canvas, i, source);
-								break;
-							}
-						}
-					}
-
-					// Trigger Refresh
-					if (scene() && !scene()->views().isEmpty()) {
-						if (const auto *dlg = qobject_cast<EncodingGraphWindow *>(
-							    scene()->views().first()->parentWidget())) {
-							QTimer::singleShot(0, dlg, &EncodingGraphWindow::refresh);
-						}
-					}
-				}
-				if (canvas)
-					obs_canvas_release(canvas);
-				if (source)
-					obs_source_release(source);
-			}
-			event->acceptProposedAction();
-			return;
-		}
-	}
-
-	event->ignore();
-}
+*/
 
 void GraphNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 {
@@ -444,17 +256,6 @@ void GraphNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 			}
 		}
 	}
-}
-
-void GraphNode::dragEnterEvent(QGraphicsSceneDragDropEvent *event)
-{
-	// Required by header
-	event->acceptProposedAction();
-}
-void GraphNode::dragLeaveEvent(QGraphicsSceneDragDropEvent *event)
-{
-	// Required by header
-	event->accept();
 }
 
 QRectF GraphNode::boundingRect() const
@@ -815,87 +616,9 @@ void GraphEdge::updatePath()
 // GraphScene
 // ----------------------------------------------------------------------------
 
-GraphScene::GraphScene(QObject *parent) : QGraphicsScene(parent)
-{
-	m_dragEdge = new QGraphicsPathItem();
-	// Temporary wire style: Dashed, Light Grey
-	m_dragEdge->setPen(QPen(QColor(200, 200, 200), 2, Qt::DashLine));
-	m_dragEdge->setZValue(10); // Topmost
-	addItem(m_dragEdge);
-	m_dragEdge->hide();
-}
+GraphScene::GraphScene(QObject *parent) : QGraphicsScene(parent) {}
 
 GraphScene::~GraphScene() {}
-
-void GraphScene::dragEnterEvent(QGraphicsSceneDragDropEvent *event)
-{
-	if (event->mimeData()->hasFormat("application/x-obs-graph-port")) {
-		event->acceptProposedAction();
-		m_dragEdge->show();
-		updateDragWire(event);
-	}
-	QGraphicsScene::dragEnterEvent(event);
-}
-
-void GraphScene::dragMoveEvent(QGraphicsSceneDragDropEvent *event)
-{
-	if (event->mimeData()->hasFormat("application/x-obs-graph-port")) {
-		updateDragWire(event);
-	}
-	QGraphicsScene::dragMoveEvent(event);
-}
-
-void GraphScene::dragLeaveEvent(QGraphicsSceneDragDropEvent *event)
-{
-	m_dragEdge->hide();
-	QGraphicsScene::dragLeaveEvent(event);
-}
-
-void GraphScene::dropEvent(QGraphicsSceneDragDropEvent *event)
-{
-	m_dragEdge->hide();
-	QGraphicsScene::dropEvent(event);
-}
-
-void GraphScene::updateDragWire(QGraphicsSceneDragDropEvent *event)
-{
-	QByteArray data = event->mimeData()->data("application/x-obs-graph-port");
-	QDataStream stream(&data, QIODevice::ReadOnly);
-	quint64 ptrVal;
-	QString srcPortId;
-	bool srcIsOutput;
-	stream >> ptrVal >> srcPortId >> srcIsOutput;
-
-	GraphNode *srcNode = (GraphNode *)ptrVal;
-	if (!srcNode)
-		return;
-
-	QPointF startPos;
-	// Calculate Start Position based on Port
-	if (srcIsOutput) {
-		if (srcPortId.isEmpty())
-			startPos = srcNode->pos() + srcNode->rightPort();
-		else
-			startPos = srcNode->pos() + srcNode->getOutputPortPosition(srcPortId);
-	} else {
-		if (srcPortId.isEmpty())
-			startPos = srcNode->pos() + srcNode->leftPort();
-		else
-			startPos = srcNode->pos() + srcNode->getInputPortPosition(srcPortId);
-	}
-
-	QPointF endPos = event->scenePos();
-
-	QPainterPath path;
-	path.moveTo(startPos);
-
-	qreal dx = endPos.x() - startPos.x();
-	QPointF ctrl1(startPos.x() + dx * 0.5, startPos.y());
-	QPointF ctrl2(endPos.x() - dx * 0.5, endPos.y());
-
-	path.cubicTo(ctrl1, ctrl2, endPos);
-	m_dragEdge->setPath(path);
-}
 
 // ----------------------------------------------------------------------------
 // GraphView
