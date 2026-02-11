@@ -140,8 +140,7 @@ void GraphNode::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 
 	if (m_type == NodeType::VideoInput || m_type == NodeType::AudioInput || m_type == NodeType::MediaInput ||
 	    m_type == NodeType::Scene || m_type == NodeType::Transition) {
-		obs_source_t *source = getSourceRef();
-		if (source) {
+		if (obs_source_t *source = getSourceRef()) {
 			obs_frontend_open_source_properties(source);
 			obs_source_release(source);
 		}
@@ -150,119 +149,9 @@ void GraphNode::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 	}
 }
 
-/*
-QString GraphNode::getPortAt(const QPointF &pos, bool *isOutput) const
-{
-	const qreal HIT_RADIUS = 15.0; // Slightly larger for easier hit
-
-	// Check Inputs
-	for (const auto &p : m_inputPorts) {
-		QPointF pPos(0, p.yOffset);
-		// Calculate distance
-		qreal dist = QVector2D(pos - pPos).length();
-		if (dist <= HIT_RADIUS) {
-			if (isOutput)
-				*isOutput = false;
-			return p.id;
-		}
-	}
-*/
-
-/*
-	// Check Outputs
-	for (const auto &p : m_outputPorts) {
-		QPointF pPos(m_width, p.yOffset);
-		qreal dist = QVector2D(pos - pPos).length();
-		if (dist <= HIT_RADIUS) {
-			if (isOutput)
-				*isOutput = true;
-			return p.id;
-		}
-	}
-*/
-
-/*
-	// Default Ports
-	if (m_inputPorts.isEmpty() && m_outputPorts.isEmpty()) {
-		if (QVector2D(pos - leftPort()).length() <= HIT_RADIUS) {
-			if (isOutput)
-				*isOutput = false;
-			return "";
-		}
-		if (QVector2D(pos - rightPort()).length() <= HIT_RADIUS) {
-			if (isOutput)
-				*isOutput = true;
-			return "";
-		}
-	}
-*/
-/*
-	return QString(); // Null string
-}
-*/
-
 void GraphNode::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 {
 	QGraphicsItem::mouseReleaseEvent(event);
-
-	if (m_type == NodeType::VideoInput || m_type == NodeType::MediaInput || m_type == NodeType::Scene) {
-		// Check for drop on Canvas
-		QList<QGraphicsItem *> collisions = collidingItems();
-		for (QGraphicsItem *item : collisions) {
-			GraphNode *other = dynamic_cast<GraphNode *>(item);
-			if (other && other->nodeType() == NodeType::Canvas) {
-				// Found a canvas!
-				obs_canvas_t *canvas = other->getCanvasRef();
-				obs_source_t *source = getSourceRef();
-
-				if (canvas && source) {
-					// TODO: Smart channel allocation. For now, find first empty or just add?
-					// But we need to know IF it's already there?
-					// Simply assigning to a new canvas might require removing from old?
-					// obs_canvas_set_channel overwrites.
-
-					// Let's find a free channel or just use channel 0 for testing?
-					// No, that's dangerous.
-					// Let's loop 0-63 and find free?
-					int freeChannel = -1;
-					for (int i = 0; i < MAX_CHANNELS; i++) {
-						obs_source_t *existing = obs_canvas_get_channel(canvas, i);
-						if (!existing) {
-							freeChannel = i;
-							break;
-						}
-					}
-
-					if (freeChannel != -1) {
-						obs_canvas_set_channel(canvas, freeChannel, source);
-
-						// Trigger refresh on the dialog
-						// We need a way to reach the dialog.
-						// Using scene->views usually works.
-						if (scene() && !scene()->views().isEmpty()) {
-							if (EncodingGraphWindow *dlg =
-								    qobject_cast<EncodingGraphWindow *>(
-									    scene()->views().first()->parentWidget())) {
-								QTimer::singleShot(0, dlg,
-										   &EncodingGraphWindow::refresh);
-							} else if (EncodingGraphWindow *dlg =
-									   qobject_cast<EncodingGraphWindow *>(
-										   scene()->parent())) {
-								// Sometimes scene parent is the dialog
-								QTimer::singleShot(0, dlg,
-										   &EncodingGraphWindow::refresh);
-							}
-						}
-					}
-				}
-				if (canvas)
-					obs_canvas_release(canvas);
-				if (source)
-					obs_source_release(source);
-				break;
-			}
-		}
-	}
 }
 
 QRectF GraphNode::boundingRect() const
@@ -556,7 +445,8 @@ GraphEdge::GraphEdge(GraphNode *start, GraphNode *end, const QString &startPortI
 	  m_startPortId(startPortId),
 	  m_endPortId(endPortId)
 {
-	setFlags(ItemIsSelectable);
+	// Selection disabled by default
+	// setFlags(ItemIsSelectable);
 	setAcceptHoverEvents(true);
 	setZValue(0);
 
@@ -704,11 +594,22 @@ protected:
 	void wheelEvent(QWheelEvent *event) override
 	{
 		if (event->modifiers() & Qt::ControlModifier) {
+			setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 			const double zoomFactor = 1.1;
 			if (event->angleDelta().y() > 0)
 				scale(zoomFactor, zoomFactor);
 			else
 				scale(1.0 / zoomFactor, 1.0 / zoomFactor);
+			event->accept();
+		} else if (event->modifiers() & Qt::ShiftModifier) {
+			// Horizontal scrolling with Shift + Wheel
+			QPoint delta = event->angleDelta();
+			int hDelta = delta.y(); // Use vertical wheel for horizontal scroll
+			if (delta.isNull())
+				return;
+
+			// Adjust speed factor as needed
+			horizontalScrollBar()->setValue(horizontalScrollBar()->value() - hDelta);
 			event->accept();
 		} else {
 			QGraphicsView::wheelEvent(event);
@@ -791,6 +692,15 @@ EncodingGraphWindow::EncodingGraphWindow(QWidget *parent) : QMainWindow(parent)
 	connect(m_view, &QWidget::customContextMenuRequested, [this](const QPoint &pos) {
 		QMenu menu;
 		menu.addAction("Refresh Graph", this, &EncodingGraphWindow::refresh);
+		menu.addSeparator();
+		menu.addAction("Reset Layout", this, &EncodingGraphWindow::layoutGraph);
+		menu.addSeparator();
+		QAction *toggleEdges = menu.addAction("Edge Selection", this,
+			[this](bool checked) { setEdgesSelectable(checked); }
+		);
+		toggleEdges->setCheckable(true);
+		toggleEdges->setChecked(m_edgesSelectable);
+
 		menu.exec(m_view->mapToGlobal(pos));
 	});
 
@@ -805,6 +715,19 @@ EncodingGraphWindow::EncodingGraphWindow(QWidget *parent) : QMainWindow(parent)
 EncodingGraphWindow::~EncodingGraphWindow()
 {
 	obs_frontend_remove_event_callback(OBSFrontendEvent, this);
+}
+
+void EncodingGraphWindow::setEdgesSelectable(bool selectable)
+{
+	m_edgesSelectable = selectable;
+	if (!m_scene)
+		return;
+
+	for (QGraphicsItem *item : m_scene->items()) {
+		if (GraphEdge *edge = dynamic_cast<GraphEdge *>(item)) {
+			edge->setFlag(QGraphicsItem::ItemIsSelectable, selectable);
+		}
+	}
 }
 
 void EncodingGraphWindow::OBSFrontendEvent(enum obs_frontend_event event, void *param)
@@ -848,59 +771,6 @@ void EncodingGraphWindow::keyPressEvent(QKeyEvent *event)
 	else if (event->key() == Qt::Key_0 && (event->modifiers() & Qt::ControlModifier)) {
 		m_view->fitInView(m_scene->itemsBoundingRect(), Qt::KeepAspectRatio);
 		event->accept();
-	}
-	// Delete Selection
-	else if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
-		bool changed = false;
-		for (QGraphicsItem *item : m_scene->selectedItems()) {
-			if (GraphEdge *edge = dynamic_cast<GraphEdge *>(item)) {
-				GraphNode *start = edge->startNode();
-				GraphNode *end = edge->endNode();
-				QString endPort = edge->endPortId();
-
-				if (start && end) {
-					// 1. Audio: Source -> Canvas Track
-					if (end->nodeType() == NodeType::Canvas && endPort.startsWith("track")) {
-						int trackIdx = endPort.mid(5).toInt() - 1;
-						if (trackIdx >= 0 && trackIdx < 6) {
-							obs_source_t *source = start->getSourceRef();
-							if (source) {
-								uint32_t mixers = obs_source_get_audio_mixers(source);
-								if (mixers & (1 << trackIdx)) {
-									mixers &= ~(1 << trackIdx);
-									obs_source_set_audio_mixers(source, mixers);
-									changed = true;
-								}
-								obs_source_release(source);
-							}
-						}
-					}
-					// 2. Video: Source -> Canvas Video
-					else if (end->nodeType() == NodeType::Canvas && endPort == "video") {
-						obs_canvas_t *canvas = end->getCanvasRef();
-						obs_source_t *source = start->getSourceRef();
-
-						if (canvas && source) {
-							for (int i = 0; i < 64; i++) {
-								if (obs_canvas_get_channel(canvas, i) == source) {
-									obs_canvas_set_channel(canvas, i, nullptr);
-									changed = true;
-								}
-							}
-						}
-						if (canvas)
-							obs_canvas_release(canvas);
-						if (source)
-							obs_source_release(source);
-					}
-				}
-			}
-		}
-
-		if (changed) {
-			QTimer::singleShot(0, this, &EncodingGraphWindow::refresh);
-		}
-		event->accept();
 	} else {
 		QMainWindow::keyPressEvent(event);
 	}
@@ -908,6 +778,7 @@ void EncodingGraphWindow::keyPressEvent(QKeyEvent *event)
 
 void EncodingGraphWindow::zoom(qreal factor)
 {
+	m_view->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 	m_view->scale(factor, factor);
 }
 
@@ -929,6 +800,9 @@ void EncodingGraphWindow::addEdge(GraphNode *start, GraphNode *end, const QStrin
 	if (!start || !end)
 		return;
 	GraphEdge *edge = new GraphEdge(start, end, startPort, endPort);
+	if (m_edgesSelectable) {
+		edge->setFlag(QGraphicsItem::ItemIsSelectable, true);
+	}
 	m_scene->addItem(edge);
 	start->addEdge(edge);
 	end->addEdge(edge);
@@ -954,6 +828,12 @@ static QString get_encoder_bitrate_string(obs_encoder_t *encoder)
 
 void EncodingGraphWindow::refresh()
 {
+	// Save current positions
+	QMap<QString, QPointF> savedPositions;
+	for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it) {
+		savedPositions[it.key()] = it.value()->pos();
+	}
+
 	m_scene->clear();
 	m_nodes.clear();
 
@@ -963,6 +843,8 @@ void EncodingGraphWindow::refresh()
 	GraphNode *audioMixerNode =
 		getOrCreateNode("MIX:MainAudio", "Audio Mixer", NodeType::AudioMixer, "Global Audio Mixer");
 	audioMixerNode->setNodeGroup("MAIN");
+
+	int layoutIndex = 0; // Monotonically increasing index for stable sorting
 
 	// Add 6 Tracks (Input & Output)
 	for (int i = 1; i <= MAX_AUDIO_MIXES; i++) {
@@ -1020,6 +902,7 @@ void EncodingGraphWindow::refresh()
 		GraphNode *canvasNode = getOrCreateNode(nodeId, nodeTitle, NodeType::Canvas, subText);
 		// Assign group as UUID (or "MAIN" for main canvas)
 		canvasNode->setNodeGroup(isMain ? "MAIN" : (canvasUUID ? canvasUUID : ""));
+		canvasNode->setSortOrder(layoutIndex++); // Order based on canvas enumeration
 
 		// Add to Map
 		canvasMap[canvas] = canvasNode;
@@ -1027,7 +910,8 @@ void EncodingGraphWindow::refresh()
 		// Setup Ports
 
 		// Video IO Ports
-		canvasNode->addInputPort("video", "Video Input");
+		// Default port for program scene or manually set video source
+		canvasNode->addInputPort("video", "Program Input");
 		canvasNode->addOutputPort("video_program", "Video Output (Program)");
 		if (isMain) {
 			canvasNode->addOutputPort("video_preview", "Video Output (Preview)");
@@ -1038,8 +922,8 @@ void EncodingGraphWindow::refresh()
 		canvasNode->setCanvas(canvas);
 
 		// Get flags for Audio Mix check
-		uint32_t cFlags = obs_canvas_get_flags(canvas);
-		const bool canvasMixesAudio = (cFlags & (uint32_t)obs_canvas_flags::MIX_AUDIO);
+		uint32_t c_flags = obs_canvas_get_flags(canvas);
+		const bool canvasMixesAudio = (c_flags & static_cast<uint32_t>(obs_canvas_flags::MIX_AUDIO));
 
 		// Check Canvas Channels (0-63) for bound sources (Global Source)
 		for (size_t i = 0; i < MAX_CHANNELS; i++) {
@@ -1053,15 +937,29 @@ void EncodingGraphWindow::refresh()
 
 				// Determine type (Video or Audio)
 				const uint32_t flags = obs_source_get_output_flags(source);
-				NodeType nodeType;
-				if (obs_scene_from_source(source)) {
+
+				auto nodeType =
+					NodeType::VideoInput; // Default to VideoInput if unknown type but has video flag
+				if (srcType == OBS_SOURCE_TYPE_SCENE) {
 					nodeType = NodeType::Scene;
-				} else if ((flags & OBS_SOURCE_VIDEO) && (flags & OBS_SOURCE_AUDIO)) {
-					nodeType = NodeType::MediaInput;
-				} else if (flags & OBS_SOURCE_VIDEO) {
-					nodeType = NodeType::VideoInput;
-				} else {
-					nodeType = NodeType::AudioInput;
+				} else if (srcType == OBS_SOURCE_TYPE_TRANSITION) {
+					nodeType = NodeType::Transition;
+				} else if (srcType == OBS_SOURCE_TYPE_INPUT) {
+					if ((flags & OBS_SOURCE_VIDEO) && (flags & OBS_SOURCE_AUDIO)) {
+						nodeType = NodeType::MediaInput;
+					} else if (flags & OBS_SOURCE_VIDEO) {
+						nodeType = NodeType::VideoInput;
+					} else if (flags & OBS_SOURCE_AUDIO) {
+						nodeType = NodeType::AudioInput;
+					}
+				} else if (srcType ==
+					   OBS_SOURCE_TYPE_FILTER) { // NOTE: this unlikely to happen, just in case
+					// For filters, we can check the flags to determine if it's video/audio/effect filter
+					if (flags & OBS_SOURCE_VIDEO) {
+						nodeType = NodeType::VideoInput; // Could be a video filter
+					} else if (flags & OBS_SOURCE_AUDIO) {
+						nodeType = NodeType::AudioInput; // Could be an audio filter
+					}
 				}
 
 				GraphNode *srcNode = getOrCreateNode(
@@ -1070,12 +968,16 @@ void EncodingGraphWindow::refresh()
 
 				// Group with this canvas
 				srcNode->setNodeGroup(canvasNode->nodeGroup());
-				srcNode->setShowGlobe(true); // Bound to a channel -> Globe Icon
+				srcNode->setSortOrder(layoutIndex++); // Order based on channel index
+				srcNode->setShowGlobe(true);          // Bound to a channel -> Globe Icon
 				srcNode->setSource(source);
 
 				// Add Ports (Video is guaranteed by flag check above, but check audio)
 				if (flags & OBS_SOURCE_VIDEO) {
 					srcNode->addOutputPort("video", "Video");
+				} else {
+					// Audio-only source bound to channel gets a Link port
+					srcNode->addOutputPort("link", "Link");
 				}
 
 				if ((flags & OBS_SOURCE_AUDIO) /*&& obs_source_get_audio_mixers(source) != 0*/) {
@@ -1083,7 +985,14 @@ void EncodingGraphWindow::refresh()
 				}
 
 				if (flags & OBS_SOURCE_VIDEO) {
-					addEdge(srcNode, canvasNode, "video", "video");
+					QString channelPortId = QString("video_channel_%1").arg(i);
+					canvasNode->addInputPort(channelPortId, QString("Channel %1").arg(i));
+					addEdge(srcNode, canvasNode, "video", channelPortId);
+				} else {
+					// Audio-only link edge (Gray)
+					QString channelPortId = QString("link_channel_%1").arg(i);
+					canvasNode->addInputPort(channelPortId, QString("Channel %1").arg(i));
+					addEdge(srcNode, canvasNode, "link", channelPortId);
 				}
 
 				// Link to Audio Mixer ONLY if Canvas supports MIX_AUDIO
@@ -1117,6 +1026,7 @@ void EncodingGraphWindow::refresh()
 		GraphNode *canvasNode;
 		GraphNode *audioMixerNode;
 		QSet<obs_source_t *> *processed;
+		int *layoutIndex;
 	};
 
 	auto sceneItemEnum = [](obs_scene_t *, obs_sceneitem_t *item, void *p) -> bool {
@@ -1138,6 +1048,8 @@ void EncodingGraphWindow::refresh()
 		NodeType type;
 		if (isScene) {
 			type = NodeType::Scene;
+		} else if (obs_source_get_type(source) == OBS_SOURCE_TYPE_TRANSITION) {
+			type = NodeType::Transition;
 		} else if ((flags & OBS_SOURCE_VIDEO) && (flags & OBS_SOURCE_AUDIO)) {
 			type = NodeType::MediaInput;
 		} else if (flags & OBS_SOURCE_VIDEO) {
@@ -1160,6 +1072,13 @@ void EncodingGraphWindow::refresh()
 		GraphNode *srcNode = ctx->dlg->getOrCreateNode(nodeId, name, type, subText);
 		srcNode->setSource(source);
 		srcNode->setNodeGroup(ctx->sceneNode->nodeGroup()); // Inherit group
+
+		// If sortOrder is 0 (default), assign it. If already assigned (shared source), keep first encountered?
+		// Or maybe update it if it's currently appearing in this scene context?
+		// Let's assign it if 0.
+		if (srcNode->sortOrder() == 0) {
+			srcNode->setSortOrder((*ctx->layoutIndex)++);
+		}
 
 		if (flags & OBS_SOURCE_VIDEO) {
 			srcNode->addOutputPort("video", "Video");
@@ -1194,6 +1113,7 @@ void EncodingGraphWindow::refresh()
 		GraphNode *audioMixerNode;
 		decltype(sceneItemEnum) itemCallback;
 		QSet<obs_source_t *> *processed;
+		int *layoutIndex;
 	};
 
 	auto canvasSceneEnum = [](void *p, obs_source_t *sceneSource) -> bool {
@@ -1209,6 +1129,7 @@ void EncodingGraphWindow::refresh()
 								 NodeType::Scene, "Type: Scene");
 		sceneNode->setSource(sceneSource);
 		sceneNode->setNodeGroup(ctx->canvasNode->nodeGroup());
+		sceneNode->setSortOrder((*ctx->layoutIndex)++); // Order based on appearance in canvas
 
 		// Add Ports - Scene handles Video Composition & Audio Pass-through
 		sceneNode->addInputPort("video", "Video Input");
@@ -1232,7 +1153,8 @@ void EncodingGraphWindow::refresh()
 		const auto scene = obs_scene_from_source(sceneSource);
 
 		// Enum Items
-		SceneItemContext itemCtx = {ctx->dlg, sceneNode, ctx->canvasNode, ctx->audioMixerNode, ctx->processed};
+		SceneItemContext itemCtx = {ctx->dlg,       sceneNode,       ctx->canvasNode, ctx->audioMixerNode,
+					    ctx->processed, ctx->layoutIndex};
 		obs_scene_enum_items(scene, ctx->itemCallback, &itemCtx);
 
 		return true;
@@ -1241,7 +1163,8 @@ void EncodingGraphWindow::refresh()
 	for (obs_canvas_t *canvas : canvases) {
 		if (canvasMap.contains(canvas)) {
 			GraphNode *canvasNode = canvasMap[canvas];
-			CanvasSceneContext ctx = {this, canvasNode, audioMixerNode, sceneItemEnum, &processedSources};
+			CanvasSceneContext ctx = {this,          canvasNode,        audioMixerNode,
+						  sceneItemEnum, &processedSources, &layoutIndex};
 			obs_canvas_enum_scenes(canvas, canvasSceneEnum, &ctx);
 		}
 	}
@@ -1290,6 +1213,8 @@ void EncodingGraphWindow::refresh()
 			NodeType type;
 			if (isScene) {
 				type = NodeType::Scene;
+			} else if (obs_source_get_type(source) == OBS_SOURCE_TYPE_TRANSITION) {
+				type = NodeType::Transition;
 			} else if (hasVideo && hasAudio) {
 				type = NodeType::MediaInput;
 			} else if (hasVideo) {
@@ -1615,12 +1540,13 @@ void EncodingGraphWindow::refresh()
 					const auto output_audio = obs_output_audio(output);
 					if (output_audio == obs_get_audio()) {
 						for (size_t i = 0; i < MAX_AUDIO_MIXES; i++) {
-							uint32_t output_mixers = static_cast<uint32_t>(obs_output_get_mixers(output));
+							uint32_t output_mixers =
+								static_cast<uint32_t>(obs_output_get_mixers(output));
 							if (output_mixers & (1 << i)) {
 								QString trackPort = QString("track%1").arg(i + 1);
-								dialog->addEdge(ed->audioMixerNode, outNode, trackPort, "audio");
+								dialog->addEdge(ed->audioMixerNode, outNode, trackPort,
+										"audio");
 							}
-
 						}
 						found = true;
 					}
@@ -1640,20 +1566,121 @@ void EncodingGraphWindow::refresh()
 		},
 		&enumOutputData);
 
-	layoutGraph();
+	// Restore positions or initial layout
+	bool anyRestored = false;
+	QList<GraphNode *> newNodes;
+	for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it) {
+		if (savedPositions.contains(it.key())) {
+			it.value()->setPos(savedPositions[it.key()]);
+			anyRestored = true;
+		} else {
+			newNodes.append(it.value());
+		}
+	}
+
+	if (!anyRestored && !savedPositions.isEmpty()) {
+		// If we had saved positions but none matched (e.g. completely new scene collection),
+		// we probably want a fresh layout.
+		layoutGraph();
+	} else if (!anyRestored && savedPositions.isEmpty()) {
+		// First run / empty state
+		layoutGraph();
+	} else {
+		// Partial restore or full restore.
+		// For nodes that were NOT restored (new sources), they default to (0,0).
+
+		if (!newNodes.isEmpty()) {
+			qreal startX = 50;
+			qreal columnGap = 300;
+			qreal paddingY = 20;
+
+			// Determine max Y for each column from EXISTING nodes
+			// Columns: 0=Sources, 1=Scenes, 2=CanvasIn, 3=Canvas, 4=Encoder, 5=Output
+			QMap<int, qreal> columnBottomY;
+			for (int i = 0; i < 6; i++)
+				columnBottomY[i] = 50.0;
+
+			auto getColIndex = [](GraphNode *node) -> int {
+				if (node->isShowGlobe() || node->nodeType() == NodeType::Transition)
+					return 2;
+				switch (node->nodeType()) {
+				case NodeType::VideoInput:
+				case NodeType::AudioInput:
+				case NodeType::MediaInput:
+					return 0;
+				case NodeType::Scene:
+					return 1;
+				case NodeType::Canvas:
+				case NodeType::AudioMixer:
+					return 3;
+				case NodeType::Encoder:
+					return 4;
+				case NodeType::Output:
+					return 5;
+				default:
+					return 0;
+				}
+			};
+
+			// Scan existing nodes to find bottom of columns
+			for (auto it = m_nodes.begin(); it != m_nodes.end(); ++it) {
+				GraphNode *node = it.value();
+				if (newNodes.contains(node))
+					continue;
+
+				int col = getColIndex(node);
+				qreal bottom = node->y() + node->boundingRect().height() + paddingY;
+				if (bottom > columnBottomY[col]) {
+					columnBottomY[col] = bottom;
+				}
+			}
+
+			// Sort new nodes to group them nicely when appending
+			auto sorter = [](GraphNode *a, GraphNode *b) {
+				if (a->nodeGroup() != b->nodeGroup()) {
+					if (a->nodeGroup() == "MAIN")
+						return true;
+					if (b->nodeGroup() == "MAIN")
+						return false;
+					return a->nodeGroup() < b->nodeGroup();
+				}
+				return a->title().compare(b->title(), Qt::CaseInsensitive) < 0;
+			};
+			std::sort(newNodes.begin(), newNodes.end(), sorter);
+
+			// Place new nodes at the bottom of their respective columns
+			for (GraphNode *node : newNodes) {
+				int col = getColIndex(node);
+				qreal x = startX + (col * columnGap);
+				qreal y = columnBottomY[col];
+
+				node->setPos(x, y);
+				columnBottomY[col] += node->boundingRect().height() + paddingY;
+			}
+		}
+
+		// Update edges for restored positions
+		for (QGraphicsItem *item : m_scene->items()) {
+			if (GraphEdge *edge = dynamic_cast<GraphEdge *>(item)) {
+				edge->updatePath();
+			}
+		}
+	}
 }
 
 void EncodingGraphWindow::layoutGraph()
 {
-	// 5-column layout:
+	// 6-column layout:
 	// 1. Sources (Raw Inputs)
 	// 2. Scenes (Compositions)
-	// 3. Canvas (Mixing/Rendering)
-	// 4. Encoders
-	// 5. Outputs
+	// 3. Canvas Inputs (Transitions & Global Channel Sources)
+	// 4. Canvas (Mixing/Rendering)
+	// 5. Encoders
+	// 6. Outputs
 
 	QList<GraphNode *> rawSources;
 	QList<GraphNode *> scenes;
+	QList<GraphNode *> canvasInputs;
 	QList<GraphNode *> canvases;
 	QList<GraphNode *> encoders;
 	QList<GraphNode *> outputs;
@@ -1664,6 +1691,12 @@ void EncodingGraphWindow::layoutGraph()
 		QString id = it.key();
 		GraphNode *node = it.value();
 
+		// Merge Transitions and Global Channel Sources
+		if (node->isShowGlobe() || node->nodeType() == NodeType::Transition) {
+			canvasInputs.append(node);
+			continue;
+		}
+
 		switch (node->nodeType()) {
 		case NodeType::VideoInput:
 		case NodeType::AudioInput:
@@ -1671,7 +1704,6 @@ void EncodingGraphWindow::layoutGraph()
 			rawSources.append(node);
 			break;
 		case NodeType::Scene:
-		case NodeType::Transition:
 			scenes.append(node);
 			break;
 		case NodeType::Canvas:
@@ -1689,6 +1721,12 @@ void EncodingGraphWindow::layoutGraph()
 
 	// Sort nodes by Group first, then Title for stable layout
 	auto sorter = [](GraphNode *a, GraphNode *b) {
+		// Primary: Sort by assigned order (Topology/Enumeration)
+		if (a->sortOrder() != 0 && b->sortOrder() != 0) {
+			return a->sortOrder() < b->sortOrder();
+		}
+
+		// Secondary: Grouping (for nodes without sort order)
 		if (a->nodeGroup() != b->nodeGroup()) {
 			// Sort "MAIN" first, then others
 			if (a->nodeGroup() == "MAIN")
@@ -1697,11 +1735,14 @@ void EncodingGraphWindow::layoutGraph()
 				return false;
 			return a->nodeGroup() < b->nodeGroup();
 		}
+
+		// Fallback: Title
 		return a->title().compare(b->title(), Qt::CaseInsensitive) < 0;
 	};
 
 	std::sort(rawSources.begin(), rawSources.end(), sorter);
 	std::sort(scenes.begin(), scenes.end(), sorter);
+	std::sort(canvasInputs.begin(), canvasInputs.end(), sorter);
 	std::sort(canvases.begin(), canvases.end(), sorter);
 	std::sort(encoders.begin(), encoders.end(), sorter);
 	std::sort(outputs.begin(), outputs.end(), sorter);
@@ -1731,9 +1772,10 @@ void EncodingGraphWindow::layoutGraph()
 	// Place Columns
 	placeColumn(rawSources, 0);
 	placeColumn(scenes, 1);
-	placeColumn(canvases, 2);
-	placeColumn(encoders, 3);
-	placeColumn(outputs, 4);
+	placeColumn(canvasInputs, 2);
+	placeColumn(canvases, 3);
+	placeColumn(encoders, 4);
+	placeColumn(outputs, 5);
 
 	// Update scene rect
 	m_scene->setSceneRect(m_scene->itemsBoundingRect().adjusted(-50, -50, 50, 50));

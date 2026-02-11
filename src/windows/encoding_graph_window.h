@@ -38,6 +38,10 @@ public:
 	QString nodeGroup() const { return m_group; }
 
 	void setShowGlobe(const bool show) { m_showGlobe = show; }
+	bool isShowGlobe() const { return m_showGlobe; }
+
+	void setSortOrder(int order) { m_sortOrder = order; }
+	int sortOrder() const { return m_sortOrder; }
 
 	// Port support
 	void addInputPort(const QString &id, const QString &label);
@@ -70,6 +74,7 @@ private:
 	NodeType m_type;
 	qreal m_width = 200;
 	qreal m_height = 80;
+	qintptr m_sortOrder = 0;
 	bool m_showGlobe = false;
 
 	obs_weak_source_t *m_weakSource = nullptr;
@@ -148,6 +153,9 @@ private:
 	GraphNode *getOrCreateNode(const QString &id, const QString &title, NodeType type, const QString &subtext = "");
 	void addEdge(GraphNode *start, GraphNode *end, const QString &startPort = "", const QString &endPort = "");
 	void layoutGraph();
+	void setEdgesSelectable(bool selectable);
+
+	bool m_edgesSelectable = false;
 
 	static void OBSFrontendEvent(enum obs_frontend_event event, void *param);
 };
