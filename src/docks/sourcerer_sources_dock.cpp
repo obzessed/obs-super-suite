@@ -7,6 +7,7 @@
 #include <QContextMenuEvent>
 #include <QMenu>
 #include <QAction>
+#include <QGuiApplication>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
@@ -63,6 +64,7 @@ SourcererSourcesDock::~SourcererSourcesDock()
 		signal_handler_disconnect(sh, "item_select", SceneItemSelect, this);
 		signal_handler_disconnect(sh, "item_deselect", SceneItemDeselect, this);
 		signal_handler_disconnect(sh, "item_visible", SceneItemVisible, this);
+		signal_handler_disconnect(sh, "item_locked", SceneItemLocked, this);
 		obs_source_release(connectedScene);
 	}
 	obs_frontend_remove_event_callback(FrontendEvent, this);
@@ -113,6 +115,8 @@ void SourcererSourcesDock::contextMenuEvent(QContextMenuEvent *event)
 
 void SourcererSourcesDock::keyPressEvent(QKeyEvent *event)
 {
+	UpdateKeyModifiers();
+
 	if (event->modifiers() & Qt::ControlModifier) {
 		if (event->key() == Qt::Key_Plus || event->key() == Qt::Key_Equal) {
 			UpdateZoom(1);
@@ -129,6 +133,20 @@ void SourcererSourcesDock::keyPressEvent(QKeyEvent *event)
 		}
 	}
 	QWidget::keyPressEvent(event);
+}
+
+void SourcererSourcesDock::keyReleaseEvent(QKeyEvent *event)
+{
+	UpdateKeyModifiers();
+	QWidget::keyReleaseEvent(event);
+}
+
+void SourcererSourcesDock::UpdateKeyModifiers()
+{
+	bool ctrlPressed = (QGuiApplication::queryKeyboardModifiers() & Qt::ControlModifier);
+	for (SourcererItem *item : items) {
+		item->SetCtrlPressed(ctrlPressed);
+	}
 }
 
 void SourcererSourcesDock::OnItemClicked(SourcererItem *item)
@@ -165,18 +183,6 @@ void SourcererSourcesDock::OnItemClicked(SourcererItem *item)
 	obs_sceneitem_t *sceneItem = obs_scene_find_source_recursive(scene, name);
 
 	if (sceneItem) {
-		// If we are holding Ctrl (Multi-select) support could be added here,
-		// but for now let's mimic single click exclusive selection unless user asks otherwise.
-		// Actually, obs_sceneitem_select just selects it.
-		// To replicate standard behavior: clear others then select this one.
-
-		// Ideally we should check modifiers, but let's assume exclusive for now
-		// or just add to selection if we want flexible behavior.
-		// Let's try exclusive select for single click.
-
-		// We need to deselect all others first?
-		// obs_scene_enum_items can do that.
-
 		obs_scene_enum_items(
 			scene,
 			[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
@@ -242,6 +248,50 @@ void SourcererSourcesDock::OnItemMenuRequested(SourcererItem *item, QMenu *menu)
 	}
 }
 
+void SourcererSourcesDock::OnToggleVisibilityRequested(SourcererItem *item)
+{
+	if (!connectedScene || !item)
+		return;
+
+	obs_source_t *source = item->GetSource();
+	if (!source)
+		return;
+
+	obs_scene_t *scene = obs_scene_from_source(connectedScene);
+	if (!scene)
+		return;
+
+	const char *name = obs_source_get_name(source);
+	obs_sceneitem_t *sceneItem = obs_scene_find_source_recursive(scene, name);
+
+	if (sceneItem) {
+		bool visible = obs_sceneitem_visible(sceneItem);
+		obs_sceneitem_set_visible(sceneItem, !visible);
+	}
+}
+
+void SourcererSourcesDock::OnToggleLockRequested(SourcererItem *item)
+{
+	if (!connectedScene || !item)
+		return;
+
+	obs_source_t *source = item->GetSource();
+	if (!source)
+		return;
+
+	obs_scene_t *scene = obs_scene_from_source(connectedScene);
+	if (!scene)
+		return;
+
+	const char *name = obs_source_get_name(source);
+	obs_sceneitem_t *sceneItem = obs_scene_find_source_recursive(scene, name);
+
+	if (sceneItem) {
+		bool locked = obs_sceneitem_locked(sceneItem);
+		obs_sceneitem_set_locked(sceneItem, !locked);
+	}
+}
+
 void SourcererSourcesDock::mousePressEvent(QMouseEvent *event)
 {
 	// Deselect if clicking on empty space
@@ -297,8 +347,6 @@ void SourcererSourcesDock::SetZoom(int width)
 		}
 
 		// If called programmatically (not by slider), ensure slider is in sync
-		// signal is blocked to prevent recursion if connected that way,
-		// though direct call loop is avoided by the itemWidth check above usually.
 		if (zoomSlider->value() != width) {
 			QSignalBlocker blocker(zoomSlider);
 			zoomSlider->setValue(width);
@@ -343,10 +391,12 @@ void SourcererSourcesDock::Refresh()
 		obs_enum_sources(EnumSources, this);
 	}
 	UpdateSceneConnection();
+
+	// Ensure modifier state is correct after refresh
+	UpdateKeyModifiers();
 }
 
 bool SourcererSourcesDock::EnumSources(void *data, obs_source_t *source)
-
 {
 	SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(data);
 
@@ -359,11 +409,18 @@ bool SourcererSourcesDock::EnumSources(void *data, obs_source_t *source)
 	item->SetItemWidth(dock->itemWidth);
 	// item->SetSourceActive(obs_source_enabled(source)); // Handled internally
 	item->SetSceneItemVisible(true);
+
+	// No scene context in global mode by default, unless we matched connectedScene
+	item->SetHasSceneContext(false);
+
 	dock->items.push_back(item);
 
 	connect(item, &SourcererItem::Clicked, dock, &SourcererSourcesDock::OnItemClicked);
 	connect(item, &SourcererItem::DoubleClicked, dock, &SourcererSourcesDock::OnItemDoubleClicked);
 	connect(item, &SourcererItem::MenuRequested, dock, &SourcererSourcesDock::OnItemMenuRequested);
+	connect(item, &SourcererItem::ToggleVisibilityRequested, dock,
+		&SourcererSourcesDock::OnToggleVisibilityRequested);
+	connect(item, &SourcererItem::ToggleLockRequested, dock, &SourcererSourcesDock::OnToggleLockRequested);
 
 	dock->flowLayout->addWidget(item);
 
@@ -379,12 +436,6 @@ bool SourcererSourcesDock::EnumSceneItems(obs_scene_t *scene, obs_sceneitem_t *i
 	if (!source)
 		return true;
 
-	// In this mode, we show whatever is in the scene, even groups or nested scenes?
-	// User said "Show selected scene's source". Usually that means the inputs.
-	// But let's apply same filter as global: no scenes, no groups, if we want "Sources"
-	// However, if I am in a scene, I might want to see the nested scenes.
-	// Let's stick to the behavior of "Sourcerer Sources" which seemed to filter out scenes/groups.
-
 	const char *id = obs_source_get_id(source);
 	if (strcmp(id, "scene") == 0)
 		return true;
@@ -393,11 +444,17 @@ bool SourcererSourcesDock::EnumSceneItems(obs_scene_t *scene, obs_sceneitem_t *i
 
 	widget->SetItemWidth(dock->itemWidth);
 	widget->SetSceneItemVisible(obs_sceneitem_visible(item));
+	widget->SetSceneItemLocked(obs_sceneitem_locked(item));
+	widget->SetHasSceneContext(true);
+
 	dock->items.push_back(widget);
 
 	connect(widget, &SourcererItem::Clicked, dock, &SourcererSourcesDock::OnItemClicked);
 	connect(widget, &SourcererItem::DoubleClicked, dock, &SourcererSourcesDock::OnItemDoubleClicked);
 	connect(widget, &SourcererItem::MenuRequested, dock, &SourcererSourcesDock::OnItemMenuRequested);
+	connect(widget, &SourcererItem::ToggleVisibilityRequested, dock,
+		&SourcererSourcesDock::OnToggleVisibilityRequested);
+	connect(widget, &SourcererItem::ToggleLockRequested, dock, &SourcererSourcesDock::OnToggleLockRequested);
 
 	dock->flowLayout->addWidget(widget);
 
@@ -440,6 +497,7 @@ void SourcererSourcesDock::UpdateSceneConnection()
 			signal_handler_disconnect(sh, "item_select", SceneItemSelect, this);
 			signal_handler_disconnect(sh, "item_deselect", SceneItemDeselect, this);
 			signal_handler_disconnect(sh, "item_visible", SceneItemVisible, this);
+			signal_handler_disconnect(sh, "item_locked", SceneItemLocked, this);
 			obs_source_release(connectedScene);
 			connectedScene = nullptr;
 		}
@@ -452,6 +510,7 @@ void SourcererSourcesDock::UpdateSceneConnection()
 			signal_handler_connect(sh, "item_select", SceneItemSelect, this);
 			signal_handler_connect(sh, "item_deselect", SceneItemDeselect, this);
 			signal_handler_connect(sh, "item_visible", SceneItemVisible, this);
+			signal_handler_connect(sh, "item_locked", SceneItemLocked, this);
 		}
 	} else {
 		// Same scene, just release the temp reference we got
@@ -461,6 +520,10 @@ void SourcererSourcesDock::UpdateSceneConnection()
 
 	// Always sync selection when checking connection
 	SyncSelection();
+
+	// Also sync visibility/locked state for items if we are in global mode but now have context
+	// (Though normally we'd refresh if switching modes, this handles scene switch in global mode)
+	// For now, SyncSelection is enough as Refresh handles the rest.
 }
 
 void SourcererSourcesDock::SyncSelection()
@@ -489,6 +552,10 @@ void SourcererSourcesDock::SyncSelection()
 					const char *wName = obs_source_get_name(wSource);
 					if (strcmp(name, wName) == 0) {
 						widget->SetSelected(selected);
+						// Update other states while we are here matching items
+						widget->SetSceneItemVisible(obs_sceneitem_visible(item));
+						widget->SetSceneItemLocked(obs_sceneitem_locked(item));
+
 						if (selected) {
 							dock->selectedItem = widget;
 						}
@@ -574,6 +641,34 @@ void SourcererSourcesDock::SceneItemVisible(void *data, calldata_t *cd)
 			if (strcmp(name, wName) == 0) {
 				QMetaObject::invokeMethod(
 					widget, [widget, visible]() { widget->SetSceneItemVisible(visible); },
+					Qt::QueuedConnection);
+			}
+		}
+	}
+}
+
+void SourcererSourcesDock::SceneItemLocked(void *data, calldata_t *cd)
+{
+	SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(data);
+	obs_sceneitem_t *item = (obs_sceneitem_t *)calldata_ptr(cd, "item");
+	if (!item)
+		return;
+
+	bool locked = calldata_bool(cd, "locked");
+
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	if (!source)
+		return;
+
+	const char *name = obs_source_get_name(source);
+
+	for (SourcererItem *widget : dock->items) {
+		obs_source_t *wSource = widget->GetSource();
+		if (wSource) {
+			const char *wName = obs_source_get_name(wSource);
+			if (strcmp(name, wName) == 0) {
+				QMetaObject::invokeMethod(
+					widget, [widget, locked]() { widget->SetSceneItemLocked(locked); },
 					Qt::QueuedConnection);
 			}
 		}

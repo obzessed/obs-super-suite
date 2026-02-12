@@ -28,6 +28,7 @@ protected:
 	void showEvent(QShowEvent *event) override;
 	bool eventFilter(QObject *obj, QEvent *event) override;
 	void keyPressEvent(QKeyEvent *event) override;
+	void keyReleaseEvent(QKeyEvent *event) override;
 	void contextMenuEvent(QContextMenuEvent *event) override;
 	void mousePressEvent(QMouseEvent *event) override;
 
@@ -44,18 +45,23 @@ private:
 	static bool EnumSources(void *data, obs_source_t *source);
 	static bool EnumSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param);
 	static void FrontendEvent(enum obs_frontend_event event, void *data);
+
 	void OnItemClicked(SourcererItem *item);
 	void OnItemDoubleClicked(SourcererItem *item);
 	void OnItemMenuRequested(SourcererItem *item, QMenu *menu);
+	void OnToggleVisibilityRequested(SourcererItem *item);
+	void OnToggleLockRequested(SourcererItem *item);
 
 	bool filterByCurrentScene = true;
 	obs_source_t *connectedScene = nullptr;
-	SourcererItem* selectedItem = nullptr;
+	SourcererItem *selectedItem = nullptr;
 
 	void UpdateSceneConnection();
 	void SyncSelection();
+	void UpdateKeyModifiers();
 
 	static void SceneItemSelect(void *data, calldata_t *cd);
 	static void SceneItemDeselect(void *data, calldata_t *cd);
 	static void SceneItemVisible(void *data, calldata_t *cd);
+	static void SceneItemLocked(void *data, calldata_t *cd);
 };

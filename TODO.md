@@ -4,6 +4,7 @@
   - Ultra Suite?
   - Open Stream Suite/Studio?
   - Power/Pro Console?
+- YouTube Video Player Source
 - Refs
   - https://github.com/obsproject/obs-browser
   - https://github.com/streamlabs/obs-sl-browser
