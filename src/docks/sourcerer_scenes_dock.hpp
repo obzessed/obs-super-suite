@@ -48,6 +48,7 @@ private:
 	bool syncSelection = true;
 	bool scrollToProgram = true;
 	bool hideEmptyScenes = false;
+	bool hideBadges = false;
 
 	void HighlightCurrentScene() const;
 	static void FrontendEvent(enum obs_frontend_event event, void *data);
@@ -56,10 +57,11 @@ private:
 	void OnItemDoubleClicked(SourcererItem *item);
 
 	// T-Bar
-	enum class TBarPosition { Hidden, Right, Bottom };
+	enum class TBarPosition { Hidden, Left, Right, Top, Bottom };
 	TBarPosition tBarPos = TBarPosition::Hidden;
 	QSlider *tbarSlider = nullptr;
 	QWidget *tbarContainer = nullptr;
+
 	QWidget *contentContainer = nullptr; // Wrapper for HLayout
 
 	void SetupTBar();

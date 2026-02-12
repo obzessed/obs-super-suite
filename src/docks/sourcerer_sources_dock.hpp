@@ -56,6 +56,7 @@ private:
 	void OnToggleLockRequested(SourcererItem *item);
 
 	bool filterByCurrentScene = true;
+	bool hideBadges = false;
 	obs_source_t *connectedScene = nullptr;
 	std::vector<obs_source_t *> monitoredScenes;
 	SourcererItem *selectedItem = nullptr;

@@ -172,6 +172,16 @@ void SourcererSourcesDock::contextMenuEvent(QContextMenuEvent *event)
 		Refresh();
 	});
 
+	QAction *toggleHideBadges = menu.addAction(tr("Hide Badges"));
+	toggleHideBadges->setCheckable(true);
+	toggleHideBadges->setChecked(hideBadges);
+	connect(toggleHideBadges, &QAction::toggled, [this](bool checked) {
+		hideBadges = checked;
+		for (SourcererItem *item : items) {
+			item->SetBadgesHidden(hideBadges);
+		}
+	});
+
 	menu.exec(event->globalPos());
 }
 
@@ -531,6 +541,7 @@ bool SourcererSourcesDock::EnumSources(void *data, obs_source_t *source)
 	SourcererItem *item = new SourcererItem(source);
 
 	item->SetItemWidth(dock->itemWidth);
+	item->SetBadgesHidden(dock->hideBadges);
 	// item->SetSourceActive(obs_source_enabled(source)); // Handled internally
 	item->SetSceneItemVisible(true);
 
@@ -576,6 +587,7 @@ bool SourcererSourcesDock::EnumSceneItems(obs_scene_t *scene, obs_sceneitem_t *i
 	SourcererItem *widget = new SourcererItem(source);
 
 	widget->SetItemWidth(dock->itemWidth);
+	widget->SetBadgesHidden(dock->hideBadges);
 	widget->SetSceneItemVisible(obs_sceneitem_visible(item));
 	widget->SetSceneItemLocked(obs_sceneitem_locked(item));
 	widget->SetHasSceneContext(true);
@@ -616,7 +628,8 @@ void SourcererSourcesDock::FrontendEvent(enum obs_frontend_event event, void *da
 	}
 
 	if (event == OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED) {
-		dock->Refresh();
+		// Use queued connection to avoid crashes
+		QMetaObject::invokeMethod(dock, &SourcererSourcesDock::Refresh, Qt::QueuedConnection);
 	}
 }
 
@@ -971,6 +984,7 @@ void SourcererSourcesDock::SceneItemAdd(void *data, calldata_t *cd)
 			SourcererItem *widget = new SourcererItem(source);
 
 			widget->SetItemWidth(dock->itemWidth);
+			widget->SetBadgesHidden(dock->hideBadges);
 			widget->SetSceneItemVisible(obs_sceneitem_visible(item));
 			widget->SetSceneItemLocked(obs_sceneitem_locked(item));
 			widget->SetHasSceneContext(true);
@@ -1078,6 +1092,7 @@ QJsonObject SourcererSourcesDock::Save() const
 	obj["itemWidth"] = itemWidth;
 	obj["showZoomControls"] = statusBar->isVisible();
 	obj["filterByCurrentScene"] = filterByCurrentScene;
+	obj["hideBadges"] = hideBadges;
 	return obj;
 }
 
@@ -1092,5 +1107,8 @@ void SourcererSourcesDock::Load(const QJsonObject &obj)
 	if (obj.contains("filterByCurrentScene")) {
 		filterByCurrentScene = obj["filterByCurrentScene"].toBool(false);
 		Refresh();
+	}
+	if (obj.contains("hideBadges")) {
+		hideBadges = obj["hideBadges"].toBool(false);
 	}
 }

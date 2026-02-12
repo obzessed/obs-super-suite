@@ -72,8 +72,8 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	btnPlayPause = new QPushButton(this);
 	SetupButton(btnPlayPause, QString::fromUtf8("▶"), "Play/Pause");
 
-	btnRefresh = new QPushButton(this);
-	SetupButton(btnRefresh, QString::fromUtf8("⚙"),
+	btnProperties = new QPushButton(this);
+	SetupButton(btnProperties, QString::fromUtf8("⚙"),
 		    "Properties"); // Changed from Refresh to Gear
 
 	btnFilters = new QPushButton(this);
@@ -93,8 +93,8 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	layout->addWidget(btnInteract, 1, 1);
 	layout->addWidget(btnPlayPause, 2, 0);
 	layout->addWidget(btnDisablePreview, 2, 1);
-	layout->addWidget(btnRefresh, 3, 0);
-	layout->addWidget(btnFilters, 3, 1);
+	layout->addWidget(btnFilters, 3, 0);
+	layout->addWidget(btnProperties, 3, 1);
 
 	// Opacity Effect for Animation
 	opacityEffect = new QGraphicsOpacityEffect(this);
@@ -130,10 +130,10 @@ void SourcererItemOverlay::ReflowButtons()
 		visibleButtons.push_back(btnPlayPause);
 	if (btnDisablePreview && !btnDisablePreview->isHidden())
 		visibleButtons.push_back(btnDisablePreview);
-	if (btnRefresh && !btnRefresh->isHidden())
-		visibleButtons.push_back(btnRefresh);
 	if (btnFilters && !btnFilters->isHidden())
 		visibleButtons.push_back(btnFilters);
+	if (btnProperties && !btnProperties->isHidden())
+		visibleButtons.push_back(btnProperties);
 
 	for (size_t i = 0; i < visibleButtons.size(); ++i) {
 		int row = (int)i / 2;
@@ -344,7 +344,7 @@ void SourcererItem::SetupOverlayConnections()
 		}
 	});
 
-	connect(overlay->btnRefresh, &QPushButton::clicked, [this]() {
+	connect(overlay->btnProperties, &QPushButton::clicked, [this]() {
 		if (source) {
 			obs_frontend_open_source_properties(source);
 		}
@@ -368,6 +368,41 @@ void SourcererItem::SetOverlayEnabled(bool enabled)
 	if (!enabled && overlay) {
 		overlay->hide(); // Hide immediately without animation if disabled
 	}
+}
+
+void SourcererItem::SetBadgesHidden(bool hidden)
+{
+	if (badgesHidden == hidden)
+		return;
+	badgesHidden = hidden;
+	UpdateBadgeVisibility();
+}
+
+void SourcererItem::UpdateBadgeVisibility()
+{
+	if (badgesHidden) {
+		if (lockIconLabel)
+			lockIconLabel->hide();
+		if (visIconLabel)
+			visIconLabel->hide();
+		if (sceneItemCountLabel)
+			sceneItemCountLabel->hide();
+	} else {
+		if (lockIconLabel)
+			lockIconLabel->setVisible(isSceneItemLocked);
+		if (visIconLabel)
+			visIconLabel->setVisible(!isSceneItemVisible);
+
+		// Count label is handled by UpdateSceneItemCount, but we might need to restore it
+		// We can just re-run UpdateSceneItemCount logic or store the count.
+		// UpdateSceneItemCount sets visibility based on count.
+		// Let's call UpdateSceneItemCount to be safe? No, that enumerates items.
+		// Let's just check the label text or visibility state logic.
+		// Actually, `UpdateSceneItemCount` sets visibility. If we hid it, we need to know if we should show it.
+		// We can re-call UpdateSceneItemCount() which is slightly expensive but correct.
+		UpdateSceneItemCount();
+	}
+	UpdateIconLayout();
 }
 
 void SourcererItem::SetHasSceneContext(bool hasContext)
@@ -423,8 +458,8 @@ void SourcererItem::UpdateOverlayButtonState()
 	}
 
 	// 7. Properties (Configurable)
-	if (overlay->btnRefresh) {
-		overlay->btnRefresh->setVisible(configurable);
+	if (overlay->btnProperties) {
+		overlay->btnProperties->setVisible(configurable);
 	}
 
 	// 8. Disable Preview - Always visible
@@ -631,7 +666,7 @@ void SourcererItem::UpdateSceneItemCount()
 	if (count > 0) {
 		sceneItemCountLabel->setText(QString::number(count));
 		sceneItemCountLabel->adjustSize();
-		sceneItemCountLabel->show();
+		sceneItemCountLabel->setVisible(!badgesHidden);
 	} else {
 		sceneItemCountLabel->hide();
 	}
@@ -700,7 +735,7 @@ void SourcererItem::SetSceneItemVisible(bool visible)
 	}
 
 	if (visIconLabel) {
-		visIconLabel->setVisible(!isSceneItemVisible);
+		visIconLabel->setVisible(!isSceneItemVisible && !badgesHidden);
 	}
 	UpdateIconLayout();
 }
@@ -715,7 +750,7 @@ void SourcererItem::SetSceneItemLocked(bool locked)
 		overlay->btnLock->setText(isSceneItemLocked ? QString::fromUtf8("🔒") : QString::fromUtf8("🔓"));
 	}
 	if (lockIconLabel) {
-		lockIconLabel->setVisible(isSceneItemLocked);
+		lockIconLabel->setVisible(isSceneItemLocked && !badgesHidden);
 	}
 	UpdateIconLayout();
 	update();

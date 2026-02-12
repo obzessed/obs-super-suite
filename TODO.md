@@ -6,9 +6,10 @@
   - Power/Pro Console?
 - YouTube Video/Audio Player Source (streamlink?)
 - Properties Dock.
-- OBS AI Assistant Dock. (bring your models)
+- OBS AI Assistant Dock. (BYO AI model or use a public one with an API key)
 - Extra Canvas Studio Mode.
 - Filters Dock.
+- Media browser Dock. (something like AE viewer with a file explorer and media preview)
 - Filter Properties Dock.
 - Refs
   - https://github.com/obsproject/obs-browser

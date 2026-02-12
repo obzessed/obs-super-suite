@@ -25,7 +25,7 @@ public:
 	QPushButton *btnLock = nullptr;
 	QPushButton *btnActive = nullptr;
 	QPushButton *btnInteract = nullptr;
-	QPushButton *btnRefresh = nullptr;
+	QPushButton *btnProperties = nullptr;
 	QPushButton *btnPlayPause = nullptr;
 	QPushButton *btnFilters = nullptr;
 	QPushButton *btnDisablePreview = nullptr;
@@ -70,6 +70,7 @@ public:
 	// Helper to set context (e.g. if we are in a scene)
 	void SetHasSceneContext(bool hasContext);
 	void SetOverlayEnabled(bool enabled);
+	void SetBadgesHidden(bool hidden);
 
 	void UpdateOverlayButtonState();
 
@@ -130,9 +131,11 @@ private:
 	bool isHovered = false;
 	bool isAltPressed = false;
 	bool isOverlayEnabled = true;
+	bool badgesHidden = false;
 
 	void UpdateOverlayVisibility();
 	void UpdateIconLayout();
+	void UpdateBadgeVisibility();
 	void SetupOverlayConnections();
 	void UpdateSceneItemCount();
 

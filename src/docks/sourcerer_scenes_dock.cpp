@@ -98,7 +98,8 @@ void SourcererScenesDock::SetupTBar()
 	if (tBarPos == TBarPosition::Hidden)
 		return;
 
-	const Qt::Orientation orientation = (tBarPos == TBarPosition::Bottom) ? Qt::Horizontal : Qt::Vertical;
+	const Qt::Orientation orientation =
+		(tBarPos == TBarPosition::Bottom || tBarPos == TBarPosition::Top) ? Qt::Horizontal : Qt::Vertical;
 	tbarSlider = new QSlider(orientation, this);
 	tbarSlider->setRange(0, T_BAR_PRECISION - 1);
 	tbarSlider->setToolTip("Transition T-Bar");
@@ -144,6 +145,14 @@ void SourcererScenesDock::SetupTBar()
 		tbarLayout->setContentsMargins(8, 8, 8, 8);
 		tbarLayout->addWidget(tbarSlider);
 		layout()->addWidget(tbarContainer);
+	} else if (tBarPos == TBarPosition::Top) {
+		// Add to main layout (vertical, at top)
+		tbarContainer = new QWidget(this);
+		QVBoxLayout *tbarLayout = new QVBoxLayout(tbarContainer);
+		tbarLayout->setContentsMargins(8, 8, 8, 8);
+		tbarLayout->addWidget(tbarSlider);
+		// Assuming layout() is the main QVBoxLayout
+		static_cast<QVBoxLayout *>(layout())->insertWidget(0, tbarContainer);
 	} else if (tBarPos == TBarPosition::Right) {
 		// Add to content layout (horizontal)
 		tbarContainer = new QWidget(this);
@@ -151,6 +160,14 @@ void SourcererScenesDock::SetupTBar()
 		tbarLayout->setContentsMargins(8, 8, 8, 8);
 		tbarLayout->addWidget(tbarSlider);
 		contentContainer->layout()->addWidget(tbarContainer);
+	} else if (tBarPos == TBarPosition::Left) {
+		// Add to content layout (horizontal, at left)
+		tbarContainer = new QWidget(this);
+		QHBoxLayout *tbarLayout = new QHBoxLayout(tbarContainer);
+		tbarLayout->setContentsMargins(8, 8, 8, 8);
+		tbarLayout->addWidget(tbarSlider);
+		// Assuming contentContainer->layout() is QHBoxLayout
+		static_cast<QHBoxLayout *>(contentContainer->layout())->insertWidget(0, tbarContainer);
 	}
 }
 
@@ -267,6 +284,16 @@ void SourcererScenesDock::contextMenuEvent(QContextMenuEvent *event)
 		Refresh();
 	});
 
+	QAction *toggleHideBadges = menu.addAction(tr("Hide Badges"));
+	toggleHideBadges->setCheckable(true);
+	toggleHideBadges->setChecked(hideBadges);
+	connect(toggleHideBadges, &QAction::toggled, [this](bool checked) {
+		hideBadges = checked;
+		for (SourcererItem *item : items) {
+			item->SetBadgesHidden(hideBadges);
+		}
+	});
+
 	menu.addSeparator();
 
 	QMenu *tbarMenu = menu.addMenu(tr("T-Bar Position"));
@@ -278,11 +305,23 @@ void SourcererScenesDock::contextMenuEvent(QContextMenuEvent *event)
 	tbarGroup->addAction(tbarHidden);
 	connect(tbarHidden, &QAction::triggered, [this]() { SetTBarPosition(TBarPosition::Hidden); });
 
+	QAction *tbarLeft = tbarMenu->addAction(tr("Left"));
+	tbarLeft->setCheckable(true);
+	tbarLeft->setChecked(tBarPos == TBarPosition::Left);
+	tbarGroup->addAction(tbarLeft);
+	connect(tbarLeft, &QAction::triggered, [this]() { SetTBarPosition(TBarPosition::Left); });
+
 	QAction *tbarRight = tbarMenu->addAction(tr("Right"));
 	tbarRight->setCheckable(true);
 	tbarRight->setChecked(tBarPos == TBarPosition::Right);
 	tbarGroup->addAction(tbarRight);
 	connect(tbarRight, &QAction::triggered, [this]() { SetTBarPosition(TBarPosition::Right); });
+
+	QAction *tbarTop = tbarMenu->addAction(tr("Top"));
+	tbarTop->setCheckable(true);
+	tbarTop->setChecked(tBarPos == TBarPosition::Top);
+	tbarGroup->addAction(tbarTop);
+	connect(tbarTop, &QAction::triggered, [this]() { SetTBarPosition(TBarPosition::Top); });
 
 	QAction *tbarBottom = tbarMenu->addAction(tr("Bottom"));
 	tbarBottom->setCheckable(true);
@@ -437,6 +476,7 @@ void SourcererScenesDock::Refresh()
 		obs_source_t *source = scenes.sources.array[i];
 		SourcererItem *item = new SourcererItem(source);
 		item->SetItemWidth(itemWidth);
+		item->SetBadgesHidden(hideBadges);
 		items.push_back(item);
 
 		if (hideEmptyScenes) {
@@ -507,7 +547,8 @@ void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *dat
 	} else if (event == OBS_FRONTEND_EVENT_TBAR_VALUE_CHANGED) {
 		dock->UpdateTBarValue();
 	} else if (event == OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED) {
-		dock->Refresh();
+		// Use queued connection to avoid crashes if triggered by source removal from within dock
+		QMetaObject::invokeMethod(dock, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
 	}
 
 	if (!dock->liveMode && !dock->syncSelection)
@@ -601,6 +642,7 @@ QJsonObject SourcererScenesDock::Save() const
 	obj["syncSelection"] = syncSelection;
 	obj["scrollToProgram"] = scrollToProgram;
 	obj["hideEmptyScenes"] = hideEmptyScenes;
+	obj["hideBadges"] = hideBadges;
 
 	obj["isReadOnly"] = isReadOnly;
 	obj["doubleClickToProgram"] = doubleClickToProgram;
@@ -631,6 +673,9 @@ void SourcererScenesDock::Load(const QJsonObject &obj)
 	}
 	if (obj.contains("hideEmptyScenes")) {
 		hideEmptyScenes = obj["hideEmptyScenes"].toBool(false);
+	}
+	if (obj.contains("hideBadges")) {
+		hideBadges = obj["hideBadges"].toBool(false);
 	}
 
 	if (obj.contains("isReadOnly")) {
