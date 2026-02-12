@@ -1,3 +1,5 @@
+- Node editor
+  - Fork obs and extend with a node editor frontend.
 - [ ] Name
   - Super Suite?
   - Power Suite?
@@ -6,11 +8,20 @@
   - Power/Pro Console?
 - YouTube Video/Audio Player Source (streamlink?)
 - Properties Dock.
-- OBS AI Assistant Dock. (BYO AI model or use a public one with an API key)
+- OBS AI Assistant Dock (Co-Host). (BYO AI model or use a public one with an API key)
 - Extra Canvas Studio Mode.
 - Filters Dock.
 - Media browser Dock. (something like AE viewer with a file explorer and media preview)
 - Filter Properties Dock.
+- Auto Crop/Fit Filter.
+  - Smart Fill: fill the empty areas with blurred zoomed in version of the source.
+  - Smart Crop: crop the source to fit the canvas while keeping the important parts in the frame. (using Nvidia AR SDK or similar for auto framing)
+  - Manual Crop: crop the source to fit the canvas using a bounding box. (control it via params/midi/remote, frame presets etc.)
+- Source/Profile History/Versioning.
+  - Similar to Git but for sources and profiles. (with a nice UI to view the history and revert changes)
+- Audio Normalization filter with dock.
+- Auto Director: Similar to Advanced Scene Switcher.
+- Privacy Blur Filter.
 - Refs
   - https://github.com/obsproject/obs-browser
   - https://github.com/streamlabs/obs-sl-browser
