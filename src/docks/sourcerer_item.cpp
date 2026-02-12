@@ -16,6 +16,7 @@
 #include <QScreen>
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
+#include <QTimer>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
@@ -45,7 +46,7 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 {
 	// Semi-transparent black background
 	setAutoFillBackground(true);
-	setAttribute(Qt::WA_TransparentForMouseEvents);
+	// setAttribute(Qt::WA_TransparentForMouseEvents); // REMOVED: Blocks button clicks!
 	QPalette pal = palette();
 	pal.setColor(QPalette::Window, QColor(0, 0, 0, 150));
 	setPalette(pal);
@@ -142,6 +143,11 @@ void SourcererItemOverlay::SetVisibleAnimated(bool visible)
 	}
 }
 
+void SourcererItemOverlay::mousePressEvent(QMouseEvent *event)
+{
+	event->ignore();
+}
+
 // --- SourcererItem ---
 
 SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(parent), source(source)
@@ -156,6 +162,7 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 	display = new SourcererDisplay(this);
 	display->setMinimumSize(120, 60);
 	display->setAttribute(Qt::WA_TransparentForMouseEvents); // Pass clicks to Item, but what about overlay?
+	display->installEventFilter(this);                       // Install event filter to track geometry changes
 
 	// Overlay needs to be ON TOP of display.
 	// Since display is in layout, overlay should be child of Item and positioned manually or stacked.
@@ -170,6 +177,25 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 	enablePreviewButton->setCursor(Qt::ArrowCursor);
 	enablePreviewButton->hide();
 	connect(enablePreviewButton, &QPushButton::clicked, [this]() { SetPreviewDisabled(false); });
+
+	lockIconLabel = new QLabel(this);
+	lockIconLabel->setText(QString::fromUtf8("🔒"));
+	lockIconLabel->setAlignment(Qt::AlignCenter);
+	// Small background to ensure visibility
+	lockIconLabel->setStyleSheet(
+		"QLabel { color: white; background-color: rgba(0, 0, 0, 150); border-radius: 4px; padding: 2px; }");
+	lockIconLabel->adjustSize();
+	lockIconLabel->hide();
+	lockIconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+	visIconLabel = new QLabel(this);
+	visIconLabel->setText(QString::fromUtf8("❌"));
+	visIconLabel->setAlignment(Qt::AlignCenter);
+	visIconLabel->setStyleSheet(
+		"QLabel { color: white; background-color: rgba(0, 0, 0, 150); border-radius: 4px; padding: 2px; }");
+	visIconLabel->adjustSize();
+	visIconLabel->hide();
+	visIconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 
 	label = new QLabel(this);
 	label->setAlignment(Qt::AlignCenter);
@@ -347,11 +373,18 @@ void SourcererItem::UpdateOverlayVisibility()
 	}
 }
 
+void SourcererItem::SetSceneItem(obs_sceneitem_t *item)
+{
+	sceneItem = item;
+}
+
 void SourcererItem::SetItemWidth(int width)
 {
 	if (display) {
 		int height = display->heightForWidth(width);
 		display->setFixedSize(width, height);
+		// Force update layout immediately after size change
+		QTimer::singleShot(0, this, &SourcererItem::UpdateIconLayout);
 	}
 }
 
@@ -376,8 +409,57 @@ void SourcererItem::resizeEvent(QResizeEvent *event)
 		// Resize overlay to cover display exactly
 		if (overlay) {
 			overlay->setGeometry(display->geometry());
-			overlay->raise(); // Ensure on top
+			// overlay->raise(); // Handled in UpdateIconLayout
 		}
+		// UpdateIconLayout(); // Now handled via eventFilter on display
+	}
+}
+
+void SourcererItem::showEvent(QShowEvent *event)
+{
+	QWidget::showEvent(event);
+	// Ensure icons are positioned correctly when first shown
+	QTimer::singleShot(0, this, &SourcererItem::UpdateIconLayout);
+}
+
+bool SourcererItem::eventFilter(QObject *obj, QEvent *event)
+{
+	if (obj == display) {
+		if (event->type() == QEvent::Resize || event->type() == QEvent::Move) {
+			UpdateIconLayout();
+		}
+	}
+	return QWidget::eventFilter(obj, event);
+}
+
+void SourcererItem::UpdateIconLayout()
+{
+	if (!display)
+		return;
+
+	int margin = 2;
+	int spacing = 2;
+	int currentX = display->x() + display->width() - margin;
+	int y = display->y() + margin;
+
+	// Lock icon (Rightmost)
+	if (lockIconLabel && lockIconLabel->isVisible()) {
+		currentX -= lockIconLabel->width();
+		lockIconLabel->move(currentX, y);
+		lockIconLabel->raise();
+		currentX -= spacing;
+	}
+
+	// Visibility icon (Left of Lock)
+	if (visIconLabel && visIconLabel->isVisible()) {
+		currentX -= visIconLabel->width();
+		visIconLabel->move(currentX, y);
+		visIconLabel->raise();
+	}
+
+	// Ensure overlay is on top of everything
+	if (overlay) {
+		overlay->raise();
 	}
 }
 
@@ -430,6 +512,11 @@ void SourcererItem::SetSceneItemVisible(bool visible)
 	if (overlay && overlay->isVisible()) {
 		overlay->btnVisibility->setText(isSceneItemVisible ? QString::fromUtf8("👁") : QString::fromUtf8("❌"));
 	}
+
+	if (visIconLabel) {
+		visIconLabel->setVisible(!isSceneItemVisible);
+	}
+	UpdateIconLayout();
 }
 
 void SourcererItem::SetSceneItemLocked(bool locked)
@@ -441,6 +528,11 @@ void SourcererItem::SetSceneItemLocked(bool locked)
 	if (overlay && overlay->isVisible()) {
 		overlay->btnLock->setText(isSceneItemLocked ? QString::fromUtf8("🔒") : QString::fromUtf8("🔓"));
 	}
+	if (lockIconLabel) {
+		lockIconLabel->setVisible(isSceneItemLocked);
+	}
+	UpdateIconLayout();
+	update();
 }
 
 void SourcererItem::UpdateStatus()
@@ -486,6 +578,8 @@ void SourcererItem::paintEvent(QPaintEvent *event)
 		p.setPen(QPen(borderColor, borderWidth));
 		p.drawRoundedRect(r, radius, radius);
 	}
+
+	// Draw locked icon if needed: Handled by lockIconLabel now
 }
 
 void SourcererItem::mousePressEvent(QMouseEvent *event)

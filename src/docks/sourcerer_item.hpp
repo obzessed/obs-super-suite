@@ -34,6 +34,9 @@ private:
 	QGraphicsOpacityEffect *opacityEffect = nullptr;
 
 	void SetupButton(QPushButton *btn, const QString &text, const QString &tooltip);
+
+protected:
+	void mousePressEvent(QMouseEvent *event) override;
 };
 
 class SourcererItem : public QWidget {
@@ -60,6 +63,9 @@ public:
 	void SetHasSceneContext(bool hasContext);
 	void SetOverlayEnabled(bool enabled);
 
+	void SetSceneItem(obs_sceneitem_t *item);
+	obs_sceneitem_t *GetSceneItem() const { return sceneItem; }
+
 signals:
 	void Clicked(SourcererItem *item);
 	void DoubleClicked(SourcererItem *item);
@@ -77,6 +83,7 @@ signals:
 
 protected:
 	void resizeEvent(QResizeEvent *event) override;
+	void showEvent(QShowEvent *event) override;
 	void paintEvent(QPaintEvent *event) override;
 	void mousePressEvent(QMouseEvent *event) override;
 	void mouseDoubleClickEvent(QMouseEvent *event) override;
@@ -84,11 +91,15 @@ protected:
 	void enterEvent(QEnterEvent *event) override;
 	void leaveEvent(QEvent *event) override;
 	void mouseMoveEvent(QMouseEvent *event) override;
+	bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
 	obs_source_t *source = nullptr;
+	obs_sceneitem_t *sceneItem = nullptr;
 	OBSQTDisplay *display = nullptr;
 	QLabel *label = nullptr;
+	QLabel *lockIconLabel = nullptr;
+	QLabel *visIconLabel = nullptr;
 	QPushButton *enablePreviewButton = nullptr;
 	SourcererItemOverlay *overlay = nullptr;
 
@@ -106,6 +117,7 @@ private:
 	bool isOverlayEnabled = true;
 
 	void UpdateOverlayVisibility();
+	void UpdateIconLayout();
 	void SetupOverlayConnections();
 
 	static void DrawPreview(void *data, uint32_t cx, uint32_t cy);

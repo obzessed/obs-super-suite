@@ -4,7 +4,10 @@
   - Ultra Suite?
   - Open Stream Suite/Studio?
   - Power/Pro Console?
-- YouTube Video Player Source
+- YouTube Video/Audio Player Source (streamlink?)
+- Properties Dock.
+- Filters Dock.
+- Filter Properties Dock.
 - Refs
   - https://github.com/obsproject/obs-browser
   - https://github.com/streamlabs/obs-sl-browser
@@ -117,3 +120,13 @@
   - [ ] Custom Output Source (Similar to Audio Channel Source). (private source).
   - [ ] Internal Source routing to mix and forward monitor enabled sources.
   - [ ] option to forward to the obs_monitoring device too. (using `obs_monitoring_type`).
+
+
+```ideas
+Custom audio track mixer.
+
+Pull audio from main audio mix.
+All the tracks.
+Stream them back to a new unmixed channel managed audio source.
+Where you can put filters, monitor audio and adjust volume...
+```

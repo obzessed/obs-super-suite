@@ -169,6 +169,25 @@ void SourcererSourcesDock::OnItemClicked(SourcererItem *item)
 	if (!connectedScene || !item)
 		return;
 
+	// If we have a scene item reference, select that directly (handles duplicates)
+	obs_sceneitem_t *directSceneItem = item->GetSceneItem();
+	if (directSceneItem) {
+		obs_scene_t *scene = obs_scene_from_source(connectedScene);
+		if (scene) {
+			obs_scene_enum_items(
+				scene,
+				[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
+					obs_sceneitem_select(item, false);
+					return true;
+				},
+				nullptr);
+
+			obs_sceneitem_select(directSceneItem, true);
+		}
+		return;
+	}
+
+	// Fallback to source lookup (Global mode or lost reference)
 	obs_source_t *source = item->GetSource();
 	if (!source)
 		return;
@@ -222,8 +241,15 @@ void SourcererSourcesDock::OnItemMenuRequested(SourcererItem *item, QMenu *menu)
 		obs_scene_t *scene = obs_scene_from_source(sceneSource);
 		obs_source_t *itemSource = item->GetSource();
 		if (scene && itemSource) {
-			const char *name = obs_source_get_name(itemSource);
-			obs_sceneitem_t *sceneItem = obs_scene_find_source_recursive(scene, name);
+			// If we have a direct scene item, use it
+			obs_sceneitem_t *sceneItem = item->GetSceneItem();
+
+			// If not, try to find it (Global mode fallback)
+			if (!sceneItem) {
+				const char *name = obs_source_get_name(itemSource);
+				sceneItem = obs_scene_find_source_recursive(scene, name);
+			}
+
 			if (sceneItem) {
 				bool visible = obs_sceneitem_visible(sceneItem);
 
@@ -253,6 +279,15 @@ void SourcererSourcesDock::OnToggleVisibilityRequested(SourcererItem *item)
 	if (!connectedScene || !item)
 		return;
 
+	// Prefer direct scene item control
+	obs_sceneitem_t *directSceneItem = item->GetSceneItem();
+	if (directSceneItem) {
+		bool visible = obs_sceneitem_visible(directSceneItem);
+		obs_sceneitem_set_visible(directSceneItem, !visible);
+		return;
+	}
+
+	// Fallback
 	obs_source_t *source = item->GetSource();
 	if (!source)
 		return;
@@ -275,6 +310,15 @@ void SourcererSourcesDock::OnToggleLockRequested(SourcererItem *item)
 	if (!connectedScene || !item)
 		return;
 
+	// Prefer direct scene item control
+	obs_sceneitem_t *directSceneItem = item->GetSceneItem();
+	if (directSceneItem) {
+		bool locked = obs_sceneitem_locked(directSceneItem);
+		obs_sceneitem_set_locked(directSceneItem, !locked);
+		return;
+	}
+
+	// Fallback
 	obs_source_t *source = item->GetSource();
 	if (!source)
 		return;
@@ -410,8 +454,9 @@ bool SourcererSourcesDock::EnumSources(void *data, obs_source_t *source)
 	// item->SetSourceActive(obs_source_enabled(source)); // Handled internally
 	item->SetSceneItemVisible(true);
 
-	// No scene context in global mode by default, unless we matched connectedScene
+	// No scene context in global mode by default
 	item->SetHasSceneContext(false);
+	item->SetSceneItem(nullptr);
 
 	dock->items.push_back(item);
 
@@ -446,6 +491,7 @@ bool SourcererSourcesDock::EnumSceneItems(obs_scene_t *scene, obs_sceneitem_t *i
 	widget->SetSceneItemVisible(obs_sceneitem_visible(item));
 	widget->SetSceneItemLocked(obs_sceneitem_locked(item));
 	widget->SetHasSceneContext(true);
+	widget->SetSceneItem(item); // Crucial for distinguishing copies
 
 	dock->items.push_back(widget);
 
@@ -540,24 +586,38 @@ void SourcererSourcesDock::SyncSelection()
 		[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
 			SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(param);
 			bool selected = obs_sceneitem_selected(item);
+
+			// Try to match by scene item pointer first
+			for (SourcererItem *widget : dock->items) {
+				if (widget->GetSceneItem() == item) {
+					widget->SetSelected(selected);
+					widget->SetSceneItemVisible(obs_sceneitem_visible(item));
+					widget->SetSceneItemLocked(obs_sceneitem_locked(item));
+					if (selected)
+						dock->selectedItem = widget;
+					return true; // Found match, done for this item
+				}
+			}
+
+			// Fallback: match by source name (Global mode)
 			obs_source_t *source = obs_sceneitem_get_source(item);
 			if (!source)
 				return true;
-
 			const char *name = obs_source_get_name(source);
 
 			for (SourcererItem *widget : dock->items) {
-				obs_source_t *wSource = widget->GetSource();
-				if (wSource) {
-					const char *wName = obs_source_get_name(wSource);
-					if (strcmp(name, wName) == 0) {
-						widget->SetSelected(selected);
-						// Update other states while we are here matching items
-						widget->SetSceneItemVisible(obs_sceneitem_visible(item));
-						widget->SetSceneItemLocked(obs_sceneitem_locked(item));
-
-						if (selected) {
-							dock->selectedItem = widget;
+				// Only match if widget doesn't have a specific scene item attached
+				// (avoid accidentally matching a specific copy to the wrong one via name)
+				if (widget->GetSceneItem() == nullptr) {
+					obs_source_t *wSource = widget->GetSource();
+					if (wSource) {
+						const char *wName = obs_source_get_name(wSource);
+						if (strcmp(name, wName) == 0) {
+							widget->SetSelected(selected);
+							// For Global mode, we don't necessarily update visible/locked from scene
+							// as it might be ambiguous. But for selection it's standard.
+							if (selected)
+								dock->selectedItem = widget;
 						}
 					}
 				}
@@ -574,6 +634,19 @@ void SourcererSourcesDock::SceneItemSelect(void *data, calldata_t *cd)
 	if (!item)
 		return;
 
+	// Try direct match
+	bool found = false;
+	for (SourcererItem *widget : dock->items) {
+		if (widget->GetSceneItem() == item) {
+			widget->SetSelected(true);
+			dock->selectedItem = widget;
+			found = true;
+		}
+	}
+	if (found)
+		return;
+
+	// Fallback to name match (Global mode)
 	obs_source_t *source = obs_sceneitem_get_source(item);
 	if (!source)
 		return;
@@ -582,12 +655,14 @@ void SourcererSourcesDock::SceneItemSelect(void *data, calldata_t *cd)
 
 	// Find in dock items
 	for (SourcererItem *widget : dock->items) {
-		obs_source_t *wSource = widget->GetSource();
-		if (wSource) {
-			const char *wName = obs_source_get_name(wSource);
-			if (strcmp(name, wName) == 0) {
-				widget->SetSelected(true);
-				dock->selectedItem = widget;
+		if (widget->GetSceneItem() == nullptr) {
+			obs_source_t *wSource = widget->GetSource();
+			if (wSource) {
+				const char *wName = obs_source_get_name(wSource);
+				if (strcmp(name, wName) == 0) {
+					widget->SetSelected(true);
+					dock->selectedItem = widget;
+				}
 			}
 		}
 	}
@@ -600,6 +675,20 @@ void SourcererSourcesDock::SceneItemDeselect(void *data, calldata_t *cd)
 	if (!item)
 		return;
 
+	// Try direct match
+	bool found = false;
+	for (SourcererItem *widget : dock->items) {
+		if (widget->GetSceneItem() == item) {
+			widget->SetSelected(false);
+			if (dock->selectedItem == widget)
+				dock->selectedItem = nullptr;
+			found = true;
+		}
+	}
+	if (found)
+		return;
+
+	// Fallback
 	obs_source_t *source = obs_sceneitem_get_source(item);
 	if (!source)
 		return;
@@ -607,13 +696,15 @@ void SourcererSourcesDock::SceneItemDeselect(void *data, calldata_t *cd)
 	const char *name = obs_source_get_name(source);
 
 	for (SourcererItem *widget : dock->items) {
-		obs_source_t *wSource = widget->GetSource();
-		if (wSource) {
-			const char *wName = obs_source_get_name(wSource);
-			if (strcmp(name, wName) == 0) {
-				widget->SetSelected(false);
-				if (dock->selectedItem == widget)
-					dock->selectedItem = nullptr;
+		if (widget->GetSceneItem() == nullptr) {
+			obs_source_t *wSource = widget->GetSource();
+			if (wSource) {
+				const char *wName = obs_source_get_name(wSource);
+				if (strcmp(name, wName) == 0) {
+					widget->SetSelected(false);
+					if (dock->selectedItem == widget)
+						dock->selectedItem = nullptr;
+				}
 			}
 		}
 	}
@@ -628,23 +719,18 @@ void SourcererSourcesDock::SceneItemVisible(void *data, calldata_t *cd)
 
 	bool visible = calldata_bool(cd, "visible");
 
-	obs_source_t *source = obs_sceneitem_get_source(item);
-	if (!source)
-		return;
-
-	const char *name = obs_source_get_name(source);
-
+	// Try direct match
+	bool found = false;
 	for (SourcererItem *widget : dock->items) {
-		obs_source_t *wSource = widget->GetSource();
-		if (wSource) {
-			const char *wName = obs_source_get_name(wSource);
-			if (strcmp(name, wName) == 0) {
-				QMetaObject::invokeMethod(
-					widget, [widget, visible]() { widget->SetSceneItemVisible(visible); },
-					Qt::QueuedConnection);
-			}
+		if (widget->GetSceneItem() == item) {
+			QMetaObject::invokeMethod(
+				widget, [widget, visible]() { widget->SetSceneItemVisible(visible); },
+				Qt::QueuedConnection);
+			found = true;
 		}
 	}
+	// In Global mode, we generally do NOT update visibility based on scene item events
+	// because it's ambiguous which item it refers to.
 }
 
 void SourcererSourcesDock::SceneItemLocked(void *data, calldata_t *cd)
@@ -656,21 +742,12 @@ void SourcererSourcesDock::SceneItemLocked(void *data, calldata_t *cd)
 
 	bool locked = calldata_bool(cd, "locked");
 
-	obs_source_t *source = obs_sceneitem_get_source(item);
-	if (!source)
-		return;
-
-	const char *name = obs_source_get_name(source);
-
+	// Try direct match
 	for (SourcererItem *widget : dock->items) {
-		obs_source_t *wSource = widget->GetSource();
-		if (wSource) {
-			const char *wName = obs_source_get_name(wSource);
-			if (strcmp(name, wName) == 0) {
-				QMetaObject::invokeMethod(
-					widget, [widget, locked]() { widget->SetSceneItemLocked(locked); },
-					Qt::QueuedConnection);
-			}
+		if (widget->GetSceneItem() == item) {
+			QMetaObject::invokeMethod(
+				widget, [widget, locked]() { widget->SetSceneItemLocked(locked); },
+				Qt::QueuedConnection);
 		}
 	}
 }
