@@ -89,6 +89,11 @@ void SourcererScenesDock::SetupTBar()
 		tbarSlider = nullptr;
 	}
 
+	if (tbarContainer) {
+		delete tbarContainer;
+		tbarContainer = nullptr;
+	}
+
 	if (tBarPos == TBarPosition::Hidden)
 		return;
 
@@ -102,10 +107,15 @@ void SourcererScenesDock::SetupTBar()
 
 	// Stylesheet for better visibility
 	tbarSlider->setStyleSheet(
-		"QSlider::groove:horizontal { border: 1px solid #3A3939; height: 8px; background: #201F1F; margin: 2px 0; border-radius: 4px; }"
-		"QSlider::handle:horizontal { background: #606060; border: 1px solid #3A3939; width: 18px; margin: -6px 0; border-radius: 4px; }"
-		"QSlider::groove:vertical { border: 1px solid #3A3939; width: 8px; background: #201F1F; margin: 0 2px; border-radius: 4px; }"
-		"QSlider::handle:vertical { background: #606060; border: 1px solid #3A3939; height: 18px; margin: 0 -6px; border-radius: 4px; }");
+		"QSlider::groove:horizontal { background: #353535; height: 8px; border-radius: 4px; }"
+		"QSlider::sub-page:horizontal { background: #4D79E6; border-radius: 4px; }"
+		"QSlider::add-page:horizontal { background: #353535; border-radius: 4px; }"
+		"QSlider::handle:horizontal { background: #FFFFFF; width: 18px; height: 24px; margin: -8px 0; border-radius: 2px; }"
+
+		"QSlider::groove:vertical { background: #353535; width: 8px; border-radius: 4px; }"
+		"QSlider::sub-page:vertical { background: #353535; border-radius: 4px; }"
+		"QSlider::add-page:vertical { background: #4D79E6; border-radius: 4px; }"
+		"QSlider::handle:vertical { background: #FFFFFF; height: 18px; width: 24px; margin: 0 -8px; border-radius: 2px; }");
 
 	connect(tbarSlider, &QSlider::valueChanged, [](const int value) {
 		// Only set if triggered by user interaction (we'll block signals when updating from event)
@@ -123,21 +133,23 @@ void SourcererScenesDock::SetupTBar()
 		obs_frontend_release_tbar();
 
 		// Force update shortly after release to catch any resets
-		QTimer::singleShot(10, [this] {
-			UpdateTBarValue();
-		});
+		QTimer::singleShot(10, [this] { UpdateTBarValue(); });
 	});
 
 	if (tBarPos == TBarPosition::Bottom) {
 		// Add to main layout (vertical)
-		layout()->addWidget(tbarSlider);
-		// Ensure status bar is at bottom if visible, or tbar above it?
-		// Layout is: ContentContainer (Scroll), TBar (Bottom), StatusBar
-		// mainLayout->insertWidget(1, tbarSlider); // Before StatusBar
-		dynamic_cast<QVBoxLayout *>(layout())->insertWidget(layout()->count() - 1, tbarSlider);
+		tbarContainer = new QWidget(this);
+		QVBoxLayout *tbarLayout = new QVBoxLayout(tbarContainer);
+		tbarLayout->setContentsMargins(8, 8, 8, 8);
+		tbarLayout->addWidget(tbarSlider);
+		layout()->addWidget(tbarContainer);
 	} else if (tBarPos == TBarPosition::Right) {
 		// Add to content layout (horizontal)
-		contentContainer->layout()->addWidget(tbarSlider);
+		tbarContainer = new QWidget(this);
+		QHBoxLayout *tbarLayout = new QHBoxLayout(tbarContainer);
+		tbarLayout->setContentsMargins(8, 8, 8, 8);
+		tbarLayout->addWidget(tbarSlider);
+		contentContainer->layout()->addWidget(tbarContainer);
 	}
 }
 

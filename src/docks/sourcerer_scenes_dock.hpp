@@ -53,7 +53,9 @@ private:
 	enum class TBarPosition { Hidden, Right, Bottom };
 	TBarPosition tBarPos = TBarPosition::Hidden;
 	QSlider *tbarSlider = nullptr;
+	QWidget *tbarContainer = nullptr;
 	QWidget *contentContainer = nullptr; // Wrapper for HLayout
+
 	void SetupTBar();
 	void SetTBarPosition(TBarPosition pos);
 	void UpdateTBarValue();
