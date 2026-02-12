@@ -305,11 +305,11 @@ void SourcererItem::SetHasSceneContext(bool hasContext)
 	}
 }
 
-void SourcererItem::SetCtrlPressed(bool pressed)
+void SourcererItem::SetAltPressed(bool pressed)
 {
-	if (isCtrlPressed == pressed)
+	if (isAltPressed == pressed)
 		return;
-	isCtrlPressed = pressed;
+	isAltPressed = pressed;
 	UpdateOverlayVisibility();
 }
 
@@ -317,7 +317,7 @@ void SourcererItem::enterEvent(QEnterEvent *event)
 {
 	isHovered = true;
 	// Check modifiers immediately on enter
-	isCtrlPressed = (event->modifiers() & Qt::ControlModifier);
+	isAltPressed = (event->modifiers() & Qt::AltModifier);
 	UpdateOverlayVisibility();
 	QWidget::enterEvent(event);
 }
@@ -338,9 +338,9 @@ void SourcererItem::leaveEvent(QEvent *event)
 void SourcererItem::mouseMoveEvent(QMouseEvent *event)
 {
 	// Update modifiers while moving inside
-	bool ctrl = (event->modifiers() & Qt::ControlModifier);
-	if (ctrl != isCtrlPressed) {
-		isCtrlPressed = ctrl;
+	bool alt = (event->modifiers() & Qt::AltModifier);
+	if (alt != isAltPressed) {
+		isAltPressed = alt;
 		UpdateOverlayVisibility();
 	}
 	QWidget::mouseMoveEvent(event);
@@ -349,7 +349,7 @@ void SourcererItem::mouseMoveEvent(QMouseEvent *event)
 void SourcererItem::UpdateOverlayVisibility()
 {
 	if (overlay) {
-		bool show = isOverlayEnabled && isHovered && isCtrlPressed;
+		bool show = isOverlayEnabled && isHovered && isAltPressed;
 		overlay->SetVisibleAnimated(show);
 
 		if (show) {
@@ -502,7 +502,16 @@ void SourcererItem::SetProgram(bool program)
 	update();
 }
 
+void SourcererItem::SetFTB(bool ftb)
+{
+	if (isFTB == ftb)
+		return;
+	isFTB = ftb;
+	update();
+}
+
 void SourcererItem::SetSceneItemVisible(bool visible)
+
 {
 	if (isSceneItemVisible == visible)
 		return;
@@ -559,15 +568,16 @@ void SourcererItem::paintEvent(QPaintEvent *event)
 	if (isProgram && isSelected) {
 		p.setPen(QPen(Qt::blue, 2));
 		p.drawRoundedRect(r, radius, radius);
-		p.setPen(QPen(Qt::red, 2));
+		p.setPen(QPen(isFTB ? Qt::yellow : Qt::red, 2));
 		p.drawRoundedRect(r.adjusted(2, 2, -2, -2), radius - 1, radius - 1);
 		return;
 	} else if (isProgram) {
-		borderColor = Qt::red;
+		borderColor = isFTB ? Qt::yellow : Qt::red;
 		borderWidth = 4;
 		p.setPen(QPen(borderColor, borderWidth));
 		p.drawRoundedRect(r, radius, radius);
 	} else if (isSelected) {
+
 		borderColor = Qt::blue;
 		borderWidth = 4;
 		p.setPen(QPen(borderColor, borderWidth));
@@ -585,7 +595,7 @@ void SourcererItem::paintEvent(QPaintEvent *event)
 void SourcererItem::mousePressEvent(QMouseEvent *event)
 {
 	if (event->button() == Qt::LeftButton) {
-		emit Clicked(this);
+		emit Clicked(this, event->modifiers());
 		event->accept();
 		return;
 	}

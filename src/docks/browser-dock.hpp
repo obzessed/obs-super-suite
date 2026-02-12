@@ -6,6 +6,8 @@
 #include <QWidget>
 #include <QVBoxLayout>
 
+// check: https://github.com/obsproject/obs-studio/tree/master/frontend/docks
+
 class BrowserDock : public QWidget {
 	Q_OBJECT
 

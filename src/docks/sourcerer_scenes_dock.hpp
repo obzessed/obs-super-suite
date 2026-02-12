@@ -48,4 +48,13 @@ private:
 
 	void OnItemClicked(SourcererItem *item);
 	void OnItemDoubleClicked(SourcererItem *item);
+
+	// T-Bar
+	enum class TBarPosition { Hidden, Right, Bottom };
+	TBarPosition tBarPos = TBarPosition::Hidden;
+	QSlider *tbarSlider = nullptr;
+	QWidget *contentContainer = nullptr; // Wrapper for HLayout
+	void SetupTBar();
+	void SetTBarPosition(TBarPosition pos);
+	void UpdateTBarValue();
 };

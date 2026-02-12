@@ -51,14 +51,18 @@ public:
 	void SetItemWidth(int width);
 	obs_source_t *GetSource() const { return source; }
 	void SetSelected(bool selected);
+	bool IsSelected() const { return isSelected; }
 	void SetProgram(bool program);
+	void SetFTB(bool ftb);
+
 	void SetSceneItemVisible(bool visible);
+
 	void SetSceneItemLocked(bool locked);
 	void SetPreviewDisabled(bool disabled);
 	void UpdateStatus();
 
 	// Called by parent dock when global key state changes or config changes
-	void SetCtrlPressed(bool pressed);
+	void SetAltPressed(bool pressed);
 	// Helper to set context (e.g. if we are in a scene)
 	void SetHasSceneContext(bool hasContext);
 	void SetOverlayEnabled(bool enabled);
@@ -67,8 +71,9 @@ public:
 	obs_sceneitem_t *GetSceneItem() const { return sceneItem; }
 
 signals:
-	void Clicked(SourcererItem *item);
+	void Clicked(SourcererItem *item, Qt::KeyboardModifiers modifiers);
 	void DoubleClicked(SourcererItem *item);
+
 	void MenuRequested(SourcererItem *item, QMenu *menu);
 
 	// Overlay signals
@@ -105,15 +110,17 @@ private:
 
 	bool isSelected = false;
 	bool isProgram = false;
+	bool isFTB = false;
 
 	bool isSceneItemVisible = true;
+
 	bool isSceneItemLocked = false;
 	bool isSourceEnabled = true;
 	bool isPreviewDisabled = false;
 
 	bool hasSceneContext = false;
 	bool isHovered = false;
-	bool isCtrlPressed = false;
+	bool isAltPressed = false;
 	bool isOverlayEnabled = true;
 
 	void UpdateOverlayVisibility();

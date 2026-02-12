@@ -1,4 +1,7 @@
 #include "sourcerer_scenes_dock.hpp"
+
+#include "plugin-support.h"
+
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QEvent>
@@ -8,6 +11,8 @@
 #include <QJsonObject>
 #include <QMenu>
 #include <QAction>
+#include <QActionGroup>
+#include <QTimer>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
@@ -34,8 +39,6 @@ SourcererScenesDock::SourcererScenesDock(QWidget *parent) : QWidget(parent)
 	containerWidget->setLayout(flowLayout);
 	scrollArea->setWidget(containerWidget);
 
-	mainLayout->addWidget(scrollArea);
-
 	// Status Bar & Zoom Slider
 	statusBar = new QWidget(this);
 	QHBoxLayout *statusLayout = new QHBoxLayout(statusBar);
@@ -52,7 +55,111 @@ SourcererScenesDock::SourcererScenesDock(QWidget *parent) : QWidget(parent)
 
 	mainLayout->addWidget(statusBar);
 
+	contentContainer = new QWidget(this);
+	QHBoxLayout *contentLayout = new QHBoxLayout(contentContainer);
+	contentLayout->setContentsMargins(0, 0, 0, 0);
+	contentLayout->setSpacing(0);
+	contentLayout->addWidget(scrollArea);
+	mainLayout->insertWidget(0, contentContainer); // Insert at top (index 0)
+
 	obs_frontend_add_event_callback(FrontendEvent, this);
+}
+
+static bool IsValidTBarTransition(const obs_source_t *transition)
+{
+	if (!transition)
+		return false;
+
+	if (const std::string id = obs_source_get_id(transition);
+	    (id == "cut_transition" || id == "obs_stinger_transition")) {
+		return false;
+	}
+
+	return true;
+}
+
+#define T_BAR_PRECISION 1024
+#define T_BAR_PRECISION_F ((float)T_BAR_PRECISION)
+#define T_BAR_CLAMP (T_BAR_PRECISION / 10)
+
+void SourcererScenesDock::SetupTBar()
+{
+	if (tbarSlider) {
+		delete tbarSlider;
+		tbarSlider = nullptr;
+	}
+
+	if (tBarPos == TBarPosition::Hidden)
+		return;
+
+	const Qt::Orientation orientation = (tBarPos == TBarPosition::Bottom) ? Qt::Horizontal : Qt::Vertical;
+	tbarSlider = new QSlider(orientation, this);
+	tbarSlider->setRange(0, T_BAR_PRECISION - 1);
+	tbarSlider->setToolTip("Transition T-Bar");
+
+	// Initial value
+	tbarSlider->setValue(obs_frontend_get_tbar_position());
+
+	// Stylesheet for better visibility
+	tbarSlider->setStyleSheet(
+		"QSlider::groove:horizontal { border: 1px solid #3A3939; height: 8px; background: #201F1F; margin: 2px 0; border-radius: 4px; }"
+		"QSlider::handle:horizontal { background: #606060; border: 1px solid #3A3939; width: 18px; margin: -6px 0; border-radius: 4px; }"
+		"QSlider::groove:vertical { border: 1px solid #3A3939; width: 8px; background: #201F1F; margin: 0 2px; border-radius: 4px; }"
+		"QSlider::handle:vertical { background: #606060; border: 1px solid #3A3939; height: 18px; margin: 0 -6px; border-radius: 4px; }");
+
+	connect(tbarSlider, &QSlider::valueChanged, [](const int value) {
+		// Only set if triggered by user interaction (we'll block signals when updating from event)
+		obs_frontend_set_tbar_position(value);
+	});
+
+	connect(tbarSlider, &QSlider::sliderReleased, [this] {
+		const int cur = obs_frontend_get_tbar_position();
+		const int val = tbarSlider->value();
+
+		obs_log(LOG_INFO, "T-Bar is at position: %d", cur);
+		obs_log(LOG_INFO, "T-Bar release at position: %d", val);
+
+		// this does the transition stuff and send a value change event.
+		obs_frontend_release_tbar();
+
+		// Force update shortly after release to catch any resets
+		QTimer::singleShot(10, [this] {
+			UpdateTBarValue();
+		});
+	});
+
+	if (tBarPos == TBarPosition::Bottom) {
+		// Add to main layout (vertical)
+		layout()->addWidget(tbarSlider);
+		// Ensure status bar is at bottom if visible, or tbar above it?
+		// Layout is: ContentContainer (Scroll), TBar (Bottom), StatusBar
+		// mainLayout->insertWidget(1, tbarSlider); // Before StatusBar
+		dynamic_cast<QVBoxLayout *>(layout())->insertWidget(layout()->count() - 1, tbarSlider);
+	} else if (tBarPos == TBarPosition::Right) {
+		// Add to content layout (horizontal)
+		contentContainer->layout()->addWidget(tbarSlider);
+	}
+}
+
+void SourcererScenesDock::SetTBarPosition(TBarPosition pos)
+{
+	if (tBarPos == pos)
+		return;
+
+	tBarPos = pos;
+	SetupTBar();
+}
+
+void SourcererScenesDock::UpdateTBarValue()
+{
+	if (tbarSlider) {
+		// Prevent feedback loop: If user is dragging OUR slider, ignore updates from OBS
+		if (tbarSlider->isSliderDown())
+			return;
+
+		QSignalBlocker blocker(tbarSlider);
+		tbarSlider->setValue(obs_frontend_get_tbar_position());
+	}
 }
 
 SourcererScenesDock::~SourcererScenesDock()
@@ -118,6 +225,29 @@ void SourcererScenesDock::contextMenuEvent(QContextMenuEvent *event)
 	toggleDblClick->setCheckable(true);
 	toggleDblClick->setChecked(doubleClickToProgram);
 	connect(toggleDblClick, &QAction::toggled, [this](bool checked) { doubleClickToProgram = checked; });
+
+	menu.addSeparator();
+
+	QMenu *tbarMenu = menu.addMenu(tr("T-Bar Position"));
+	QActionGroup *tbarGroup = new QActionGroup(this);
+
+	QAction *tbarHidden = tbarMenu->addAction(tr("Hidden"));
+	tbarHidden->setCheckable(true);
+	tbarHidden->setChecked(tBarPos == TBarPosition::Hidden);
+	tbarGroup->addAction(tbarHidden);
+	connect(tbarHidden, &QAction::triggered, [this]() { SetTBarPosition(TBarPosition::Hidden); });
+
+	QAction *tbarRight = tbarMenu->addAction(tr("Right"));
+	tbarRight->setCheckable(true);
+	tbarRight->setChecked(tBarPos == TBarPosition::Right);
+	tbarGroup->addAction(tbarRight);
+	connect(tbarRight, &QAction::triggered, [this]() { SetTBarPosition(TBarPosition::Right); });
+
+	QAction *tbarBottom = tbarMenu->addAction(tr("Bottom"));
+	tbarBottom->setCheckable(true);
+	tbarBottom->setChecked(tBarPos == TBarPosition::Bottom);
+	tbarGroup->addAction(tbarBottom);
+	connect(tbarBottom, &QAction::triggered, [this]() { SetTBarPosition(TBarPosition::Bottom); });
 
 	menu.exec(event->globalPos());
 }
@@ -253,17 +383,52 @@ void SourcererScenesDock::Refresh()
 void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *data)
 {
 	SourcererScenesDock *dock = static_cast<SourcererScenesDock *>(data);
+
+	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED) {
+		obs_source_t *scene = obs_frontend_get_current_scene();
+		if (scene) {
+			const char *name = obs_source_get_name(scene);
+			blog(LOG_INFO, "Scene Switched (Program): %s", name);
+			obs_source_release(scene);
+		}
+	} else if (event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED) {
+		obs_source_t *scene = obs_frontend_get_current_preview_scene();
+		if (scene) {
+			const char *name = obs_source_get_name(scene);
+			blog(LOG_INFO, "Scene Switched (Preview): %s", name);
+			obs_source_release(scene);
+		}
+	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_STOPPED) {
+		blog(LOG_INFO, "Transition Stopped");
+	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_CHANGED) {
+		obs_source_t *transition = obs_frontend_get_current_transition();
+		if (transition) {
+			const char *name = obs_source_get_name(transition);
+			blog(LOG_INFO, "Transition Changed to: %s", name);
+			obs_source_release(transition);
+		}
+	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_DURATION_CHANGED) {
+		blog(LOG_INFO, "Transition Duration Changed");
+	} else if (event == OBS_FRONTEND_EVENT_TBAR_VALUE_CHANGED) {
+		dock->UpdateTBarValue();
+	} else if (event == OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED) {
+		dock->Refresh();
+	}
+
 	if (!dock->syncWithMain)
 		return;
 
 	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED ||
-	    event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
+	    event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED ||
+	    event == OBS_FRONTEND_EVENT_TRANSITION_STOPPED || event == OBS_FRONTEND_EVENT_TRANSITION_CHANGED) {
 		dock->HighlightCurrentScene();
 	}
 }
 
 void SourcererScenesDock::HighlightCurrentScene() const
+
 {
+
 	obs_source_t *programScene = nullptr;
 	obs_source_t *previewScene = nullptr;
 
@@ -277,6 +442,18 @@ void SourcererScenesDock::HighlightCurrentScene() const
 		previewScene = nullptr; // Or same as program
 	}
 
+	// FTB Detection
+	obs_source_t *transition = obs_frontend_get_current_transition();
+	bool ftbActive = false;
+	if (transition) {
+		obs_source_t *activeSource = obs_transition_get_active_source(transition);
+		if (activeSource == nullptr) {
+			ftbActive = true;
+			blog(LOG_INFO, "FTB Active (No active source in transition)");
+		}
+		obs_source_release(transition);
+	}
+
 	const char *programName = programScene ? obs_source_get_name(programScene) : "";
 	const char *previewName = previewScene ? obs_source_get_name(previewScene) : "";
 
@@ -287,15 +464,26 @@ void SourcererScenesDock::HighlightCurrentScene() const
 		bool isProg = programScene && (strcmp(programName, name) == 0);
 		bool isPrev = previewScene && (strcmp(previewName, name) == 0);
 
+		// If FTB is active, maybe we shouldn't show program selection?
+		// Or maybe show it but differently?
+		// For now, let's just log it as requested, but if FTB is active,
+		// technically the program scene is still "current" in OBS logic usually,
+		// but the audience sees black.
+		// Let's mark it Program ONLY if not FTB?
+		// The user instruction was "detect ftb... make it aware".
+		// I'll leave the selection logic as is for now but log the FTB state.
+
 		// Standard mode: Program is Red.
 		// Studio mode: Program is Red, Preview is Blue.
 		// If same scene is both, Program Red takes precedence (handled in paintEvent usually,
 		// but let's set both flags).
 
+		item->SetFTB(ftbActive);
 		item->SetProgram(isProg);
 		item->SetSelected(isPrev);
 
 		if (isProg || isPrev) {
+
 			scrollArea->ensureWidgetVisible(item);
 		}
 	}
@@ -314,6 +502,7 @@ QJsonObject SourcererScenesDock::Save() const
 	obj["syncWithMain"] = syncWithMain;
 	obj["isReadOnly"] = isReadOnly;
 	obj["doubleClickToProgram"] = doubleClickToProgram;
+	obj["tBarPosition"] = static_cast<int>(tBarPos);
 	return obj;
 }
 
@@ -335,5 +524,8 @@ void SourcererScenesDock::Load(const QJsonObject &obj)
 	}
 	if (obj.contains("doubleClickToProgram")) {
 		doubleClickToProgram = obj["doubleClickToProgram"].toBool(true);
+	}
+	if (obj.contains("tBarPosition")) {
+		SetTBarPosition(static_cast<TBarPosition>(obj["tBarPosition"].toInt(0)));
 	}
 }

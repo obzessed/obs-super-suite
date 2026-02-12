@@ -6,6 +6,7 @@
   - Power/Pro Console?
 - YouTube Video/Audio Player Source (streamlink?)
 - Properties Dock.
+- OBS AI Assistant Dock. (bring your models)
 - Filters Dock.
 - Filter Properties Dock.
 - Refs
@@ -80,11 +81,27 @@
   - [ ] QtQuick
   - [ ] QtQml
   - [ ] QtWebEngine
-  - [ ] obs-browser source.
+  - [ ] obs-browser source. (for Webview2 finda a way to capture audio internally)
 - [ ] Canvas Manager.
+- [ ] Safe Area Overlays/Filters.
 - [x] Secondary Dockable Windows.
-  - [ ] Secondary Studio Frontend.
+- [ ] Secondary Studio Frontend.
 - [ ] WhatsApp Browser Dock.
+- [ ] On-Air Dock.
+- [ ] Atem SuperSource stuff.
+- [ ] Instant Replay Studio.
+- [ ] RTMP Server Source.
+- [ ] Audio Source to Track Sends (vol ctrl).
+  - Might need hooking.
+- [ ] HTML Live Source with a dock.
+  - Similar to browser source but with more options and custom controls.
+  - HTML editor, live preview, custom controls etc.
+  - Custom API.
+- [ ] Framing Filter.
+  - Similar to face-tracker. but manual using a bounding box and with more options.
+    - Control it via params/midi/remote.
+    - Frame presets etc.
+    - Use Nvidia AR SDK for auto framing if available. (refer exeldro's move plugin for reference)
 - [ ] Browser Dock using Webview Runtime.
 - [ ] Browser Source using Webview Runtime.
 - [ ] Advanced MultiView.
@@ -105,6 +122,10 @@
   - [ ] '???'
 - [ ] Audio Source types.
   - [ ] '???'
+- Windows APO (what does it do? Can it be used for monitoring or audio processing?)
+  - https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/audio-processing-object-architecture
+  - https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/implementing-audio-processing-objects
+  - https://github.com/dechamps/APO
 - Docks
   - [ ] Advanced Dock Manager.
   - [ ] Custom Browser Docks using a custom obs-browser plugin which has cef as well as webview2 runtime powered webviews.
@@ -120,6 +141,14 @@
   - [ ] Custom Output Source (Similar to Audio Channel Source). (private source).
   - [ ] Internal Source routing to mix and forward monitor enabled sources.
   - [ ] option to forward to the obs_monitoring device too. (using `obs_monitoring_type`).
+- [ ] Sourcerer
+  - [ ] Add Recording (Scene/Sources)
+  - [ ] Safe area overlays.
+  - [ ] Audio meter overlays.
+  - [ ] Nice T-Bar.
+  - [ ] Transition Controls and selections bar in Scenes dock. (optionable)
+  - [ ] FTB.
+  - [ ] PIP.
 
 
 ```ideas
