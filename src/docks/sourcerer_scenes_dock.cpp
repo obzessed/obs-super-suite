@@ -13,6 +13,7 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QTimer>
+#include <QGuiApplication>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
@@ -211,24 +212,44 @@ void SourcererScenesDock::contextMenuEvent(QContextMenuEvent *event)
 
 	connect(toggleStatus, &QAction::toggled, statusBar, &QWidget::setVisible);
 
-	QAction *toggleSync = menu.addAction(tr("Sync with Main"));
-	toggleSync->setCheckable(true);
-	toggleSync->setChecked(syncWithMain);
-	connect(toggleSync, &QAction::toggled, [this](bool checked) {
-		syncWithMain = checked;
+	QAction *toggleLiveMode = menu.addAction(tr("Live Mode"));
+	toggleLiveMode->setCheckable(true);
+	toggleLiveMode->setChecked(liveMode);
+	connect(toggleLiveMode, &QAction::toggled, [this](bool checked) {
+		liveMode = checked;
 		if (checked) {
 			HighlightCurrentScene();
 		} else {
-			// Optional: Clear selection when disabled?
-			// For now, let's leave the last selection or clear it.
-			// Let's clear it to indicate sync is off.
+			// Clear program and FTB highlighting
+			for (SourcererItem *item : items) {
+				item->SetProgram(false);
+				item->SetFTB(false);
+			}
+		}
+	});
+
+	QAction *toggleSyncSelection = menu.addAction(tr("Sync Selection"));
+	toggleSyncSelection->setCheckable(true);
+	toggleSyncSelection->setChecked(syncSelection);
+	connect(toggleSyncSelection, &QAction::toggled, [this](bool checked) {
+		syncSelection = checked;
+		if (checked) {
+			HighlightCurrentScene();
+		} else {
+			// Clear selection highlighting
 			for (SourcererItem *item : items) {
 				item->SetSelected(false);
 			}
 		}
 	});
 
+	QAction *toggleScrollToProgram = menu.addAction(tr("Scroll to Program Scene"));
+	toggleScrollToProgram->setCheckable(true);
+	toggleScrollToProgram->setChecked(scrollToProgram);
+	connect(toggleScrollToProgram, &QAction::toggled, [this](bool checked) { scrollToProgram = checked; });
+
 	QAction *toggleReadOnly = menu.addAction(tr("Read Only"));
+
 	toggleReadOnly->setCheckable(true);
 	toggleReadOnly->setChecked(isReadOnly);
 	connect(toggleReadOnly, &QAction::toggled, [this](bool checked) { isReadOnly = checked; });
@@ -237,6 +258,14 @@ void SourcererScenesDock::contextMenuEvent(QContextMenuEvent *event)
 	toggleDblClick->setCheckable(true);
 	toggleDblClick->setChecked(doubleClickToProgram);
 	connect(toggleDblClick, &QAction::toggled, [this](bool checked) { doubleClickToProgram = checked; });
+
+	QAction *toggleHideEmpty = menu.addAction(tr("Hide Empty Scenes"));
+	toggleHideEmpty->setCheckable(true);
+	toggleHideEmpty->setChecked(hideEmptyScenes);
+	connect(toggleHideEmpty, &QAction::toggled, [this](bool checked) {
+		hideEmptyScenes = checked;
+		Refresh();
+	});
 
 	menu.addSeparator();
 
@@ -273,8 +302,16 @@ void SourcererScenesDock::OnItemClicked(SourcererItem *item)
 	if (!source)
 		return;
 
+	// Check for Shift+click to open filters
+	if (QGuiApplication::queryKeyboardModifiers() & Qt::ShiftModifier) {
+		obs_frontend_open_source_filters(source);
+		return;
+	}
+
 	if (obs_frontend_preview_program_mode_active()) {
-		obs_frontend_set_current_preview_scene(source);
+		if (syncSelection) {
+			obs_frontend_set_current_preview_scene(source);
+		}
 	} else {
 		obs_frontend_set_current_scene(source);
 	}
@@ -290,9 +327,15 @@ void SourcererScenesDock::OnItemDoubleClicked(SourcererItem *item)
 		return;
 
 	if (obs_frontend_preview_program_mode_active()) {
-		// In studio mode, switch preview then transition
-		obs_frontend_set_current_preview_scene(source);
-		obs_frontend_preview_program_trigger_transition();
+		// In studio mode
+		if (syncSelection) {
+			// Switch preview then transition
+			obs_frontend_set_current_preview_scene(source);
+			obs_frontend_preview_program_trigger_transition();
+		} else {
+			// Directly switch program scene
+			obs_frontend_set_current_scene(source);
+		}
 	} else {
 		// In standard mode, just switch scene (same as click)
 		obs_frontend_set_current_scene(source);
@@ -301,6 +344,8 @@ void SourcererScenesDock::OnItemDoubleClicked(SourcererItem *item)
 
 void SourcererScenesDock::keyPressEvent(QKeyEvent *event)
 {
+	UpdateKeyModifiers();
+
 	if (event->modifiers() & Qt::ControlModifier) {
 		if (event->key() == Qt::Key_Plus || event->key() == Qt::Key_Equal) {
 			UpdateZoom(1);
@@ -317,6 +362,20 @@ void SourcererScenesDock::keyPressEvent(QKeyEvent *event)
 		}
 	}
 	QWidget::keyPressEvent(event);
+}
+
+void SourcererScenesDock::keyReleaseEvent(QKeyEvent *event)
+{
+	UpdateKeyModifiers();
+	QWidget::keyReleaseEvent(event);
+}
+
+void SourcererScenesDock::UpdateKeyModifiers()
+{
+	bool altPressed = (QGuiApplication::queryKeyboardModifiers() & Qt::AltModifier);
+	for (SourcererItem *item : items) {
+		item->SetAltPressed(altPressed);
+	}
 }
 
 void SourcererScenesDock::UpdateZoom(int delta_steps)
@@ -380,15 +439,39 @@ void SourcererScenesDock::Refresh()
 		item->SetItemWidth(itemWidth);
 		items.push_back(item);
 
+		if (hideEmptyScenes) {
+			obs_scene_t *scene = obs_scene_from_source(source);
+			bool empty = true;
+			obs_scene_enum_items(
+				scene,
+				[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+					bool *e = (bool *)param;
+					*e = false;
+					return false; // Found one, stop
+				},
+				&empty);
+			if (empty) {
+				item->hide();
+			}
+		}
+
 		connect(item, &SourcererItem::Clicked, this, &SourcererScenesDock::OnItemClicked);
 		connect(item, &SourcererItem::DoubleClicked, this, &SourcererScenesDock::OnItemDoubleClicked);
+		connect(item, &SourcererItem::SceneItemCountChanged, [this](SourcererItem *item, int count) {
+			if (hideEmptyScenes) {
+				item->setVisible(count > 0);
+			} else {
+				if (!item->isVisible())
+					item->show();
+			}
+		});
 
 		flowLayout->addWidget(item);
 	}
 
 	obs_frontend_source_list_free(&scenes);
 
-	if (syncWithMain)
+	if (liveMode || syncSelection)
 		HighlightCurrentScene();
 }
 
@@ -427,7 +510,7 @@ void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *dat
 		dock->Refresh();
 	}
 
-	if (!dock->syncWithMain)
+	if (!dock->liveMode && !dock->syncSelection)
 		return;
 
 	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED ||
@@ -490,12 +573,15 @@ void SourcererScenesDock::HighlightCurrentScene() const
 		// If same scene is both, Program Red takes precedence (handled in paintEvent usually,
 		// but let's set both flags).
 
-		item->SetFTB(ftbActive);
-		item->SetProgram(isProg);
+		item->SetFTB(ftbActive && liveMode);
+		item->SetProgram(isProg && liveMode);
 		item->SetSelected(isPrev);
 
-		if (isProg || isPrev) {
+		if (isProg && scrollToProgram && !syncSelection) {
+			scrollArea->ensureWidgetVisible(item);
+		}
 
+		if (isPrev && syncSelection) {
 			scrollArea->ensureWidgetVisible(item);
 		}
 	}
@@ -511,7 +597,11 @@ QJsonObject SourcererScenesDock::Save() const
 	QJsonObject obj;
 	obj["itemWidth"] = itemWidth;
 	obj["showZoomControls"] = statusBar->isVisible();
-	obj["syncWithMain"] = syncWithMain;
+	obj["liveMode"] = liveMode;
+	obj["syncSelection"] = syncSelection;
+	obj["scrollToProgram"] = scrollToProgram;
+	obj["hideEmptyScenes"] = hideEmptyScenes;
+
 	obj["isReadOnly"] = isReadOnly;
 	obj["doubleClickToProgram"] = doubleClickToProgram;
 	obj["tBarPosition"] = static_cast<int>(tBarPos);
@@ -526,11 +616,23 @@ void SourcererScenesDock::Load(const QJsonObject &obj)
 	if (obj.contains("showZoomControls")) {
 		statusBar->setVisible(obj["showZoomControls"].toBool(true));
 	}
-	if (obj.contains("syncWithMain")) {
-		syncWithMain = obj["syncWithMain"].toBool(true);
-		if (syncWithMain)
+	if (obj.contains("liveMode")) {
+		liveMode = obj["liveMode"].toBool(true);
+		if (liveMode || syncSelection)
 			HighlightCurrentScene();
 	}
+	if (obj.contains("syncSelection")) {
+		syncSelection = obj["syncSelection"].toBool(true);
+		if (liveMode || syncSelection)
+			HighlightCurrentScene();
+	}
+	if (obj.contains("scrollToProgram")) {
+		scrollToProgram = obj["scrollToProgram"].toBool(true);
+	}
+	if (obj.contains("hideEmptyScenes")) {
+		hideEmptyScenes = obj["hideEmptyScenes"].toBool(false);
+	}
+
 	if (obj.contains("isReadOnly")) {
 		isReadOnly = obj["isReadOnly"].toBool(false);
 	}

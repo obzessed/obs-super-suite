@@ -27,6 +27,10 @@ public:
 	QPushButton *btnInteract = nullptr;
 	QPushButton *btnRefresh = nullptr;
 	QPushButton *btnPlayPause = nullptr;
+	QPushButton *btnFilters = nullptr;
+	QPushButton *btnDisablePreview = nullptr;
+
+	void ReflowButtons();
 
 private:
 	QGridLayout *layout = nullptr;
@@ -67,6 +71,8 @@ public:
 	void SetHasSceneContext(bool hasContext);
 	void SetOverlayEnabled(bool enabled);
 
+	void UpdateOverlayButtonState();
+
 	void SetSceneItem(obs_sceneitem_t *item);
 	obs_sceneitem_t *GetSceneItem() const { return sceneItem; }
 
@@ -79,6 +85,7 @@ signals:
 	// Overlay signals
 	void ToggleVisibilityRequested(SourcererItem *item);
 	void ToggleLockRequested(SourcererItem *item);
+	void SceneItemCountChanged(SourcererItem *item, int count);
 	// Active/Interact/PlayPause can be handled internally or signaled.
 	// We'll signal generic requests that might need scene context,
 	// others can be internal but signal is safer for undo/sync.
@@ -105,6 +112,7 @@ private:
 	QLabel *label = nullptr;
 	QLabel *lockIconLabel = nullptr;
 	QLabel *visIconLabel = nullptr;
+	QLabel *sceneItemCountLabel = nullptr;
 	QPushButton *enablePreviewButton = nullptr;
 	SourcererItemOverlay *overlay = nullptr;
 
@@ -126,10 +134,13 @@ private:
 	void UpdateOverlayVisibility();
 	void UpdateIconLayout();
 	void SetupOverlayConnections();
+	void UpdateSceneItemCount();
 
 	static void DrawPreview(void *data, uint32_t cx, uint32_t cy);
 
 	static void SourceRenamed(void *data, calldata_t *cd);
 	static void SourceEnabled(void *data, calldata_t *cd);
 	static void SourceDisabled(void *data, calldata_t *cd);
+	static void SceneItemAdded(void *data, calldata_t *cd);
+	static void SceneItemRemoved(void *data, calldata_t *cd);
 };

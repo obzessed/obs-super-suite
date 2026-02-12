@@ -11,6 +11,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
+#include <QMessageBox>
 #include <QApplication>
 #include <QGuiApplication>
 #include <QScreen>
@@ -52,9 +53,8 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	setPalette(pal);
 
 	layout = new QGridLayout(this);
-	layout->setContentsMargins(4, 4, 4, 4);
-	layout->setSpacing(4);
-	layout->setAlignment(Qt::AlignCenter);
+	layout->setContentsMargins(2, 2, 2, 2);
+	layout->setSpacing(2);
 
 	// Create buttons
 	btnVisibility = new QPushButton(this);
@@ -73,19 +73,28 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	SetupButton(btnPlayPause, QString::fromUtf8("▶"), "Play/Pause");
 
 	btnRefresh = new QPushButton(this);
-	SetupButton(btnRefresh, QString::fromUtf8("↻"),
-		    "Refresh (Properties)"); // Using Refresh icon but tooltip mentions properties
+	SetupButton(btnRefresh, QString::fromUtf8("⚙"),
+		    "Properties"); // Changed from Refresh to Gear
+
+	btnFilters = new QPushButton(this);
+	SetupButton(btnFilters, QString::fromUtf8("Fx"), "Filters");
+
+	btnDisablePreview = new QPushButton(this);
+	SetupButton(btnDisablePreview, QString::fromUtf8("🚫"), "Toggle Preview");
 
 	// Layout grid
 	// Row 0: Vis, Lock
 	// Row 1: Active, Interact
-	// Row 2: Play, Refresh
+	// Row 2: Play, DisablePrev
+	// Row 3: Properties, Filters
 	layout->addWidget(btnVisibility, 0, 0);
 	layout->addWidget(btnLock, 0, 1);
 	layout->addWidget(btnActive, 1, 0);
 	layout->addWidget(btnInteract, 1, 1);
 	layout->addWidget(btnPlayPause, 2, 0);
-	layout->addWidget(btnRefresh, 2, 1);
+	layout->addWidget(btnDisablePreview, 2, 1);
+	layout->addWidget(btnRefresh, 3, 0);
+	layout->addWidget(btnFilters, 3, 1);
 
 	// Opacity Effect for Animation
 	opacityEffect = new QGraphicsOpacityEffect(this);
@@ -99,11 +108,50 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	hide(); // Initially hidden
 }
 
+void SourcererItemOverlay::ReflowButtons()
+{
+	// Clear layout
+	QLayoutItem *item;
+	while ((item = layout->takeAt(0)) != nullptr) {
+		delete item;
+	}
+
+	std::vector<QPushButton *> visibleButtons;
+	// Order matters:
+	if (btnVisibility && !btnVisibility->isHidden())
+		visibleButtons.push_back(btnVisibility);
+	if (btnLock && !btnLock->isHidden())
+		visibleButtons.push_back(btnLock);
+	if (btnActive && !btnActive->isHidden())
+		visibleButtons.push_back(btnActive);
+	if (btnInteract && !btnInteract->isHidden())
+		visibleButtons.push_back(btnInteract);
+	if (btnPlayPause && !btnPlayPause->isHidden())
+		visibleButtons.push_back(btnPlayPause);
+	if (btnDisablePreview && !btnDisablePreview->isHidden())
+		visibleButtons.push_back(btnDisablePreview);
+	if (btnRefresh && !btnRefresh->isHidden())
+		visibleButtons.push_back(btnRefresh);
+	if (btnFilters && !btnFilters->isHidden())
+		visibleButtons.push_back(btnFilters);
+
+	for (size_t i = 0; i < visibleButtons.size(); ++i) {
+		int row = (int)i / 2;
+		int col = (int)i % 2;
+		// If last item and odd count, span 2 columns
+		if (i == visibleButtons.size() - 1 && visibleButtons.size() % 2 != 0) {
+			layout->addWidget(visibleButtons[i], row, 0, 1, 2);
+		} else {
+			layout->addWidget(visibleButtons[i], row, col);
+		}
+	}
+}
+
 void SourcererItemOverlay::SetupButton(QPushButton *btn, const QString &text, const QString &tooltip)
 {
 	btn->setText(text);
 	btn->setToolTip(tooltip);
-	btn->setFixedSize(30, 30);
+	btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	btn->setCursor(Qt::ArrowCursor);
 
 	// Simple style
@@ -197,6 +245,13 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 	visIconLabel->hide();
 	visIconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 
+	sceneItemCountLabel = new QLabel(this);
+	sceneItemCountLabel->setAlignment(Qt::AlignCenter);
+	sceneItemCountLabel->setStyleSheet(
+		"QLabel { color: white; background-color: rgba(0, 0, 0, 150); border-radius: 4px; padding: 2px 4px; font-weight: bold; font-size: 10px; }");
+	sceneItemCountLabel->hide();
+	sceneItemCountLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+
 	label = new QLabel(this);
 	label->setAlignment(Qt::AlignCenter);
 	label->setWordWrap(true);
@@ -206,6 +261,7 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 
 	UpdateName();
 	UpdateStatus(); // Initial status for button text/colors?
+	UpdateOverlayButtonState();
 	SetupOverlayConnections();
 
 	auto OnDisplayCreated = [this](OBSQTDisplay *w) {
@@ -221,6 +277,11 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 	signal_handler_connect(sh, "rename", SourceRenamed, this);
 	signal_handler_connect(sh, "enable", SourceEnabled, this);
 	signal_handler_connect(sh, "disable", SourceDisabled, this);
+
+	if (obs_scene_from_source(source)) {
+		signal_handler_connect(sh, "item_add", SceneItemAdded, this);
+		signal_handler_connect(sh, "item_remove", SceneItemRemoved, this);
+	}
 
 	// Enable mouse tracking for hover events
 	setMouseTracking(true);
@@ -240,6 +301,11 @@ SourcererItem::~SourcererItem()
 	signal_handler_disconnect(sh, "rename", SourceRenamed, this);
 	signal_handler_disconnect(sh, "enable", SourceEnabled, this);
 	signal_handler_disconnect(sh, "disable", SourceDisabled, this);
+
+	if (obs_scene_from_source(source)) {
+		signal_handler_disconnect(sh, "item_add", SceneItemAdded, this);
+		signal_handler_disconnect(sh, "item_remove", SceneItemRemoved, this);
+	}
 
 	obs_source_release(source);
 }
@@ -283,6 +349,15 @@ void SourcererItem::SetupOverlayConnections()
 			obs_frontend_open_source_properties(source);
 		}
 	});
+
+	connect(overlay->btnFilters, &QPushButton::clicked, [this]() {
+		if (source) {
+			obs_frontend_open_source_filters(source);
+		}
+	});
+
+	connect(overlay->btnDisablePreview, &QPushButton::clicked,
+		[this]() { SetPreviewDisabled(!isPreviewDisabled); });
 }
 
 void SourcererItem::SetOverlayEnabled(bool enabled)
@@ -298,11 +373,66 @@ void SourcererItem::SetOverlayEnabled(bool enabled)
 void SourcererItem::SetHasSceneContext(bool hasContext)
 {
 	hasSceneContext = hasContext;
-	// Show/Hide relevant buttons on overlay
-	if (overlay) {
-		overlay->btnVisibility->setVisible(hasContext);
-		overlay->btnLock->setVisible(hasContext);
+	UpdateOverlayButtonState();
+}
+
+void SourcererItem::UpdateOverlayButtonState()
+{
+	if (!overlay)
+		return;
+
+	// Gather Source Flags
+	uint32_t flags = 0;
+	bool configurable = false;
+
+	if (source) {
+		flags = obs_source_get_output_flags(source);
+		configurable = obs_source_configurable(source);
 	}
+
+	// 1. Visibility (Needs Scene Context)
+	if (overlay->btnVisibility) {
+		overlay->btnVisibility->setVisible(hasSceneContext);
+	}
+
+	// 2. Lock (Needs Scene Context)
+	if (overlay->btnLock) {
+		overlay->btnLock->setVisible(hasSceneContext);
+	}
+
+	// 3. Active (Source Enabled)
+	if (overlay->btnActive) {
+		bool isScene = obs_scene_from_source(source) != nullptr;
+		overlay->btnActive->setVisible(!isScene);
+	}
+
+	// 4. Filters - Default shown
+	// Always visible
+	if (overlay->btnFilters) {
+		overlay->btnFilters->setVisible(true);
+	}
+
+	// 5. Interact (OBS_SOURCE_INTERACTION)
+	if (overlay->btnInteract) {
+		overlay->btnInteract->setVisible(flags & OBS_SOURCE_INTERACTION);
+	}
+
+	// 6. Play/Pause (OBS_SOURCE_CONTROLLABLE_MEDIA)
+	if (overlay->btnPlayPause) {
+		overlay->btnPlayPause->setVisible(flags & OBS_SOURCE_CONTROLLABLE_MEDIA);
+	}
+
+	// 7. Properties (Configurable)
+	if (overlay->btnRefresh) {
+		overlay->btnRefresh->setVisible(configurable);
+	}
+
+	// 8. Disable Preview - Always visible
+	if (overlay->btnDisablePreview) {
+		overlay->btnDisablePreview->setVisible(true);
+	}
+
+	overlay->ReflowButtons();
 }
 
 void SourcererItem::SetAltPressed(bool pressed)
@@ -368,6 +498,12 @@ void SourcererItem::UpdateOverlayVisibility()
 					isSourceEnabled
 						? "QPushButton { color: #88ff88; font-weight: bold; background-color: rgba(0,0,0,50); border: 1px solid rgba(255,255,255,50); }"
 						: "QPushButton { color: #ff8888; font-weight: bold; background-color: rgba(0,0,0,50); border: 1px solid rgba(255,255,255,50); }");
+			}
+			if (overlay->btnDisablePreview) {
+				overlay->btnDisablePreview->setText(isPreviewDisabled ? QString::fromUtf8("👁")
+										      : QString::fromUtf8("🚫"));
+				overlay->btnDisablePreview->setToolTip(isPreviewDisabled ? "Enable Preview"
+											 : "Disable Preview");
 			}
 		}
 	}
@@ -442,7 +578,15 @@ void SourcererItem::UpdateIconLayout()
 	int currentX = display->x() + display->width() - margin;
 	int y = display->y() + margin;
 
-	// Lock icon (Rightmost)
+	// Scene Item Count (Rightmost)
+	if (sceneItemCountLabel && sceneItemCountLabel->isVisible()) {
+		currentX -= sceneItemCountLabel->width();
+		sceneItemCountLabel->move(currentX, y);
+		sceneItemCountLabel->raise();
+		currentX -= spacing;
+	}
+
+	// Lock icon (Left of Count)
 	if (lockIconLabel && lockIconLabel->isVisible()) {
 		currentX -= lockIconLabel->width();
 		lockIconLabel->move(currentX, y);
@@ -461,6 +605,39 @@ void SourcererItem::UpdateIconLayout()
 	if (overlay) {
 		overlay->raise();
 	}
+}
+
+void SourcererItem::UpdateSceneItemCount()
+{
+	if (!source || !sceneItemCountLabel)
+		return;
+
+	obs_scene_t *scene = obs_scene_from_source(source);
+	if (!scene) {
+		sceneItemCountLabel->hide();
+		return;
+	}
+
+	int count = 0;
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+			int *c = (int *)param;
+			(*c)++;
+			return true;
+		},
+		&count);
+
+	if (count > 0) {
+		sceneItemCountLabel->setText(QString::number(count));
+		sceneItemCountLabel->adjustSize();
+		sceneItemCountLabel->show();
+	} else {
+		sceneItemCountLabel->hide();
+	}
+
+	UpdateIconLayout();
+	emit SceneItemCountChanged(this, count);
 }
 
 void SourcererItem::SetPreviewDisabled(bool disabled)
@@ -550,6 +727,7 @@ void SourcererItem::UpdateStatus()
 	if (label) {
 		label->setEnabled(active);
 	}
+	UpdateSceneItemCount();
 	update();
 }
 
@@ -627,6 +805,21 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 		if (ok && !newName.isEmpty()) {
 			obs_source_set_name(source, newName.toUtf8().constData());
 			UpdateName();
+		}
+	});
+
+	QAction *deleteAction = menu.addAction(tr("Delete"));
+	connect(deleteAction, &QAction::triggered, [this]() {
+		if (!source)
+			return;
+
+		QString name = QString::fromUtf8(obs_source_get_name(source));
+		QMessageBox::StandardButton reply;
+		reply = QMessageBox::question(this, tr("Delete Source"),
+					      tr("Are you sure you want to delete '%1'?").arg(name),
+					      QMessageBox::Yes | QMessageBox::No);
+		if (reply == QMessageBox::Yes) {
+			obs_source_remove(source);
 		}
 	});
 
@@ -753,4 +946,18 @@ void SourcererItem::SourceDisabled(void *data, calldata_t *cd)
 			item->UpdateStatus();
 		},
 		Qt::QueuedConnection);
+}
+
+void SourcererItem::SceneItemAdded(void *data, calldata_t *cd)
+{
+	Q_UNUSED(cd);
+	SourcererItem *item = static_cast<SourcererItem *>(data);
+	QMetaObject::invokeMethod(item, [item]() { item->UpdateSceneItemCount(); }, Qt::QueuedConnection);
+}
+
+void SourcererItem::SceneItemRemoved(void *data, calldata_t *cd)
+{
+	Q_UNUSED(cd);
+	SourcererItem *item = static_cast<SourcererItem *>(data);
+	QMetaObject::invokeMethod(item, [item]() { item->UpdateSceneItemCount(); }, Qt::QueuedConnection);
 }

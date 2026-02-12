@@ -7,6 +7,7 @@
 - YouTube Video/Audio Player Source (streamlink?)
 - Properties Dock.
 - OBS AI Assistant Dock. (bring your models)
+- Extra Canvas Studio Mode.
 - Filters Dock.
 - Filter Properties Dock.
 - Refs

@@ -27,6 +27,7 @@ protected:
 	void showEvent(QShowEvent *event) override;
 	bool eventFilter(QObject *obj, QEvent *event) override;
 	void keyPressEvent(QKeyEvent *event) override;
+	void keyReleaseEvent(QKeyEvent *event) override;
 	void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
@@ -38,11 +39,16 @@ private:
 	std::vector<SourcererItem *> items;
 	int itemWidth = 160;
 
+	void UpdateKeyModifiers();
 	void Clear();
 
-	bool syncWithMain = true;
+	bool liveMode = true;
 	bool isReadOnly = false;
 	bool doubleClickToProgram = true;
+	bool syncSelection = true;
+	bool scrollToProgram = true;
+	bool hideEmptyScenes = false;
+
 	void HighlightCurrentScene() const;
 	static void FrontendEvent(enum obs_frontend_event event, void *data);
 

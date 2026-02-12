@@ -114,6 +114,9 @@ int FlowLayout::doLayout(const QRect &rect, bool testOnly) const
 	int lineHeight = 0;
 
 	for (QLayoutItem *item : itemList) {
+		if (item->isEmpty())
+			continue;
+
 		QWidget *wid = item->widget();
 		QSize size = item->sizeHint();
 
