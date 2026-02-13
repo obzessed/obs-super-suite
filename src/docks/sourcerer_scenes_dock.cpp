@@ -736,7 +736,6 @@ void SourcererScenesDock::HighlightCurrentScene() const
 		previewScene = obs_frontend_get_current_preview_scene();
 	} else {
 		// Standard Mode
-		programScene = obs_frontend_get_current_scene();
 		previewScene = nullptr; // Or same as program
 	}
 
