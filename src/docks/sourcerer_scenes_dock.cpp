@@ -87,7 +87,7 @@ static bool IsValidTBarTransition(const obs_source_t *transition)
 void SourcererScenesDock::SetupTBar()
 {
 	// workaround for https://github.com/obsproject/obs-studio/pull/13116
-	static QSlider* buggyOBSTBarSlider = nullptr;
+	static QSlider *buggyOBSTBarSlider = nullptr;
 	static bool checkedBuggyOBSTBar = false;
 
 	auto setOBSBasicTBar = [](const int value) {
@@ -149,15 +149,17 @@ void SourcererScenesDock::SetupTBar()
 
 	// Stylesheet for better visibility
 	tbarSlider->setStyleSheet(
+		"QSlider:horizontal { height: 36px; }"
 		"QSlider::groove:horizontal { background: #353535; height: 8px; border-radius: 4px; }"
 		"QSlider::sub-page:horizontal { background: #4D79E6; border-radius: 4px; }"
 		"QSlider::add-page:horizontal { background: #353535; border-radius: 4px; }"
-		"QSlider::handle:horizontal { background: #FFFFFF; width: 18px; height: 24px; margin: -8px 0; border-radius: 2px; }"
+		"QSlider::handle:horizontal { background: #FFFFFF; width: 18px; height: 36px; margin: -8px 0; border-radius: 4px; }"
 
+		"QSlider:vertical { width: 36px; }"
 		"QSlider::groove:vertical { background: #353535; width: 8px; border-radius: 4px; }"
 		"QSlider::sub-page:vertical { background: #353535; border-radius: 4px; }"
 		"QSlider::add-page:vertical { background: #4D79E6; border-radius: 4px; }"
-		"QSlider::handle:vertical { background: #FFFFFF; height: 18px; width: 24px; margin: 0 -8px; border-radius: 2px; }");
+		"QSlider::handle:vertical { background: #FFFFFF; height: 18px; width: 36px; margin: 0 -8px; border-radius: 4px; }");
 
 	connect(tbarSlider, &QSlider::valueChanged, [&setOBSBasicTBar](const int value) {
 		// Only set if triggered by user interaction (we'll block signals when updating from event)
@@ -178,18 +180,19 @@ void SourcererScenesDock::SetupTBar()
 		QTimer::singleShot(10, [this] { UpdateTBarValue(); });
 	});
 
+	constexpr auto layout_margin = 8;
 	if (tBarPos == TBarPosition::Bottom) {
 		// Add to main layout (vertical)
 		tbarContainer = new QWidget(this);
 		QVBoxLayout *tbarLayout = new QVBoxLayout(tbarContainer);
-		tbarLayout->setContentsMargins(8, 8, 8, 8);
+		tbarLayout->setContentsMargins(layout_margin, layout_margin, layout_margin, layout_margin);
 		tbarLayout->addWidget(tbarSlider);
 		layout()->addWidget(tbarContainer);
 	} else if (tBarPos == TBarPosition::Top) {
 		// Add to main layout (vertical, at top)
 		tbarContainer = new QWidget(this);
 		QVBoxLayout *tbarLayout = new QVBoxLayout(tbarContainer);
-		tbarLayout->setContentsMargins(8, 8, 8, 8);
+		tbarLayout->setContentsMargins(layout_margin, layout_margin, layout_margin, layout_margin);
 		tbarLayout->addWidget(tbarSlider);
 		// Assuming layout() is the main QVBoxLayout
 		static_cast<QVBoxLayout *>(layout())->insertWidget(0, tbarContainer);
@@ -197,14 +200,14 @@ void SourcererScenesDock::SetupTBar()
 		// Add to content layout (horizontal)
 		tbarContainer = new QWidget(this);
 		QHBoxLayout *tbarLayout = new QHBoxLayout(tbarContainer);
-		tbarLayout->setContentsMargins(8, 8, 8, 8);
+		tbarLayout->setContentsMargins(layout_margin, layout_margin, layout_margin, layout_margin);
 		tbarLayout->addWidget(tbarSlider);
 		contentContainer->layout()->addWidget(tbarContainer);
 	} else if (tBarPos == TBarPosition::Left) {
 		// Add to content layout (horizontal, at left)
 		tbarContainer = new QWidget(this);
 		QHBoxLayout *tbarLayout = new QHBoxLayout(tbarContainer);
-		tbarLayout->setContentsMargins(8, 8, 8, 8);
+		tbarLayout->setContentsMargins(layout_margin, layout_margin, layout_margin, layout_margin);
 		tbarLayout->addWidget(tbarSlider);
 		// Assuming contentContainer->layout() is QHBoxLayout
 		static_cast<QHBoxLayout *>(contentContainer->layout())->insertWidget(0, tbarContainer);
