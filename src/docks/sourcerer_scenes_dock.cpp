@@ -718,9 +718,6 @@ void SourcererScenesDock::HandleTBarRelease()
 	if (!tbarSlider)
 		return;
 
-	const int val = tbarSlider->value();
-	obs_source_t *transition = obs_frontend_get_current_transition();
-
 	// Always call the frontend release to ensure UI consistency and event firing
 	obs_frontend_release_tbar();
 
@@ -729,9 +726,7 @@ void SourcererScenesDock::HandleTBarRelease()
 }
 
 void SourcererScenesDock::HighlightCurrentScene() const
-
 {
-
 	obs_source_t *programScene = nullptr;
 	obs_source_t *previewScene = nullptr;
 
