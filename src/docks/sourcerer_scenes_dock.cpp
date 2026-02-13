@@ -18,11 +18,60 @@
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
+#include <QPainter>
+#include <QStyle>
+#include <QStyleOptionSlider>
+
 #define MIN_ITEM_WIDTH 60
 #define MAX_ITEM_WIDTH 500
 #define ZOOM_STEP 20
 
+// Custom Slider for T-Bar with visual markers
+class TBarSlider : public QSlider {
+public:
+	TBarSlider(Qt::Orientation orientation, QWidget *parent = nullptr) : QSlider(orientation, parent) {}
+
+protected:
+	void paintEvent(QPaintEvent *ev) override
+	{
+		QSlider::paintEvent(ev);
+
+		QPainter p(this);
+		QStyleOptionSlider opt;
+		initStyleOption(&opt);
+
+		QRect groove = style()->subControlRect(QStyle::CC_Slider, &opt, QStyle::SC_SliderGroove, this);
+
+		// Draw clamp markers (lines) at 10% and 90%
+		// T_BAR_PRECISION is 1024. Clamp is T_BAR_PRECISION / 10 = 10%.
+
+		const float pct1 = 0.1f;
+		const float pct2 = 0.9f;
+
+		p.setPen(QColor(255, 80, 80, 180)); // Semi-transparent Red
+
+		if (orientation() == Qt::Horizontal) {
+			int x1 = groove.left() + (int)(groove.width() * pct1);
+			int x2 = groove.left() + (int)(groove.width() * pct2);
+			int top = groove.top() - 2;
+			int bottom = groove.bottom() + 2;
+
+			p.drawLine(x1, top, x1, bottom);
+			p.drawLine(x2, top, x2, bottom);
+		} else {
+			int y1 = groove.top() + (int)(groove.height() * pct1);
+			int y2 = groove.top() + (int)(groove.height() * pct2);
+			int left = groove.left() - 2;
+			int right = groove.right() + 2;
+
+			p.drawLine(left, y1, right, y1);
+			p.drawLine(left, y2, right, y2);
+		}
+	}
+};
+
 SourcererScenesDock::SourcererScenesDock(QWidget *parent) : QWidget(parent)
+
 {
 	QVBoxLayout *mainLayout = new QVBoxLayout(this);
 	mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -86,6 +135,18 @@ static bool IsValidTBarTransition(const obs_source_t *transition)
 
 void SourcererScenesDock::SetupTBar()
 {
+	tBarScrollingWithCtrl = false;
+
+	{
+		// find canvasEditor object in main window children
+
+		const auto *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		auto *canvasEditor = mainWin->findChild<QWidget *>(QStringLiteral("canvasEditor"));
+		auto *previewLayout = mainWin->findChild<QWidget *>(QStringLiteral("previewLayout"));
+		obs_log(LOG_ERROR, "Found canvasEditor: %s", canvasEditor ? "Yes" : "No");
+		obs_log(LOG_ERROR, "Found previewLayout: %s", previewLayout ? "Yes" : "No");
+	}
+
 	// workaround for https://github.com/obsproject/obs-studio/pull/13116
 	static QSlider *buggyOBSTBarSlider = nullptr;
 	static bool checkedBuggyOBSTBar = false;
@@ -140,9 +201,10 @@ void SourcererScenesDock::SetupTBar()
 
 	const Qt::Orientation orientation =
 		(tBarPos == TBarPosition::Bottom || tBarPos == TBarPosition::Top) ? Qt::Horizontal : Qt::Vertical;
-	tbarSlider = new QSlider(orientation, this);
+	tbarSlider = new TBarSlider(orientation, this);
 	tbarSlider->setRange(0, T_BAR_PRECISION - 1);
 	tbarSlider->setToolTip("Transition T-Bar");
+	tbarSlider->installEventFilter(this);
 
 	// Initial value
 	tbarSlider->setValue(obs_frontend_get_tbar_position());
@@ -150,37 +212,44 @@ void SourcererScenesDock::SetupTBar()
 	// Stylesheet for better visibility
 	tbarSlider->setStyleSheet(
 		"QSlider:horizontal { height: 36px; }"
-		"QSlider::groove:horizontal { background: #353535; height: 8px; border-radius: 4px; }"
+		"QSlider::groove:horizontal { "
+		"    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #353535, stop:0.1 #353535, stop:0.101 #903030, stop:0.899 #903030, stop:0.9 #353535, stop:1 #353535); "
+		"    height: 8px; border-radius: 4px; "
+		"}"
 		"QSlider::sub-page:horizontal { background: #4D79E6; border-radius: 4px; }"
-		"QSlider::add-page:horizontal { background: #353535; border-radius: 4px; }"
-		"QSlider::handle:horizontal { background: #FFFFFF; width: 18px; height: 36px; margin: -8px 0; border-radius: 4px; }"
+		"QSlider::add-page:horizontal { background: transparent; border-radius: 4px; }"
+		"QSlider::handle:horizontal { background: #FFFFFF; width: 18px; height: 36px; margin: -18px 0; border-radius: 4px; }"
+		"QSlider[inActiveZone=\"true\"]::handle:horizontal { background: #FF5555; }"
 
 		"QSlider:vertical { width: 36px; }"
-		"QSlider::groove:vertical { background: #353535; width: 8px; border-radius: 4px; }"
-		"QSlider::sub-page:vertical { background: #353535; border-radius: 4px; }"
+		"QSlider::groove:vertical { "
+		"    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #353535, stop:0.1 #353535, stop:0.101 #903030, stop:0.899 #903030, stop:0.9 #353535, stop:1 #353535); "
+		"    width: 8px; border-radius: 4px; "
+		"}"
+		"QSlider::sub-page:vertical { background: transparent; border-radius: 4px; }"
 		"QSlider::add-page:vertical { background: #4D79E6; border-radius: 4px; }"
-		"QSlider::handle:vertical { background: #FFFFFF; height: 18px; width: 36px; margin: 0 -8px; border-radius: 4px; }");
+		"QSlider::handle:vertical { background: #FFFFFF; height: 18px; width: 36px; margin: 0 -18px; border-radius: 4px; }"
+		"QSlider[inActiveZone=\"true\"]::handle:vertical { background: #FF5555; }");
 
-	connect(tbarSlider, &QSlider::valueChanged, [&setOBSBasicTBar](const int value) {
+	connect(tbarSlider, &QSlider::valueChanged, [this, setOBSBasicTBar](const int value) {
+		// Handle Color Update based on Clamp
+		bool inClamp = (value <= T_BAR_CLAMP) || (value >= (T_BAR_PRECISION - T_BAR_CLAMP));
+		bool inActive = !inClamp;
+		bool wasInActive = tbarSlider->property("inActiveZone").toBool();
+		if (inActive != wasInActive) {
+			tbarSlider->setProperty("inActiveZone", inActive);
+			tbarSlider->style()->unpolish(tbarSlider);
+			tbarSlider->style()->polish(tbarSlider);
+		}
+
 		// Only set if triggered by user interaction (we'll block signals when updating from event)
 		setOBSBasicTBar(value);
 	});
 
-	connect(tbarSlider, &QSlider::sliderReleased, [this] {
-		const int cur = obs_frontend_get_tbar_position();
-		const int val = tbarSlider->value();
-
-		obs_log(LOG_INFO, "T-Bar is at position: %d", cur);
-		obs_log(LOG_INFO, "T-Bar release at position: %d", val);
-
-		// this does the transition stuff and send a value change event.
-		obs_frontend_release_tbar();
-
-		// Force update shortly after release to catch any resets
-		QTimer::singleShot(10, [this] { UpdateTBarValue(); });
-	});
+	connect(tbarSlider, &QSlider::sliderReleased, [this] { HandleTBarRelease(); });
 
 	constexpr auto layout_margin = 8;
+
 	if (tBarPos == TBarPosition::Bottom) {
 		// Add to main layout (vertical)
 		tbarContainer = new QWidget(this);
@@ -249,9 +318,43 @@ void SourcererScenesDock::showEvent(QShowEvent *event)
 
 bool SourcererScenesDock::eventFilter(QObject *obj, QEvent *event)
 {
+	if (obj == tbarSlider && event->type() == QEvent::KeyRelease) {
+		QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+		if (keyEvent->key() == Qt::Key_Control) {
+			if (tBarScrollingWithCtrl) {
+				tBarScrollingWithCtrl = false;
+				HandleTBarRelease();
+				return true;
+			}
+		}
+	}
+
 	if (event->type() == QEvent::Wheel) {
+
 		QWheelEvent *wheelEvent = static_cast<QWheelEvent *>(event);
+
+		if (obj == tbarSlider && tbarSlider) {
+			if (wheelEvent->modifiers() & Qt::ControlModifier) {
+				int delta = wheelEvent->angleDelta().y();
+				int step = T_BAR_PRECISION / 20; // 5% per scroll tick
+				if (delta < 0)
+					step = -step;
+
+				int newVal = tbarSlider->value() + step;
+				if (newVal < 0)
+					newVal = 0;
+				if (newVal >= T_BAR_PRECISION)
+					newVal = T_BAR_PRECISION - 1;
+
+				tbarSlider->setValue(newVal);
+				tBarScrollingWithCtrl = true;
+
+				return true;
+			}
+		}
+
 		if (wheelEvent->modifiers() & Qt::ControlModifier) {
+
 			int delta = wheelEvent->angleDelta().y();
 			if (delta > 0)
 				UpdateZoom(1);
@@ -449,6 +552,12 @@ void SourcererScenesDock::keyPressEvent(QKeyEvent *event)
 void SourcererScenesDock::keyReleaseEvent(QKeyEvent *event)
 {
 	UpdateKeyModifiers();
+
+	if (event->key() == Qt::Key_Control && tBarScrollingWithCtrl) {
+		tBarScrollingWithCtrl = false;
+		HandleTBarRelease();
+	}
+
 	QWidget::keyReleaseEvent(event);
 }
 
@@ -602,6 +711,21 @@ void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *dat
 	    event == OBS_FRONTEND_EVENT_TRANSITION_STOPPED || event == OBS_FRONTEND_EVENT_TRANSITION_CHANGED) {
 		dock->HighlightCurrentScene();
 	}
+}
+
+void SourcererScenesDock::HandleTBarRelease()
+{
+	if (!tbarSlider)
+		return;
+
+	const int val = tbarSlider->value();
+	obs_source_t *transition = obs_frontend_get_current_transition();
+
+	// Always call the frontend release to ensure UI consistency and event firing
+	obs_frontend_release_tbar();
+
+	// Force update shortly after release to catch any resets
+	QTimer::singleShot(10, [this] { UpdateTBarValue(); });
 }
 
 void SourcererScenesDock::HighlightCurrentScene() const

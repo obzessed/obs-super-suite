@@ -67,4 +67,7 @@ private:
 	void SetupTBar();
 	void SetTBarPosition(TBarPosition pos);
 	void UpdateTBarValue();
+	void HandleTBarRelease();
+
+	bool tBarScrollingWithCtrl = false;
 };
