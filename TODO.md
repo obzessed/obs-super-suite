@@ -23,6 +23,7 @@
 - Auto Director: Similar to Advanced Scene Switcher.
 - Privacy Blur Filter.
 - Refs
+  - https://github.com/pkviet/obs-studio (music edition by pkviet with a lot of custom audio plugins and features)
   - https://github.com/obsproject/obs-browser
   - https://github.com/streamlabs/obs-sl-browser
   - https://manyatechnologies.com/integrate-webview2-in-qt-cpp/
@@ -85,6 +86,15 @@
   - [ ] MME (Multimedia)
   - [x] ASIO (Steinberg)
 - [ ] OBS only-mouse lock
+- [ ] Track Mixing and filters.
+- [ ] Custom Audio Routing.
+  - An audio encoder plugin to mix tracks and apply filters.
+- [ ] Advanced Monitoring
+  - An output plugin for monitoring multiple sources with filters and stuff.
+    - [ ] Track level mixing. 
+    - [ ] Per source monitoring
+    - [ ] Custom monitoring outputs (virtual audio devices, NDI, etc.)
+    - [ ] Monitoring filters (EQ, compression, etc.)
 - [ ] Browsers
   - [ ] System (Webview2/Gtk WebKit/Apple WebKit)
   - [ ] Built-in (CEF: obs-browser)
