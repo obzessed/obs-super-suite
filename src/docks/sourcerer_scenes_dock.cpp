@@ -26,6 +26,10 @@
 #define MAX_ITEM_WIDTH 500
 #define ZOOM_STEP 20
 
+#define T_BAR_PRECISION 1024
+#define T_BAR_PRECISION_F ((float)T_BAR_PRECISION)
+#define T_BAR_CLAMP (T_BAR_PRECISION / 10)
+
 // Custom Slider for T-Bar with visual markers
 class TBarSlider : public QSlider {
 public:
@@ -45,8 +49,8 @@ protected:
 		// Draw clamp markers (lines) at 10% and 90%
 		// T_BAR_PRECISION is 1024. Clamp is T_BAR_PRECISION / 10 = 10%.
 
-		const float pct1 = 0.1f;
-		const float pct2 = 0.9f;
+		constexpr float pct1 = 0.1f;
+		constexpr float pct2 = 0.9f;
 
 		p.setPen(QColor(255, 80, 80, 180)); // Semi-transparent Red
 
@@ -128,10 +132,6 @@ static bool IsValidTBarTransition(const obs_source_t *transition)
 
 	return true;
 }
-
-#define T_BAR_PRECISION 1024
-#define T_BAR_PRECISION_F ((float)T_BAR_PRECISION)
-#define T_BAR_CLAMP (T_BAR_PRECISION / 10)
 
 void SourcererScenesDock::SetupTBar()
 {
@@ -221,7 +221,6 @@ void SourcererScenesDock::SetupTBar()
 		"QSlider::handle:horizontal { background: #FFFFFF; width: 18px; height: 36px; margin: -18px 0; border-radius: 4px; }"
 		"QSlider::handle:horizontal:hover { background: #F9FAFB; }"
 		"QSlider::handle:horizontal:pressed { background: #F3F4F6; }"
-
 		"QSlider[inActiveZone=\"true\"]::handle:horizontal { background: #FF5555; }"
 
 		"QSlider:vertical { width: 36px; }"
