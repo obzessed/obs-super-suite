@@ -267,7 +267,7 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 	auto OnDisplayCreated = [this](OBSQTDisplay *w) {
 		if (w != display)
 			return;
-		obs_display_add_draw_callback(display->GetDisplay(), SourcererItem::DrawPreview, this);
+		obs_display_add_draw_callback(display->GetDisplay(), &DrawPreview, this);
 	};
 
 	connect(display, &OBSQTDisplay::DisplayCreated, this, OnDisplayCreated);
@@ -276,6 +276,7 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 	signal_handler_t *sh = obs_source_get_signal_handler(source);
 	signal_handler_connect(sh, "rename", SourceRenamed, this);
 	signal_handler_connect(sh, "enable", SourceEnabled, this);
+	// FIXME: might not be a valid signal
 	signal_handler_connect(sh, "disable", SourceDisabled, this);
 
 	if (obs_scene_from_source(source)) {
@@ -290,7 +291,7 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 SourcererItem::~SourcererItem()
 {
 	if (display && display->GetDisplay()) {
-		obs_display_remove_draw_callback(display->GetDisplay(), SourcererItem::DrawPreview, this);
+		obs_display_remove_draw_callback(display->GetDisplay(), &DrawPreview, this);
 	}
 
 	if (!isPreviewDisabled) {
@@ -300,6 +301,7 @@ SourcererItem::~SourcererItem()
 	signal_handler_t *sh = obs_source_get_signal_handler(source);
 	signal_handler_disconnect(sh, "rename", SourceRenamed, this);
 	signal_handler_disconnect(sh, "enable", SourceEnabled, this);
+	// FIXME: might not be a valid signal
 	signal_handler_disconnect(sh, "disable", SourceDisabled, this);
 
 	if (obs_scene_from_source(source)) {

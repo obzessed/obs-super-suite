@@ -14,6 +14,7 @@
 #include <QActionGroup>
 #include <QTimer>
 #include <QGuiApplication>
+#include <QMainWindow>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
@@ -85,6 +86,45 @@ static bool IsValidTBarTransition(const obs_source_t *transition)
 
 void SourcererScenesDock::SetupTBar()
 {
+	// workaround for https://github.com/obsproject/obs-studio/pull/13116
+	static QSlider* buggyOBSTBarSlider = nullptr;
+	static bool checkedBuggyOBSTBar = false;
+
+	auto setOBSBasicTBar = [](const int value) {
+		if (buggyOBSTBarSlider) {
+			buggyOBSTBarSlider->setValue(value);
+		} else {
+			obs_frontend_set_tbar_position(value);
+		}
+	};
+
+	if (!checkedBuggyOBSTBar) {
+		constexpr int test_value = T_BAR_PRECISION / 2;
+
+		auto orig_val = obs_frontend_get_tbar_position();
+		obs_frontend_set_tbar_position(test_value);
+		auto isBuggyOBSTBar = test_value != obs_frontend_get_tbar_position();
+		obs_frontend_set_tbar_position(orig_val);
+		obs_frontend_release_tbar();
+
+		if (isBuggyOBSTBar) {
+			// OBSBasic < OBSMainWindow < QMainWindow
+			const auto *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+
+			// find QSlider in main window children
+			for (QList<QSlider *> sliders = mainWin->findChildren<QSlider *>(); QSlider *slider : sliders) {
+				if (slider->property("class").toString() == "slider-tbar") {
+					slider->setProperty("tbar-slider-fix-applied", true);
+					obs_log(LOG_INFO, "Applied OBSBasic T-Bar fix to QSlider(%s)", "slider-tbar");
+					buggyOBSTBarSlider = slider;
+					break;
+				}
+			}
+		}
+
+		checkedBuggyOBSTBar = true;
+	}
+
 	if (tbarSlider) {
 		delete tbarSlider;
 		tbarSlider = nullptr;
@@ -119,9 +159,9 @@ void SourcererScenesDock::SetupTBar()
 		"QSlider::add-page:vertical { background: #4D79E6; border-radius: 4px; }"
 		"QSlider::handle:vertical { background: #FFFFFF; height: 18px; width: 24px; margin: 0 -8px; border-radius: 2px; }");
 
-	connect(tbarSlider, &QSlider::valueChanged, [](const int value) {
+	connect(tbarSlider, &QSlider::valueChanged, [&setOBSBasicTBar](const int value) {
 		// Only set if triggered by user interaction (we'll block signals when updating from event)
-		obs_frontend_set_tbar_position(value);
+		setOBSBasicTBar(value);
 	});
 
 	connect(tbarSlider, &QSlider::sliderReleased, [this] {
