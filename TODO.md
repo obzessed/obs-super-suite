@@ -9,6 +9,7 @@
   - Power/Pro Console?
 - YouTube Video/Audio Player Source (streamlink?)
 - Properties Dock.
+- Tabbed Window for a Copy of the Main Window (each tab is for different canvases)
 - OBS AI Assistant Dock (Co-Host). (BYO AI model or use a public one with an API key)
 - Extra Canvas Studio Mode.
 - Filters Dock.
@@ -109,6 +110,7 @@
 - [ ] Scene Templates and Presets.
 - [ ] Action Bar like in Prism Live Studio. (Right Side)
   - [ ] Customizable with custom actions and stuff.
+- [ ] TimeCode docks.
 - [ ] Custom Docking System with dock local menu. (UI Like in Prism Live Studio)
 - [ ] Custom Widgets
   - [ ] QtQuick

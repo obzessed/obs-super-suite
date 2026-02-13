@@ -219,6 +219,9 @@ void SourcererScenesDock::SetupTBar()
 		"QSlider::sub-page:horizontal { background: #4D79E6; border-radius: 4px; }"
 		"QSlider::add-page:horizontal { background: transparent; border-radius: 4px; }"
 		"QSlider::handle:horizontal { background: #FFFFFF; width: 18px; height: 36px; margin: -18px 0; border-radius: 4px; }"
+		"QSlider::handle:horizontal:hover { background: #F9FAFB; }"
+		"QSlider::handle:horizontal:pressed { background: #F3F4F6; }"
+
 		"QSlider[inActiveZone=\"true\"]::handle:horizontal { background: #FF5555; }"
 
 		"QSlider:vertical { width: 36px; }"
@@ -229,6 +232,8 @@ void SourcererScenesDock::SetupTBar()
 		"QSlider::sub-page:vertical { background: transparent; border-radius: 4px; }"
 		"QSlider::add-page:vertical { background: #4D79E6; border-radius: 4px; }"
 		"QSlider::handle:vertical { background: #FFFFFF; height: 18px; width: 36px; margin: 0 -18px; border-radius: 4px; }"
+		"QSlider::handle:vertical:hover { background: #F9FAFB; }"
+		"QSlider::handle:vertical:pressed { background: #F3F4F6; }"
 		"QSlider[inActiveZone=\"true\"]::handle:vertical { background: #FF5555; }");
 
 	connect(tbarSlider, &QSlider::valueChanged, [this, setOBSBasicTBar](const int value) {
