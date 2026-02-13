@@ -1,5 +1,6 @@
 - Node editor
   - Fork obs and extend with a node editor frontend.
+  - Prism Live Style fork but open.
 - [ ] Name
   - Super Suite?
   - Power Suite?
@@ -24,6 +25,7 @@
 - Privacy Blur Filter.
 - Refs
   - https://github.com/pkviet/obs-studio (music edition by pkviet with a lot of custom audio plugins and features)
+  - https://obsproject.com/forum/resources/freefx-streamfx-fork.1754/
   - https://github.com/obsproject/obs-browser
   - https://github.com/streamlabs/obs-sl-browser
   - https://manyatechnologies.com/integrate-webview2-in-qt-cpp/
@@ -100,6 +102,14 @@
   - [ ] Built-in (CEF: obs-browser)
   - [ ] CEF (make it a separate dll plugin dependency along with its resources in a subdirectory)
   - [ ] QtWebEngine & QtWebView (make it a separate dll plugin dependency along with its resources in a subdirectory)
+  - [ ] Electron in headless mode with OSR rendering to a texture. (probably too heavy and not worth it)
+    - https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering
+    - Can we capture audio from Electron's headless mode?
+- [ ] Custom Program Preview Widget (Prism Live Style)
+- [ ] Scene Templates and Presets.
+- [ ] Action Bar like in Prism Live Studio. (Right Side)
+  - [ ] Customizable with custom actions and stuff.
+- [ ] Custom Docking System with dock local menu. (UI Like in Prism Live Studio)
 - [ ] Custom Widgets
   - [ ] QtQuick
   - [ ] QtQml
