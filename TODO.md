@@ -9,6 +9,7 @@
   - Power/Pro Console?
 - YouTube Video/Audio Player Source (streamlink?)
 - Properties Dock.
+- Sources to Scene Item Graph.
 - Tabbed Window for a Copy of the Main Window (each tab is for different canvases)
 - OBS AI Assistant Dock (Co-Host). (BYO AI model or use a public one with an API key)
 - Extra Canvas Studio Mode.

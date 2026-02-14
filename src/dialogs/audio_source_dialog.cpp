@@ -49,11 +49,15 @@ void AudioSourceDialog::setupUi()
 	const char *typeId = nullptr;
 	while (obs_enum_input_types(idx++, &typeId)) {
 		if (!typeId) continue;
-		
+
+		const uint32_t outputFlags = obs_get_source_output_flags(typeId);
+
+		// Skip if source is internal
+		if (outputFlags & OBS_SOURCE_CAP_DISABLED) continue;
+
 		// Check if it has audio capability
-		uint32_t outputFlags = obs_get_source_output_flags(typeId);
 		if (!(outputFlags & OBS_SOURCE_AUDIO)) continue;
-		
+
 		// Add to combo with display name
 		const char *displayName = obs_source_get_display_name(typeId);
 		m_typeCombo->addItem(displayName ? displayName : typeId, typeId);
