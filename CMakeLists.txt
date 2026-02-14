@@ -20,6 +20,8 @@ CPMAddPackage(
   URI "gh:nlohmann/json@3.12.0"
   OPTIONS "JSON_BuildTests OFF"
 )
+CPMAddPackage("gh:Curve/lime#v6.0")
+CPMAddPackage("gh:Curve/channel#v2.3")
 
 #CPMAddPackage(
 #  URI "gh:winsoft666/QWebView#v2.0.1"
@@ -80,7 +82,11 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
   #  fmt::fmt
   nlohmann_json::nlohmann_json
-  WebView2::WebView2
+  WebView2::WebView2 # WebView2 SDK
+  # Util libraries
+#  cr::lime
+#  cr::channel
+   # CEF
 #  CefViewCore
 #  QCefView
 #  QWebView.CEF
@@ -104,6 +110,8 @@ if(ENABLE_QT)
   )
 endif()
 
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/plugin-version.h.in ${CMAKE_CURRENT_SOURCE_DIR}/src/plugin-version.h)
+
 file(GLOB_RECURSE PLUGIN_SOURCES
   src/*.c
   src/*.cc
@@ -111,10 +119,10 @@ file(GLOB_RECURSE PLUGIN_SOURCES
   src/*.cxx
 )
 # Exclude test executable from plugin sources
+list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.c$")
+list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.cc$")
 list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.cpp$")
 list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.cxx$")
-list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.cc$")
-list(FILTER PLUGIN_SOURCES EXCLUDE REGEX "test-.*\\.c$")
 
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${PLUGIN_SOURCES})
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE

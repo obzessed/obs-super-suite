@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QPointer>
 #include <QJsonObject>
+
 #include "secondary_window.h"
 
 class DockWindowManager : public QDialog {

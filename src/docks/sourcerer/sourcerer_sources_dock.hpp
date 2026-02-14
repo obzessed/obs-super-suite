@@ -6,7 +6,7 @@
 #include <obs.hpp>
 #include <QJsonObject>
 #include "sourcerer_item.hpp"
-#include "../utils/widgets/flow_layout.hpp"
+#include "../../utils/widgets/flow_layout.hpp"
 
 #include <QSlider>
 #include <QRubberBand>

@@ -1,14 +1,25 @@
 #pragma once
 
+#include <obs.h>
+
 #include <QMainWindow>
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QGraphicsItem>
 #include <QGraphicsPathItem>
 #include <QGraphicsSceneMouseEvent>
-#include <obs.h>
 
-enum class NodeType { Canvas, AudioMixer, VideoInput, AudioInput, MediaInput, Scene, Transition, Encoder, Output };
+enum class NodeType {
+	AudioMixer,
+	VideoInput,
+	AudioInput,
+	MediaInput,
+	Scene,
+	Transition,
+	Canvas,
+	Encoder,
+	Output,
+};
 
 class GraphEdge;
 

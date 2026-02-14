@@ -1,35 +1,47 @@
 #include <plugin-support.h>
+
+#pragma region stdlib_headers
+#include <utility>
+#include <vector>
+#include <string>
+#include <map>
+#pragma endregion
+
+#pragma region obs_headers
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <callback/signal.h>
+#pragma endregion
 
+#pragma region qt_headers
+#include <QJsonDocument>
 #include <QMessageBox>
 #include <QMainWindow>
-#include <QPointer>
-
-#include "super_suite.h"
-#include "models/audio_channel_source_config.h"
-#include "dialogs/audio_channels.h"
-#include "dialogs/channels_viewer.h"
-#include "dialogs/outputs_viewer.h"
-#include "dialogs/encoders_viewer.h"
-#include "windows/dock_window_manager.h"
-#include "docks/mixer_dock.h"
-#include "docks/wrapper_test_dock.h"
-#include "docks/sourcerer_sources_dock.hpp"
-#include "docks/sourcerer_scenes_dock.hpp"
-#include "dialogs/canvas_manager.h"
-#include "dialogs/browser_manager.h"
-#include "windows/encoding_graph_window.h"
-
-#include <vector>
-#include <utility>
-#include <map>
-#include <string>
-
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QPointer>
+#pragma endregion
+
+#pragma region plugin_headers
+#include "super_suite.h"
+
+#include "models/audio_channel_source_config.h"
+
+#include "docks/mixer_dock.h"
+#include "docks/wrapper_test_dock.h"
+#include "docks/sourcerer/sourcerer_scenes_dock.hpp"
+#include "docks/sourcerer/sourcerer_sources_dock.hpp"
+
+#include "dialogs/canvas_manager.h"
+#include "dialogs/audio_channels.h"
+#include "dialogs/outputs_viewer.h"
+#include "dialogs/encoders_viewer.h"
+#include "dialogs/channels_viewer.h"
+#include "dialogs/browser_manager.h"
+
+#include "windows/dock_window_manager.h"
+#include "windows/encoding_graph_window.h"
+#pragma endregion
 
 // OBS Channels (64) Reservations
 // 1 - Scene Transition
@@ -189,14 +201,14 @@ static void on_source_rename(void *data, calldata_t *cd)
 
 	// Find config by previous name (source has already been renamed by OBS)
 	auto &sources = AudioChSrcConfig::get()->getSources();
-	for (int i = 0; i < sources.size(); i++) {
-		if (sources[i].name == QString::fromUtf8(prev_name)) {
-			sources[i].name = QString::fromUtf8(new_name);
+	for (auto & source : sources) {
+		if (source.name == QString::fromUtf8(prev_name)) {
+			source.name = QString::fromUtf8(new_name);
 			AudioChSrcConfig::get()->save();
 
 			// Update UI using the source's UUID
 			if (settings_dialog) {
-				settings_dialog->updateSourceName(sources[i].sourceUuid, QString::fromUtf8(new_name));
+				settings_dialog->updateSourceName(source.sourceUuid, QString::fromUtf8(new_name));
 			}
 
 			obs_log(LOG_INFO, "ASIO source renamed: '%s' -> '%s'", prev_name, new_name);
@@ -261,8 +273,7 @@ static void save_source_filters(obs_source_t *source)
 		// Wrap in object with "filters" key for consistent parsing
 		obs_data_t *wrapper = obs_data_create();
 		obs_data_set_array(wrapper, "filters", filterArray);
-		const char *json = obs_data_get_json(wrapper);
-		if (json) {
+		if (const char *json = obs_data_get_json(wrapper)) {
 			QJsonParseError error;
 			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json), &error);
 			if (error.error == QJsonParseError::NoError && doc.isObject()) {

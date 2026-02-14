@@ -1,6 +1,6 @@
 /*
-Plugin Name
-Copyright (C) <Year> <Developer> <Email Address>
+Super Suite for OBS Studio
+Copyright (C) 2026 psyirius <psyirius@gmail.com>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,8 +18,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs-module.h>
 #include <plugin-support.h>
-#include "./super_suite.h"
-#include "./vendor/master-level-meter/plugin-main.h"
+
+#include "super_suite.h"
+#include "vendor/master-level-meter/plugin-main.h"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")

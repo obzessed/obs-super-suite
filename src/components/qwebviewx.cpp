@@ -62,7 +62,10 @@ void QWebViewX::showEvent(QShowEvent* event)
 			backend = std::make_unique<OBSBrowserCEFBackend>();
 		}
 
-		backend->setOnReady([this] { emit browserReady(); });
+		backend->setOnReady([this] {
+			backend->setAudioMuted(true); // Mute by default, since it's used for panels like chat/activity which don't need audio.
+			emit browserReady();
+		});
 
 		BrowserBackend::InitParams params;
 		params.parentWindowId = reinterpret_cast<void *>(winId());

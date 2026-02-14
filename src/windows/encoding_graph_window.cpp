@@ -1,6 +1,7 @@
 #include "encoding_graph_window.h"
 
-#include "plugin-support.h"
+#include <plugin-support.h>
+#include <obs-frontend-api.h>
 
 #include <QMap>
 #include <QVBoxLayout>
@@ -21,7 +22,6 @@
 #include <QKeyEvent>
 #include <QMenu>
 #include <QScrollBar>
-#include <obs-frontend-api.h>
 
 // ----------------------------------------------------------------------------
 // GraphNode

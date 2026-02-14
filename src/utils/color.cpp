@@ -1,4 +1,3 @@
-
 #include "color.hpp"
 
 QColor color_from_int(long long val)

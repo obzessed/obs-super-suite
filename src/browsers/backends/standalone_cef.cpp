@@ -87,3 +87,23 @@ void StandaloneCEFBackend::clearCookies() {
 		// I'll assume standard naming or verify later.
 	}
 }
+void StandaloneCEFBackend::setAudioMuted(bool muted)
+{
+	if (m_view) {
+		// m_view->setAudioMuted(muted); // Hypothetical API
+	}
+}
+bool StandaloneCEFBackend::isAudioMuted() const
+{
+	if (m_view) {
+		// return m_view->isAudioMuted(); // Hypothetical API
+	}
+	return false;
+}
+bool StandaloneCEFBackend::isPlayingAudio() const
+{
+	if (m_view) {
+		// return m_view->isPlayingAudio(); // Hypothetical API
+	}
+	return false;
+}

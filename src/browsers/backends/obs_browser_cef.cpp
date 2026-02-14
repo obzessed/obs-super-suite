@@ -92,6 +92,32 @@ uint32_t OBSBrowserCEFBackend::getCapabilities()
 	return (uint32_t)(BrowserCapabilities::JavaScript | BrowserCapabilities::Transparency |
 			  BrowserCapabilities::OSR);
 }
+void OBSBrowserCEFBackend::setAudioMuted(bool muted)
+{
+	// Not supported by QCefWidget wrapper directly yet?
+	// For now, no-op or log?
+	// User asked for it, we should try.
+	// But `QCefWidget` is minimal.
+	// We'll leave empty for now as implementation detail of the wrapper.
+}
+bool OBSBrowserCEFBackend::isAudioMuted() const
+{
+	// Not supported by QCefWidget wrapper directly yet?
+	// For now, no-op or log?
+	// User asked for it, we should try.
+	// But `QCefWidget` is minimal.
+	// We'll return false for now as implementation detail of the wrapper.
+	return false;
+}
+bool OBSBrowserCEFBackend::isPlayingAudio() const
+{
+	// Not supported by QCefWidget wrapper directly yet?
+	// For now, no-op or log?
+	// User asked for it, we should try.
+	// But `QCefWidget` is minimal.
+	// We'll return false for now as implementation detail of the wrapper.
+	return false;
+}
 
 void OBSBrowserCEFBackend::clearCookies()
 {

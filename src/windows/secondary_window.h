@@ -7,13 +7,12 @@
 #include <QEvent>
 #include <QLabel>
 #include <QCloseEvent>
-#include <QDockWidget> // Added this include for QDockWidget
+#include <QDockWidget>
 
 class DockWindowManager;
 
 class SecondaryWindow : public QMainWindow {
 	Q_OBJECT
-
 
 public:
 	explicit SecondaryWindow(int index, DockWindowManager *manager, QWidget *parent = nullptr);

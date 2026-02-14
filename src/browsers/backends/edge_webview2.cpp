@@ -64,11 +64,48 @@ uint32_t EdgeWebview2Backend::getCapabilities()
 {
 	return (uint32_t)(BrowserCapabilities::JavaScript | BrowserCapabilities::Transparency | BrowserCapabilities::OSR);
 }
+void EdgeWebview2Backend::setAudioMuted(bool muted)
+{
+	if (m_webview) {
+		if (const auto wv2_8 = m_webview.try_query<ICoreWebView2_8>()) {
+			wv2_8->put_IsMuted(muted);
+		}
+	}
+}
+bool EdgeWebview2Backend::isAudioMuted() const
+{
+	if (m_webview) {
+		BOOL muted;
+		const auto wv2_8 = m_webview.try_query<ICoreWebView2_8>();
+		if (!wv2_8) {
+			return false; // Not supported, assume not muted
+		}
+		if (SUCCEEDED(wv2_8->get_IsMuted(&muted))) {
+			return muted;
+		}
+	}
+
+	return false;
+}
+bool EdgeWebview2Backend::isPlayingAudio() const
+{
+	if (m_webview) {
+		BOOL playing;
+		const auto wv2_8 = m_webview.try_query<ICoreWebView2_8>();
+		if (!wv2_8) {
+			return false; // Not supported, assume not playing
+		}
+		if (SUCCEEDED(wv2_8->get_IsDocumentPlayingAudio(&playing))) {
+			return playing;
+		}
+	}
+	return false;
+}
 
 void EdgeWebview2Backend::clearCookies() {
-    if (m_webview) {
-        // TODO
-    }
+	if (m_webview) {
+		// TODO
+	}
 }
 
 void EdgeWebview2Backend::initWebView(HWND hwnd) {
@@ -126,37 +163,70 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
 					&token);
 
                                 	// Step 6 - Communication between host and web content
-				// Set an event handler for the host to return received message back to the web content
-				m_webview->add_WebMessageReceived(
-				wrl::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-				    [](ICoreWebView2 *webview,
-				       ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT
-				    {
-					PWSTR message;
-					args->TryGetWebMessageAsString(&message);
-					// processMessage(&message);
-					webview->PostWebMessageAsString(message);
-					CoTaskMemFree(message);
-					return S_OK;
-				    })
-				    .Get(),
-				&token);
+					// Set an event handler for the host to return received message back to the web content
+					m_webview->add_WebMessageReceived(
+					wrl::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+					    [](ICoreWebView2 *webview,
+					       ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT
+					    {
+						PWSTR message;
+						args->TryGetWebMessageAsString(&message);
+						// processMessage(&message);
+						webview->PostWebMessageAsString(message);
+						CoTaskMemFree(message);
+						return S_OK;
+					    })
+					    .Get(),
+					&token);
 
-                                	// startup script
-				    m_webview->AddScriptToExecuteOnDocumentCreated(L"Object.freeze(Object);", nullptr);
+                                		// startup script
+					    m_webview->AddScriptToExecuteOnDocumentCreated(L"Object.freeze(Object);", nullptr);
 
 				    // Schedule an async task to get the document URL
-				m_webview->ExecuteScript(
-					L"window.document.URL;",
-				wrl::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
-				    [](HRESULT errorCode, LPCWSTR resultObjectAsJson) -> HRESULT
-				    {
-					LPCWSTR URL = resultObjectAsJson;
-					// doSomethingWithURL(URL);
-					return S_OK;
-				    })
-				    .Get());
+					m_webview->ExecuteScript(
+						L"window.document.URL;",
+					wrl::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+					    [](HRESULT errorCode, LPCWSTR resultObjectAsJson) -> HRESULT
+					    {
+						LPCWSTR URL = resultObjectAsJson;
+						// doSomethingWithURL(URL);
+						return S_OK;
+					    })
+					    .Get());
                                 }
+
+                            	// Callbacks
+                                if (const auto webview2_8 = m_webview.try_query<ICoreWebView2_8>()) {
+					EventRegistrationToken token;
+					// Register a handler for the IsDocumentPlayingAudioChanged event.
+				    webview2_8->add_IsDocumentPlayingAudioChanged(
+					wrl::Callback<ICoreWebView2IsDocumentPlayingAudioChangedEventHandler>(
+					    [this, webview2_8](ICoreWebView2* sender, IUnknown* args) -> HRESULT
+					    {
+					    	if (m_audioPlayingChangedCallback) {
+							m_audioPlayingChangedCallback();
+					    	}
+						return S_OK;
+					    })
+					    .Get(),
+					&token);
+
+				    // Register a handler for the IsMutedChanged event.
+				    webview2_8->add_IsMutedChanged(
+					wrl::Callback<ICoreWebView2IsMutedChangedEventHandler>(
+					    [this, webview2_8](ICoreWebView2* sender, IUnknown* args) -> HRESULT
+					    {
+					    	if (m_mutedStateChangeCallback) {
+					    		BOOL muted;
+						    if (SUCCEEDED(webview2_8->get_IsMuted(&muted))) {
+							    m_mutedStateChangeCallback(muted);
+						    }
+					    	}
+						return S_OK;
+					    })
+					    .Get(),
+					&token);
+				}
 
                                 // Set initial bounds
                                 RECT bounds;

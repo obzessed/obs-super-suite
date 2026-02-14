@@ -19,7 +19,12 @@ public:
 	void clearCookies() override;
 	void setOnReady(BrowserReadyCallback callback) override { m_readyCallback = callback; }
 	void setOnNavigationStart(NavigationStartingCallback callback) override { m_navigationStartingCallback = callback; }
+	void setOnMutedStateChange(MutedStateChangeCallback callback) override { m_mutedStateChangeCallback = callback; }
+	void setOnAudioPlayingChanged(AudioPlayingChangedCallback callback) override { m_audioPlayingChangedCallback = callback; }
 	uint32_t getCapabilities() override;
+	void setAudioMuted(bool muted) override;
+	[[nodiscard]] bool isAudioMuted() const override;
+	[[nodiscard]] bool isPlayingAudio() const override;
 
 	// Specific to CEF wrapper: handle onOBSBrowserReady? 
 	// The manager calls onOBSBrowserReady which calls activeDocks->onOBSBrowserReady.
@@ -31,6 +36,8 @@ private:
 	QCefWidget* m_cefWidget = nullptr;
 	BrowserReadyCallback m_readyCallback;
 	NavigationStartingCallback m_navigationStartingCallback;
+	MutedStateChangeCallback m_mutedStateChangeCallback;
+	AudioPlayingChangedCallback m_audioPlayingChangedCallback;
 	QString m_script;
 	QString m_css; // We don't have separate CSS setter in interface yet, but init might pass it?
 	// Interface has setStartupScript. We assume it combines JS+CSS or we add setCSS to interface?

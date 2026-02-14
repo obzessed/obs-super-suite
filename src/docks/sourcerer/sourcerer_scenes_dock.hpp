@@ -5,7 +5,7 @@
 #include <vector>
 #include <obs.hpp>
 #include "sourcerer_item.hpp"
-#include "../utils/widgets/flow_layout.hpp"
+#include "../../utils/widgets/flow_layout.hpp"
 
 #include <QSlider>
 

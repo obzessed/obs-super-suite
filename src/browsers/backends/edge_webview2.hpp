@@ -7,6 +7,7 @@
 #include <QString>
 
 #include <wrl.h>
+#include <wil/com.h>
 #include <WebView2.h>
 
 namespace wrl = Microsoft::WRL;
@@ -25,13 +26,20 @@ public:
 	void clearCookies() override;
 	void setOnReady(BrowserReadyCallback callback) override { m_readyCallback = callback; }
 	void setOnNavigationStart(NavigationStartingCallback callback) override { m_navigationStartingCallback = callback; }
+	void setOnMutedStateChange(MutedStateChangeCallback callback) override { m_mutedStateChangeCallback = callback; }
+	void setOnAudioPlayingChanged(AudioPlayingChangedCallback callback) override { m_audioPlayingChangedCallback = callback; }
 	uint32_t getCapabilities() override;
+	void setAudioMuted(bool muted) override;
+	[[nodiscard]] bool isAudioMuted() const override;
+	[[nodiscard]] bool isPlayingAudio() const override;
 
 private:
-	wrl::ComPtr<ICoreWebView2> m_webview;
-	wrl::ComPtr<ICoreWebView2Controller> m_controller;
+	wil::com_ptr<ICoreWebView2> m_webview;
+	wil::com_ptr<ICoreWebView2Controller> m_controller;
 	BrowserReadyCallback m_readyCallback;
 	NavigationStartingCallback m_navigationStartingCallback;
+	MutedStateChangeCallback m_mutedStateChangeCallback;
+	AudioPlayingChangedCallback m_audioPlayingChangedCallback;
 	InitParams m_params;
 
 	void initWebView(HWND hwnd);

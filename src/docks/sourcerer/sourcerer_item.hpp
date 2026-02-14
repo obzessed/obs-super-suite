@@ -3,7 +3,7 @@
 #include <QWidget>
 #include <QLabel>
 #include <obs.hpp>
-#include "../utils/widgets/qt-display.hpp"
+#include "../../utils/widgets/qt-display.hpp"
 
 class QMenu;
 class QContextMenuEvent;
