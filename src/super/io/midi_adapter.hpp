@@ -117,6 +117,10 @@ struct PipelinePreview {
 	QVector<bool> pre_filter_enabled;
 	QVector<bool> interp_enabled;
 	QVector<bool> post_filter_enabled;
+	// Stage type names (for UI labels)
+	QStringList pre_filter_names;
+	QStringList interp_names;
+	QStringList post_filter_names;
 	// Range info (for UI labels)
 	int input_min = 0, input_max = 127;
 	double output_min = 0.0, output_max = 1.0;

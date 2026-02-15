@@ -72,6 +72,7 @@ private:
 	double m_raw = 0.0, m_final = 0.0;
 	QVector<Column> m_columns;
 	int m_prev_col_count = 0;
+	QString m_prev_name_key;
 	static constexpr int COL_BUF = 120;
 };
 
@@ -123,6 +124,8 @@ public:
 	void set_range(double mn, double mx) { m_min = mn; m_max = mx; update(); }
 	void set_title(const QString &t) { m_title = t; }
 	void set_dimmed(bool d) { m_dimmed = d; update(); }
+	void close_detail();
+	void force_update() { update(); }
 	QSize sizeHint() const override { return {m_sample_count, 36}; }
 protected:
 	void paintEvent(QPaintEvent *) override;
@@ -150,12 +153,14 @@ class StageRow : public QWidget {
 	Q_OBJECT
 public:
 	StageRow(int index, const QColor &dot_color, QWidget *parent = nullptr);
-	virtual ~StageRow() = default;
+	virtual ~StageRow();
 	void set_preview(double in, double out);
 	void set_index(int idx);
 	int index() const { return m_index; }
 	void pulse_activity();
 	bool is_stage_enabled() const;
+	virtual void update_title(const QString &prefix, int num);
+	void set_title_prefix(const QString &p) { m_title_prefix = p; }
 signals:
 	void move_up(int index);
 	void move_down(int index);
@@ -172,6 +177,7 @@ protected:
 	QLabel *m_p2_label;
 	QLabel *m_preview;
 	ActivityDot *m_dot;
+	QString m_title_prefix;
 public:
 	MiniGraph *m_graph;
 };
@@ -212,13 +218,16 @@ public:
 	void set_value(double val);
 	void pulse_input();
 	void set_raw_midi(int raw);
+	void add_pipeline_button(QPushButton *btn) { m_pipeline_btn_slot->addWidget(btn); }
 private:
 	QLabel *m_name_label;
 	QLabel *m_value_label;
 	QLabel *m_raw_label;
 	QProgressBar *m_meter;
 	ActivityDot *m_input_dot;
+	ActivityDot *m_output_dot;
 	MiniGraph *m_graph;
+	QHBoxLayout *m_pipeline_btn_slot;
 	double m_min, m_max;
 	double m_last_raw_norm = 0.0;
 };
@@ -283,6 +292,7 @@ public:
 	bool needs_preview_convergence() const;
 	void sync_preview_params();
 	const MidiPortBinding &preview_state() const { return m_preview_state; }
+	void pulse_header_activity();
 signals:
 	void expand_requested(int index);
 	void remove_requested(int index);
@@ -307,6 +317,7 @@ private:
 	QPushButton *m_header_btn = nullptr;
 	QCheckBox *m_header_enabled = nullptr;
 	QPushButton *m_header_remove = nullptr;
+	ActivityDot *m_header_dot = nullptr;
 
 	// Body
 	QWidget *m_body = nullptr;
@@ -454,6 +465,7 @@ private:
 	QTimer *m_preview_timer = nullptr;
 	int m_last_raw = 0;
 	void on_preview_tick();
+	void refresh_preview();
 
 	// Pipeline Visualizer
 	QPushButton *m_pipeline_btn = nullptr;

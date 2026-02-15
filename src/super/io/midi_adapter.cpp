@@ -364,6 +364,7 @@ PipelinePreview MidiPortBinding::preview_pipeline(int raw) const
 		val = f.process(val);
 		p.after_pre_filter.append(val);
 		p.pre_filter_enabled.append(f.enabled);
+		p.pre_filter_names.append(f.type_name());
 	}
 	p.pre_filtered = val;
 
@@ -390,6 +391,7 @@ PipelinePreview MidiPortBinding::preview_pipeline(int raw) const
 		val = s.process(val);
 		p.after_interp.append(val);
 		p.interp_enabled.append(s.enabled);
+		p.interp_names.append(s.type_name());
 	}
 
 	// 4. Denormalize
@@ -401,6 +403,7 @@ PipelinePreview MidiPortBinding::preview_pipeline(int raw) const
 		val = f.process(val);
 		p.after_post_filter.append(val);
 		p.post_filter_enabled.append(f.enabled);
+		p.post_filter_names.append(f.type_name());
 	}
 	p.final_value = val;
 

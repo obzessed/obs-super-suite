@@ -44,13 +44,15 @@ PipelineVisualDialog::PipelineVisualDialog(const QString &name,
 }
 
 void PipelineVisualDialog::feed(int raw, const PipelinePreview &p) {
-	// Rebuild columns if stage count changed
+	// Rebuild columns if stage count or names changed
 	int n_pre = p.after_pre_filter.size();
 	int n_int = p.after_interp.size();
 	int n_post = p.after_post_filter.size();
 	// total = pre + Norm + interp + Map + post
 	int total = n_pre + 1 + n_int + 1 + n_post;
-	if (total != m_prev_col_count) {
+	QStringList all_names = p.pre_filter_names + p.interp_names + p.post_filter_names;
+	QString name_key = all_names.join("|");
+	if (total != m_prev_col_count || name_key != m_prev_name_key) {
 		m_columns.clear();
 		auto mk = [&](const QString &l, const QColor &col, double mn, double mx) {
 			Column c; c.label = l; c.color = col;
@@ -58,18 +60,25 @@ void PipelineVisualDialog::feed(int raw, const PipelinePreview &p) {
 			c.buf_in.resize(COL_BUF, 0); c.buf_out.resize(COL_BUF, 0);
 			m_columns.append(c);
 		};
-		for (int i = 0; i < n_pre; i++)
-			mk(QString("Pre #%1").arg(i+1), QColor(46,204,113), 0, 127);
+		for (int i = 0; i < n_pre; i++) {
+			QString name = (i < p.pre_filter_names.size()) ? p.pre_filter_names[i] : "";
+			mk(QString("Pre #%1\n%2").arg(i+1).arg(name), QColor(46,204,113), 0, 127);
+		}
 		mk(QString("Norm\n%1-%2\u21920-1").arg(p.input_min).arg(p.input_max),
 			QColor(180,140,255), 0, 127);
-		for (int i = 0; i < n_int; i++)
-			mk(QString("Interp #%1").arg(i+1), QColor(52,152,219), 0, 1.0);
+		for (int i = 0; i < n_int; i++) {
+			QString name = (i < p.interp_names.size()) ? p.interp_names[i] : "";
+			mk(QString("Interp #%1\n%2").arg(i+1).arg(name), QColor(52,152,219), 0, 1.0);
+		}
 		mk(QString("Map\n0-1\u2192%1-%2")
 			.arg(p.output_min,0,'f',1).arg(p.output_max,0,'f',1),
 			QColor(255,180,80), m_out_min, m_out_max);
-		for (int i = 0; i < n_post; i++)
-			mk(QString("Post #%1").arg(i+1), QColor(230,126,34), m_out_min, m_out_max);
+		for (int i = 0; i < n_post; i++) {
+			QString name = (i < p.post_filter_names.size()) ? p.post_filter_names[i] : "";
+			mk(QString("Post #%1\n%2").arg(i+1).arg(name), QColor(230,126,34), m_out_min, m_out_max);
+		}
 		m_prev_col_count = total;
+		m_prev_name_key = name_key;
 	}
 	// Push values into columns
 	int ci = 0;
@@ -229,12 +238,17 @@ void PipelineVisualDialog::paintEvent(QPaintEvent *) {
 		p.drawRoundedRect(col_area.adjusted(-1,-1,1,1), 3, 3);
 
 		if (c.dimmed) {
-			// Greyed out — dark overlay + dashed center line
-			p.setPen(Qt::NoPen); p.setBrush(QColor(30,30,38,180));
-			p.drawRoundedRect(col_area, 3, 3);
-			p.setPen(QPen(QColor(70,70,80), 0.5, Qt::DashLine));
+			// Grid (faint)
+			p.setPen(QPen(QColor(35,35,45), 0.5, Qt::DotLine));
 			p.drawLine(col_area.left(), col_area.top()+graph_h/2,
 				col_area.right(), col_area.top()+graph_h/2);
+			// Draw series in grey
+			Column grey_c = c;
+			grey_c.color = QColor(65,65,75);
+			draw_col_graph(p, col_area, grey_c);
+			// Dark overlay
+			p.setPen(Qt::NoPen); p.setBrush(QColor(22,22,30,140));
+			p.drawRoundedRect(col_area, 3, 3);
 			// Label (dimmed)
 			p.setPen(QColor(80,80,90));
 			p.setFont(QFont("sans-serif", 6));
@@ -579,12 +593,19 @@ void MiniGraph::paintEvent(QPaintEvent *) {
 	QPainter p(this);
 	p.setRenderHint(QPainter::Antialiasing);
 	if (m_dimmed) {
-		// Greyed out — draw flat line and dark overlay
+		// Greyed out — draw existing series desaturated, then dark overlay
+		QColor grey(70, 70, 80);
+		if (m_full || m_head > 1) {
+			if (m_dual) draw_series(p, m_samples_b, m_head, m_full, QColor(55,55,65));
+			draw_series(p, m_samples, m_head, m_full, grey);
+		} else {
+			p.setPen(QPen(grey, 0.5, Qt::DashLine));
+			p.drawLine(0, height()/2, width(), height()/2);
+		}
+		// Dark overlay
 		p.setPen(Qt::NoPen);
-		p.setBrush(QColor(30,30,38,180));
+		p.setBrush(QColor(22,22,30,140));
 		p.drawRect(rect());
-		p.setPen(QPen(QColor(80,80,90), 0.5, Qt::DashLine));
-		p.drawLine(0, height()/2, width(), height()/2);
 		return;
 	}
 	if (m_dual) {
@@ -596,6 +617,9 @@ void MiniGraph::paintEvent(QPaintEvent *) {
 }
 void MiniGraph::forward_to_detail(double a, double b) {
 	if (m_detail) m_detail->push(a, b);
+}
+void MiniGraph::close_detail() {
+	if (m_detail) { m_detail->close(); m_detail = nullptr; }
 }
 void MiniGraph::mouseDoubleClickEvent(QMouseEvent *) {
 	if (m_detail) { m_detail->raise(); m_detail->activateWindow(); return; }
@@ -622,6 +646,9 @@ StageRow::StageRow(int index, const QColor &dot_color, QWidget *parent)
 	QColor dim_in = dot_color; dim_in.setAlpha(100);
 	m_graph->set_secondary_color(dim_in);
 	m_graph->setFixedSize(60, 28);
+}
+StageRow::~StageRow() {
+	m_graph->close_detail();
 }
 void StageRow::setup_base_row(QHBoxLayout *row) {
 	row->setContentsMargins(2,1,2,1); row->setSpacing(3);
@@ -659,6 +686,11 @@ void StageRow::set_preview(double in, double out) {
 void StageRow::set_index(int idx) { m_index = idx; }
 void StageRow::pulse_activity() { if (m_enabled->isChecked()) m_dot->pulse(); }
 bool StageRow::is_stage_enabled() const { return m_enabled->isChecked(); }
+void StageRow::update_title(const QString &prefix, int num) {
+	QString pfx = m_title_prefix.isEmpty() ? prefix : m_title_prefix;
+	QString type_name = m_type->currentText();
+	m_graph->set_title(QString("%1 #%2 — %3").arg(pfx).arg(num).arg(type_name));
+}
 
 // ===== InterpStageRow =====================================================
 InterpStageRow::InterpStageRow(int index, QWidget *parent)
@@ -689,6 +721,7 @@ void InterpStageRow::on_type_changed(int) {
 	}
 	m_p1_label->setVisible(s1); m_p1->setVisible(s1);
 	m_p2_label->setVisible(s2); m_p2->setVisible(s2);
+	update_title("Interp", m_index + 1);
 	emit changed();
 }
 void InterpStageRow::load(const InterpStage &s) {
@@ -741,6 +774,7 @@ void FilterStageRow::on_type_changed(int) {
 	}
 	m_p1_label->setVisible(s1); m_p1->setVisible(s1);
 	m_p2_label->setVisible(s2); m_p2->setVisible(s2);
+	update_title(m_title_prefix, m_index + 1);
 	emit changed();
 }
 void FilterStageRow::load(const FilterStage &s) {
@@ -759,39 +793,49 @@ MasterPreview::MasterPreview(const QString &name, double min, double max, QWidge
 	: QWidget(parent), m_min(min), m_max(max)
 {
 	auto *outer = new QVBoxLayout(this);
-	outer->setContentsMargins(8,6,8,6); outer->setSpacing(4);
-	// Top row: dot, name, raw, value, meter
+	outer->setContentsMargins(10,8,10,8); outer->setSpacing(4);
+	// Top row: dot, name, raw
 	auto *top = new QHBoxLayout();
-	top->setSpacing(8);
+	top->setSpacing(6);
 	m_input_dot = new ActivityDot(QColor(100,180,255), this);
 	m_name_label = new QLabel(QString("<b style='color:#8af;'>⚡ %1</b>").arg(name), this);
-	m_value_label = new QLabel("0.000", this);
-	m_value_label->setStyleSheet("color:#fff;font-size:16px;font-weight:bold;font-family:monospace;");
-	m_value_label->setAlignment(Qt::AlignRight|Qt::AlignVCenter);
-	m_value_label->setMinimumWidth(80);
 	m_raw_label = new QLabel("MIDI: —", this);
-	m_raw_label->setStyleSheet("color:#888;font-size:10px;");
-	m_meter = new QProgressBar(this);
-	m_meter->setRange(0, 1000); m_meter->setValue(0);
-	m_meter->setTextVisible(false); m_meter->setFixedHeight(6);
-	m_meter->setStyleSheet("QProgressBar{background:rgba(40,40,55,200);border:none;border-radius:3px;}"
-		"QProgressBar::chunk{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4a8af4,stop:1 #7cf);border-radius:3px;}");
+	m_raw_label->setStyleSheet("color:#666;font-size:10px;");
 	top->addWidget(m_input_dot);
 	top->addWidget(m_name_label);
 	top->addWidget(m_raw_label);
 	top->addStretch();
+	// Output dot + value label
+	m_output_dot = new ActivityDot(QColor(100,220,180), this);
+	m_value_label = new QLabel("0.000", this);
+	m_value_label->setStyleSheet(
+		"color:#fff;font-size:14px;font-weight:bold;font-family:'Consolas','Courier New',monospace;"
+		"background:rgba(25,25,40,200);border:1px solid rgba(100,220,180,60);"
+		"border-radius:4px;padding:2px 8px;");
+	m_value_label->setAlignment(Qt::AlignRight|Qt::AlignVCenter);
+	m_value_label->setMinimumWidth(90);
+	top->addWidget(m_output_dot);
 	top->addWidget(m_value_label);
-	auto *right = new QVBoxLayout();
-	right->addWidget(m_meter);
-	top->addLayout(right);
+	// Pipeline button placeholder (added via add_pipeline_button)
+	m_pipeline_btn_slot = new QHBoxLayout();
+	top->addLayout(m_pipeline_btn_slot);
 	outer->addLayout(top);
-	// Single overlaid graph — MIDI In (blue, behind) + Ctrl Out (cyan, front)
+	// Meter bar
+	m_meter = new QProgressBar(this);
+	m_meter->setRange(0, 1000); m_meter->setValue(0);
+	m_meter->setTextVisible(false); m_meter->setFixedHeight(4);
+	m_meter->setStyleSheet(
+		"QProgressBar{background:rgba(30,30,45,220);border:none;border-radius:2px;}"
+		"QProgressBar::chunk{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+		"stop:0 #4a8af4,stop:0.6 #64dca0,stop:1 #7cf);border-radius:2px;}");
+	outer->addWidget(m_meter);
+	// Overlaid graph — MIDI In (blue, behind) + Ctrl Out (cyan, front)
 	m_graph = new MiniGraph(QColor(100,220,180), 120, min, max, this);
 	m_graph->set_secondary_color(QColor(80,140,220));
 	m_graph->set_title(name);
-	m_graph->setFixedHeight(40);
+	m_graph->setFixedHeight(60);
 	outer->addWidget(m_graph);
-	setStyleSheet("background:rgba(35,35,50,200);border-radius:6px;");
+	setStyleSheet("background:rgba(30,30,48,220);border-radius:6px;");
 }
 void MasterPreview::set_value(double val) {
 	m_value_label->setText(QString::number(val,'f',3));
@@ -799,6 +843,7 @@ void MasterPreview::set_value(double val) {
 	m_meter->setValue(int(norm*1000));
 	// Push dual: primary = output, secondary = raw input (both in output range)
 	m_graph->push_dual(val, m_last_raw_norm);
+	m_output_dot->pulse();
 }
 void MasterPreview::pulse_input() { m_input_dot->pulse(); }
 void MasterPreview::set_raw_midi(int raw) {

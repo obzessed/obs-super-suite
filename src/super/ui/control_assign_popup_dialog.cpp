@@ -19,11 +19,12 @@ void BindingPanel::setup_ui() {
 	auto *top = new QVBoxLayout(this); top->setContentsMargins(4,4,4,4); top->setSpacing(2);
 	// Header
 	auto *hdr = new QHBoxLayout();
+	m_header_dot = new ActivityDot(QColor(80,180,255), this);
 	m_header_btn = new QPushButton(QString("▶ Binding #%1").arg(m_index+1),this);
 	m_header_btn->setFlat(true); m_header_btn->setStyleSheet("text-align:left;font-weight:bold;padding:4px;");
 	m_header_enabled = new QCheckBox(this); m_header_enabled->setChecked(true);
 	m_header_remove = new QPushButton("✕",this); m_header_remove->setFixedSize(20,20); m_header_remove->setStyleSheet("color:#e74c3c;");
-	hdr->addWidget(m_header_btn,1); hdr->addWidget(m_header_enabled); hdr->addWidget(m_header_remove);
+	hdr->addWidget(m_header_dot); hdr->addWidget(m_header_btn,1); hdr->addWidget(m_header_enabled); hdr->addWidget(m_header_remove);
 	top->addLayout(hdr);
 
 	m_body = new QWidget(this); m_body->setVisible(false);
@@ -132,6 +133,8 @@ void BindingPanel::setup_ui() {
 			emit changed();
 		};
 		connect(m_action_combo,QOverload<int>::of(&QComboBox::currentIndexChanged),this,update_action_vis);
+		connect(m_action_p1,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this]{emit changed();});
+		connect(m_action_p2,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this]{emit changed();});
 		update_action_vis();
 	}
 
@@ -140,19 +143,44 @@ void BindingPanel::setup_ui() {
 	bl->addWidget(m_invert_check);
 	top->addWidget(m_body);
 
-	// Signals
+	// Signals — header
 	connect(m_header_btn,&QPushButton::clicked,this,[this]{emit expand_requested(m_index);});
 	connect(m_header_remove,&QPushButton::clicked,this,[this]{emit remove_requested(m_index);});
 	connect(m_header_enabled,&QCheckBox::toggled,this,[this]{emit changed();});
 	connect(m_invert_check,&QCheckBox::toggled,this,[this]{emit changed();});
+	// Signals — MIDI source
+	connect(m_device_combo,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this]{emit changed();});
+	connect(m_channel_spin,QOverload<int>::of(&QSpinBox::valueChanged),this,[this]{emit changed();});
+	connect(m_cc_spin,QOverload<int>::of(&QSpinBox::valueChanged),this,[this]{emit changed();});
+	// Signals — Range mapping
+	if (m_input_min_spin)
+		connect(m_input_min_spin,QOverload<int>::of(&QSpinBox::valueChanged),this,[this]{emit changed();});
+	if (m_input_max_spin)
+		connect(m_input_max_spin,QOverload<int>::of(&QSpinBox::valueChanged),this,[this]{emit changed();});
+	if (m_output_min_spin)
+		connect(m_output_min_spin,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this]{emit changed();});
+	if (m_output_max_spin)
+		connect(m_output_max_spin,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this]{emit changed();});
+	// Signals — Threshold/Trigger extras
+	if (m_threshold_spin)
+		connect(m_threshold_spin,QOverload<int>::of(&QSpinBox::valueChanged),this,[this]{emit changed();});
+	if (m_continuous_check)
+		connect(m_continuous_check,&QCheckBox::toggled,this,[this]{emit changed();});
+	if (m_continuous_interval_spin)
+		connect(m_continuous_interval_spin,QOverload<int>::of(&QSpinBox::valueChanged),this,[this]{emit changed();});
+}
+
+void BindingPanel::pulse_header_activity() {
+	if (m_header_dot) m_header_dot->pulse();
 }
 
 void BindingPanel::add_pre_filter(const FilterStage &s) {
 	int idx = m_pre_filter_rows.size();
 	auto *row = new FilterStageRow(idx, QColor(46,204,113), m_pre_filter_group);
+	row->set_title_prefix("Pre-Filter");
 	row->m_graph->set_range(0.0, 127.0); // Pre-filters operate on raw MIDI domain
-	row->m_graph->set_title(QString("Pre-Filter #%1").arg(idx+1));
 	if (s.type||s.param1||s.param2||!s.enabled) row->load(s);
+	row->update_title("Pre-Filter", idx+1);
 	m_pre_filter_layout->addWidget(row); m_pre_filter_rows.append(row);
 	connect(row,&StageRow::changed,this,[this]{emit changed();});
 	connect(row,&StageRow::move_up,this,[this](int i){ if(i>0){std::swap(m_pre_filter_rows[i],m_pre_filter_rows[i-1]); rebuild_indices(m_pre_filter_rows,m_pre_filter_layout); emit changed();}});
@@ -162,8 +190,9 @@ void BindingPanel::add_pre_filter(const FilterStage &s) {
 void BindingPanel::add_interp_stage(const InterpStage &s) {
 	int idx = m_interp_rows.size();
 	auto *row = new InterpStageRow(idx, m_interp_group);
-	row->m_graph->set_title(QString("Interp #%1").arg(idx+1));
+	row->set_title_prefix("Interp");
 	if (s.type||s.param1||s.param2||!s.enabled) row->load(s);
+	row->update_title("Interp", idx+1);
 	m_interp_layout->addWidget(row); m_interp_rows.append(row);
 	connect(row,&StageRow::changed,this,[this]{emit changed();});
 	connect(row,&StageRow::move_up,this,[this](int i){ if(i>0){std::swap(m_interp_rows[i],m_interp_rows[i-1]); rebuild_indices(m_interp_rows,m_interp_layout); emit changed();}});
@@ -173,12 +202,13 @@ void BindingPanel::add_interp_stage(const InterpStage &s) {
 void BindingPanel::add_post_filter(const FilterStage &s) {
 	int idx = m_post_filter_rows.size();
 	auto *row = new FilterStageRow(idx, QColor(230,126,34), m_post_filter_group);
+	row->set_title_prefix("Post-Filter");
 	// Post-filters operate on output domain
 	double omin = m_output_min_spin ? m_output_min_spin->value() : 0.0;
 	double omax = m_output_max_spin ? m_output_max_spin->value() : 1.0;
 	row->m_graph->set_range(omin, omax);
-	row->m_graph->set_title(QString("Post-Filter #%1").arg(idx+1));
 	if (s.type||s.param1||s.param2||!s.enabled) row->load(s);
+	row->update_title("Post-Filter", idx+1);
 	m_post_filter_layout->addWidget(row); m_post_filter_rows.append(row);
 	connect(row,&StageRow::changed,this,[this]{emit changed();});
 	connect(row,&StageRow::move_up,this,[this](int i){ if(i>0){std::swap(m_post_filter_rows[i],m_post_filter_rows[i-1]); rebuild_indices(m_post_filter_rows,m_post_filter_layout); emit changed();}});
@@ -187,7 +217,11 @@ void BindingPanel::add_post_filter(const FilterStage &s) {
 }
 
 void BindingPanel::rebuild_indices(QVector<StageRow*> &rows, QVBoxLayout *layout) {
-	for (int i=0;i<rows.size();i++) { layout->removeWidget(rows[i]); rows[i]->set_index(i); }
+	for (int i=0;i<rows.size();i++) {
+		layout->removeWidget(rows[i]);
+		rows[i]->set_index(i);
+		rows[i]->update_title({}, i+1);
+	}
 	for (auto *r : rows) layout->addWidget(r);
 }
 
@@ -404,6 +438,8 @@ ControlAssignPopup::ControlAssignPopup(const QString &port_id,
 	mark_clean();
 	if (m_adapter && m_adapter->backend())
 		connect(m_adapter->backend(), &MidiBackend::midi_message, this, &ControlAssignPopup::on_raw_midi);
+	// Initial preview so graphs show something
+	refresh_preview(); // FIXME: this modifies the timedomain and posibly triggering output changes
 }
 ControlAssignPopup::~ControlAssignPopup() { emit closed(); }
 
@@ -412,19 +448,20 @@ void ControlAssignPopup::setup_ui() {
 	// Master Preview
 	m_master_preview = new MasterPreview(m_display_name, m_default_out_min, m_default_out_max, this);
 	root->addWidget(m_master_preview);
-	// Pipeline visual button
-	auto *preview_bar = new QHBoxLayout();
-	m_pipeline_btn = new QPushButton(QString::fromUtf8("\xF0\x9F\x93\x8A Pipeline View"), this);
-	m_pipeline_btn->setFixedHeight(22);
-	m_pipeline_btn->setStyleSheet("QPushButton{font-size:10px;padding:2px 8px;}");
+	// Pipeline visual button — placed in master preview header
+	m_pipeline_btn = new QPushButton(QString::fromUtf8("\xF0\x9F\x93\x8A"), this);
+	m_pipeline_btn->setFixedSize(26, 22);
+	m_pipeline_btn->setToolTip("Pipeline View");
+	m_pipeline_btn->setStyleSheet("QPushButton{font-size:12px;padding:0;border:1px solid rgba(100,180,255,60);border-radius:3px;background:rgba(40,40,60,180);}"
+		"QPushButton:hover{background:rgba(60,60,90,220);}");
 	connect(m_pipeline_btn, &QPushButton::clicked, this, [this]{
 		if (m_pipeline_visual) { m_pipeline_visual->raise(); m_pipeline_visual->activateWindow(); return; }
 		m_pipeline_visual = new PipelineVisualDialog(m_display_name, m_default_out_min, m_default_out_max, window());
 		m_pipeline_visual->show();
+		// Immediately feed with current data
+		refresh_preview(); // FIXME: this modifies the timedomain and posibly triggering output changes
 	});
-	preview_bar->addWidget(m_pipeline_btn);
-	preview_bar->addStretch();
-	root->addLayout(preview_bar);
+	m_master_preview->add_pipeline_button(m_pipeline_btn);
 	// Status
 	m_status_label = new QLabel("Ready",this); m_status_label->setStyleSheet("color:#888;font-size:10px;font-style:italic;");
 	root->addWidget(m_status_label);
@@ -505,6 +542,7 @@ void ControlAssignPopup::sync_panels_from_adapter() {
 		connect(p,&BindingPanel::expand_requested,this,&ControlAssignPopup::on_panel_expand);
 		connect(p,&BindingPanel::remove_requested,this,&ControlAssignPopup::on_panel_remove);
 		connect(p,&BindingPanel::changed,this,&ControlAssignPopup::mark_dirty);
+		connect(p,&BindingPanel::changed,this,&ControlAssignPopup::refresh_preview);
 	}
 	if(!m_panels.isEmpty()){m_panels.first()->set_expanded(true);m_active_panel=0;}
 }
@@ -533,6 +571,7 @@ void ControlAssignPopup::on_add_clicked() {
 	connect(p,&BindingPanel::expand_requested,this,&ControlAssignPopup::on_panel_expand);
 	connect(p,&BindingPanel::remove_requested,this,&ControlAssignPopup::on_panel_remove);
 	connect(p,&BindingPanel::changed,this,&ControlAssignPopup::mark_dirty);
+	connect(p,&BindingPanel::changed,this,&ControlAssignPopup::refresh_preview);
 	on_panel_expand(idx); mark_dirty();
 }
 void ControlAssignPopup::on_add_output_clicked() {
@@ -575,8 +614,14 @@ void ControlAssignPopup::on_apply_clicked() {
 }
 
 void ControlAssignPopup::on_panel_expand(int i) {
-	for(int j=0;j<m_panels.size();j++) m_panels[j]->set_expanded(j==i);
-	m_active_panel=i;
+	bool was_expanded = m_panels[i]->is_expanded();
+	for(int j=0;j<m_panels.size();j++) m_panels[j]->set_expanded(false);
+	if (!was_expanded) {
+		m_panels[i]->set_expanded(true);
+		m_active_panel=i;
+	} else {
+		m_active_panel=i; // keep tracking even when collapsed
+	}
 }
 void ControlAssignPopup::on_panel_remove(int i) {
 	if(i<0||i>=m_panels.size())return;
@@ -617,6 +662,7 @@ void ControlAssignPopup::on_raw_midi(int device, int status, int data1, int data
 		m_master_preview->pulse_input();
 		m_master_preview->set_raw_midi(data2);
 		m_last_raw = data2;
+		panel->pulse_header_activity();
 		double val = panel->update_pipeline_preview(data2);
 		m_master_preview->set_value(val);
 		if (m_pipeline_visual) m_pipeline_visual->feed(data2, panel->last_preview());
@@ -625,12 +671,22 @@ void ControlAssignPopup::on_raw_midi(int device, int status, int data1, int data
 
 void ControlAssignPopup::on_preview_tick() {
 	if (m_active_panel < 0 || m_active_panel >= m_panels.size()) return;
-	if (!m_panels[m_active_panel]->needs_preview_convergence()) return;
-	// Re-evaluate pipeline with last raw and update previews
-	double val = m_panels[m_active_panel]->update_pipeline_preview(m_last_raw);
+	auto *panel = m_panels[m_active_panel];
+	// Only re-evaluate when time-based stages need convergence (Smooth, AnimateTo, etc.)
+	if (!panel->needs_preview_convergence()) return;
+	double val = panel->update_pipeline_preview(m_last_raw);
 	m_master_preview->set_value(val);
 	if (m_pipeline_visual)
-		m_pipeline_visual->feed(m_last_raw, m_panels[m_active_panel]->last_preview());
+		m_pipeline_visual->feed(m_last_raw, panel->last_preview());
+}
+
+void ControlAssignPopup::refresh_preview() {
+	if (m_active_panel < 0 || m_active_panel >= m_panels.size()) return;
+	auto *panel = m_panels[m_active_panel];
+	double val = panel->update_pipeline_preview(m_last_raw);
+	m_master_preview->set_value(val);
+	if (m_pipeline_visual)
+		m_pipeline_visual->feed(m_last_raw, panel->last_preview());
 }
 
 void ControlAssignPopup::toggle_monitor(bool e) {
