@@ -130,16 +130,16 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
                             }
 
                             if (m_webview) {
-                                ICoreWebView2Settings* Settings;
-                                m_webview->get_Settings(&Settings);
-                                Settings->put_IsScriptEnabled(TRUE);
-                                Settings->put_AreDefaultScriptDialogsEnabled(TRUE);
-                                Settings->put_IsWebMessageEnabled(TRUE);
+                                ICoreWebView2Settings* wv2_settings;
+                                m_webview->get_Settings(&wv2_settings);
+                                wv2_settings->put_IsScriptEnabled(TRUE);
+                                wv2_settings->put_AreDefaultScriptDialogsEnabled(TRUE);
+                                wv2_settings->put_IsWebMessageEnabled(TRUE);
+                                wv2_settings->put_IsZoomControlEnabled(TRUE);
+                                wv2_settings->put_IsBuiltInErrorPageEnabled(FALSE);
 
                                 {
-                                	// Step 4 - Navigation events
-					// register an ICoreWebView2NavigationStartingEventHandler to cancel any non-https
-					// navigation
+					// register an ICoreWebView2NavigationStartingEventHandler
 					EventRegistrationToken token;
 					m_webview->add_NavigationStarting(
 						wrl::Callback<ICoreWebView2NavigationStartingEventHandler>(
@@ -149,10 +149,6 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
 						PWSTR uri;
 						args->get_Uri(&uri);
 						std::wstring source(uri);
-						// if (source.substr(0, 5) != L"https")
-						// {
-						//     args->put_Cancel(true);
-						// }
 					    	if (m_navigationStartingCallback) {
 					    		m_navigationStartingCallback(QString::fromStdWString(source).toStdString());
 					    	}
@@ -162,50 +158,34 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
 					    .Get(),
 					&token);
 
-                                	// Step 6 - Communication between host and web content
 					// Set an event handler for the host to return received message back to the web content
-					m_webview->add_WebMessageReceived(
-					wrl::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-					    [](ICoreWebView2 *webview,
-					       ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT
-					    {
-						PWSTR message;
-						args->TryGetWebMessageAsString(&message);
-						// processMessage(&message);
-						webview->PostWebMessageAsString(message);
-						CoTaskMemFree(message);
-						return S_OK;
-					    })
-					    .Get(),
-					&token);
-
-                                		// startup script
-					    m_webview->AddScriptToExecuteOnDocumentCreated(L"Object.freeze(Object);", nullptr);
-
-				    // Schedule an async task to get the document URL
-					m_webview->ExecuteScript(
-						L"window.document.URL;",
-					wrl::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
-					    [](HRESULT errorCode, LPCWSTR resultObjectAsJson) -> HRESULT
-					    {
-						LPCWSTR URL = resultObjectAsJson;
-						// doSomethingWithURL(URL);
-						return S_OK;
-					    })
-					    .Get());
+					// m_webview->add_WebMessageReceived(
+					// wrl::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+					//     [](ICoreWebView2 *webview,
+					//        ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT
+					//     {
+					// 	PWSTR message;
+					// 	args->TryGetWebMessageAsString(&message);
+					// 	// processMessage(&message);
+					// 	webview->PostWebMessageAsString(message);
+					// 	CoTaskMemFree(message);
+					// 	return S_OK;
+					//     })
+					//     .Get(),
+					// &token);
                                 }
 
-                            	// Callbacks
+                            	// Audio Callbacks
                                 if (const auto webview2_8 = m_webview.try_query<ICoreWebView2_8>()) {
-					EventRegistrationToken token;
+                                	EventRegistrationToken token;
 					// Register a handler for the IsDocumentPlayingAudioChanged event.
 				    webview2_8->add_IsDocumentPlayingAudioChanged(
 					wrl::Callback<ICoreWebView2IsDocumentPlayingAudioChangedEventHandler>(
 					    [this, webview2_8](ICoreWebView2* sender, IUnknown* args) -> HRESULT
 					    {
-					    	if (m_audioPlayingChangedCallback) {
+						    if (m_audioPlayingChangedCallback) {
 							m_audioPlayingChangedCallback();
-					    	}
+						    }
 						return S_OK;
 					    })
 					    .Get(),
@@ -216,17 +196,94 @@ void EdgeWebview2Backend::initWebView(HWND hwnd) {
 					wrl::Callback<ICoreWebView2IsMutedChangedEventHandler>(
 					    [this, webview2_8](ICoreWebView2* sender, IUnknown* args) -> HRESULT
 					    {
-					    	if (m_mutedStateChangeCallback) {
-					    		BOOL muted;
+						    if (m_mutedStateChangeCallback) {
+							    BOOL muted;
 						    if (SUCCEEDED(webview2_8->get_IsMuted(&muted))) {
 							    m_mutedStateChangeCallback(muted);
 						    }
-					    	}
+						    }
 						return S_OK;
 					    })
 					    .Get(),
 					&token);
 				}
+
+                            	// Context Menu Callbacks
+                            	if (const auto webview2_11 = m_webview.try_query<ICoreWebView2_11>()) {
+                            		EventRegistrationToken token;
+										    // Register a handler for the ContextMenuRequested event.
+					webview2_11->add_ContextMenuRequested(
+					    wrl::Callback<ICoreWebView2ContextMenuRequestedEventHandler>(
+						    [this](ICoreWebView2* sender, ICoreWebView2ContextMenuRequestedEventArgs* args) -> HRESULT {
+						    	wil::com_ptr<ICoreWebView2ContextMenuItemCollection> items;
+						    	if (!SUCCEEDED(args->get_MenuItems(&items))) {
+						    		return S_OK; // If we fail to get menu items, just skip custom handling
+						    	}
+
+						    	wil::com_ptr<ICoreWebView2ContextMenuItem> current;
+							UINT32 itemsCount;
+
+							if (SUCCEEDED(items->get_Count(&itemsCount))) {
+								for (UINT32 i = 0; i < itemsCount; i++) {
+									if (SUCCEEDED(items->GetValueAtIndex(i, &current))) {
+										COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND kind;
+										if (SUCCEEDED(current->get_Kind(&kind))) {
+											wil::unique_cotaskmem_string label;
+											if (SUCCEEDED(current->get_Label(&label))) {
+												if (kind == COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND)
+												{
+													current->put_IsEnabled(false); // Disable all default command items
+												}
+											}
+										}
+									}
+								}
+							}
+
+						    	// args->put_Handled(true);
+
+						  //   	auto showMenu = [this, args =
+								// wil::com_ptr<ICoreWebView2ContextMenuRequestedEventArgs>(args)]
+								// {
+								//     wil::com_ptr<ICoreWebView2ContextMenuItemCollection> items;
+								//     CHECK_FAILURE(args->get_MenuItems(&items));
+								//     CHECK_FAILURE(args->put_Handled(true));
+								//     HMENU hPopupMenu = CHECK_POINTER(CreatePopupMenu());
+								//     AddMenuItems(hPopupMenu, items);
+								//     HWND hWnd;
+								//     m_controller->get_ParentWindow(&hWnd);
+								//     POINT locationInControlCoordinates;
+								//     POINT locationInScreenCoordinates;
+								//     CHECK_FAILURE(args->get_Location(&locationInControlCoordinates));
+								//     // get_Location returns coordinates in relation to upper left Bounds
+								//     // of the WebView2.Controller. Will need to convert to Screen
+								//     // coordinates to display the popup menu in the correct location.
+								//     ConvertToScreenCoordinates(locationInControlCoordinates,
+								// 			       locationInScreenCoordinates);
+								//     UINT32 selectedCommandId = TrackPopupMenu(
+								// 			   hPopupMenu,
+								// 			   TPM_TOPALIGN | TPM_LEFTALIGN | TPM_RETURNCMD,
+								// 			   locationInScreenCoordinates.x,
+								// 			   locationInScreenCoordinates.y,
+								// 			   0,
+								// 			   hWnd,
+								// 			   NULL);
+								//     if (selectedCommandId != 0) {
+								// 	CHECK_FAILURE(args->put_SelectedCommandId(selectedCommandId));
+								//     }
+								// };
+								// wil::com_ptr<ICoreWebView2Deferral> deferral;
+								// CHECK_FAILURE(args->GetDeferral(&deferral));
+								// m_sampleWindow->RunAsync([deferral, showMenu]() {
+								//     showMenu();
+								//     CHECK_FAILURE(deferral->Complete());
+								// });
+
+						    	return S_OK;
+						    })
+						    .Get(),
+					    &token);
+                                }
 
                                 // Set initial bounds
                                 RECT bounds;
