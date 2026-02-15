@@ -30,10 +30,13 @@
 #include "docks/mixer_dock.h"
 #include "docks/wrapper_test_dock.h"
 #include "docks/test_midi_dock.hpp"
+#include "docks/test_super_dock.hpp"
 #include "docks/sourcerer/sourcerer_scenes_dock.hpp"
 #include "docks/sourcerer/sourcerer_sources_dock.hpp"
 
 #include "utils/midi/midi_router.hpp"
+
+#include "super/core/control_registry.hpp"
 
 #include "dialogs/canvas_manager.h"
 #include "dialogs/audio_channels.h"
@@ -64,6 +67,7 @@ static struct GlobalDocks {
 	QPointer<SourcererScenesDock> sourcerer_scenes;
 	QPointer<SourcererSourcesDock> sourcerer_sources;
 	QPointer<TestMidiDock> test_midi;
+	QPointer<TestSuperDock> test_super;
 } g_docks;
 
 static void save_callback(obs_data_t *save_data, bool saving, void *)
@@ -111,6 +115,24 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 			QJsonDocument doc(data);
 			QString jsonStr = doc.toJson(QJsonDocument::Compact);
 			obs_data_set_string(save_data, "TestMidiDock", jsonStr.toUtf8().constData());
+		}
+
+		// Test Super Dock state
+		if (g_docks.test_super) {
+			QJsonObject data = g_docks.test_super->save_state();
+			QJsonDocument doc(data);
+			QString jsonStr = doc.toJson(QJsonDocument::Compact);
+			obs_data_set_string(save_data, "TestSuperDock", jsonStr.toUtf8().constData());
+		}
+
+		// ControlRegistry persistent variables
+		{
+			QJsonObject data = super::ControlRegistry::instance().save_variables();
+			if (!data.isEmpty()) {
+				QJsonDocument doc(data);
+				QString jsonStr = doc.toJson(QJsonDocument::Compact);
+				obs_data_set_string(save_data, "ControlVariables", jsonStr.toUtf8().constData());
+			}
 		}
 	} else {
 		// Loading
@@ -176,6 +198,24 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(testMidiJsonStr));
 			if (!doc.isNull() && doc.isObject()) {
 				g_docks.test_midi->load_state(doc.object());
+			}
+		}
+
+		// Test Super Dock state
+		const char *testSuperJsonStr = obs_data_get_string(save_data, "TestSuperDock");
+		if (testSuperJsonStr && *testSuperJsonStr && g_docks.test_super) {
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(testSuperJsonStr));
+			if (!doc.isNull() && doc.isObject()) {
+				g_docks.test_super->load_state(doc.object());
+			}
+		}
+
+		// ControlRegistry persistent variables
+		const char *ctrlVarsJsonStr = obs_data_get_string(save_data, "ControlVariables");
+		if (ctrlVarsJsonStr && *ctrlVarsJsonStr) {
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(ctrlVarsJsonStr));
+			if (!doc.isNull() && doc.isObject()) {
+				super::ControlRegistry::instance().load_variables(doc.object());
 			}
 		}
 	}
@@ -414,6 +454,9 @@ void on_plugin_loaded()
 
 	g_docks.test_midi = new TestMidiDock(mainWindow);
 	obs_frontend_add_dock_by_id("TestMidiDock", "Test MIDI Dock", g_docks.test_midi);
+
+	g_docks.test_super = new TestSuperDock(mainWindow);
+	obs_frontend_add_dock_by_id("TestSuperDock", "Test Super Dock", g_docks.test_super);
 }
 
 void on_plugin_unload()
@@ -464,6 +507,11 @@ void on_plugin_unload()
 		if (g_docks.test_midi) {
 			obs_frontend_remove_dock("TestMidiDock");
 			delete g_docks.test_midi;
+		}
+
+		if (g_docks.test_super) {
+			obs_frontend_remove_dock("TestSuperDock");
+			delete g_docks.test_super;
 		}
 	}
 

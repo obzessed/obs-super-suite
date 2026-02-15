@@ -13,7 +13,10 @@ WinMmMidiBackend::WinMmMidiBackend(QObject *parent)
 WinMmMidiBackend::~WinMmMidiBackend()
 {
 	WinMmMidiBackend::close_all();
+	WinMmMidiBackend::close_all_outputs();
 }
+
+// ===== Input ==============================================================
 
 QStringList WinMmMidiBackend::available_devices() const
 {
@@ -50,7 +53,7 @@ bool WinMmMidiBackend::open_device(int index)
 
 	midiInStart(handle);
 	m_open_devices.push_back({handle, index});
-	obs_log(LOG_INFO, "WinMM: opened MIDI device %d", index);
+	obs_log(LOG_INFO, "WinMM: opened MIDI input device %d", index);
 	return true;
 }
 
@@ -93,4 +96,77 @@ void CALLBACK WinMmMidiBackend::midi_in_proc(HMIDIIN hMidi, UINT wMsg,
 			emit self->midi_message(device_index, status, data1, data2);
 		},
 		Qt::QueuedConnection);
+}
+
+// ===== Output =============================================================
+
+QStringList WinMmMidiBackend::available_output_devices() const
+{
+	QStringList devices;
+	UINT count = midiOutGetNumDevs();
+	for (UINT i = 0; i < count; i++) {
+		MIDIOUTCAPSW caps;
+		if (midiOutGetDevCapsW(i, &caps, sizeof(caps)) == MMSYSERR_NOERROR) {
+			devices.append(QString::fromWCharArray(caps.szPname));
+		} else {
+			devices.append(QString("MIDI Out %1").arg(i));
+		}
+	}
+	return devices;
+}
+
+bool WinMmMidiBackend::open_output_device(int index)
+{
+	// Check if already open
+	for (const auto &dev : m_open_outputs) {
+		if (dev.index == index)
+			return true;
+	}
+
+	HMIDIOUT handle = nullptr;
+	MMRESULT result = midiOutOpen(&handle, (UINT)index,
+		0, 0, CALLBACK_NULL);
+
+	if (result != MMSYSERR_NOERROR) {
+		obs_log(LOG_WARNING, "WinMM: failed to open MIDI out device %d (error %u)",
+			index, result);
+		return false;
+	}
+
+	m_open_outputs.push_back({handle, index});
+	obs_log(LOG_INFO, "WinMM: opened MIDI output device %d", index);
+	return true;
+}
+
+void WinMmMidiBackend::close_all_outputs()
+{
+	for (auto &dev : m_open_outputs) {
+		midiOutReset(dev.handle);
+		midiOutClose(dev.handle);
+	}
+	m_open_outputs.clear();
+}
+
+void WinMmMidiBackend::send_cc(int device, int channel, int cc, int value)
+{
+	// Build short message: status | data1<<8 | data2<<16
+	DWORD msg = static_cast<DWORD>(
+		(0xB0 | (channel & 0x0F)) |
+		((cc & 0x7F) << 8) |
+		((value & 0x7F) << 16));
+
+	if (device == -1) {
+		// Broadcast to all open output devices
+		for (auto &dev : m_open_outputs) {
+			midiOutShortMsg(dev.handle, msg);
+		}
+	} else {
+		// Send to specific device
+		for (auto &dev : m_open_outputs) {
+			if (dev.index == device) {
+				midiOutShortMsg(dev.handle, msg);
+				break;
+			}
+		}
+	}
 }
