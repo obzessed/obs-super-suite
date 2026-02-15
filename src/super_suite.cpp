@@ -29,8 +29,11 @@
 
 #include "docks/mixer_dock.h"
 #include "docks/wrapper_test_dock.h"
+#include "docks/test_midi_dock.hpp"
 #include "docks/sourcerer/sourcerer_scenes_dock.hpp"
 #include "docks/sourcerer/sourcerer_sources_dock.hpp"
+
+#include "utils/midi/midi_router.hpp"
 
 #include "dialogs/canvas_manager.h"
 #include "dialogs/audio_channels.h"
@@ -60,6 +63,7 @@ static struct GlobalDocks {
 	QPointer<WrapperTestDock> wrapper_test;
 	QPointer<SourcererScenesDock> sourcerer_scenes;
 	QPointer<SourcererSourcesDock> sourcerer_sources;
+	QPointer<TestMidiDock> test_midi;
 } g_docks;
 
 static void save_callback(obs_data_t *save_data, bool saving, void *)
@@ -91,6 +95,22 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 			QJsonDocument doc(data);
 			QString jsonStr = doc.toJson(QJsonDocument::Compact);
 			obs_data_set_string(save_data, "SourcererScenes", jsonStr.toUtf8().constData());
+		}
+
+		// MIDI Router bindings
+		{
+			QJsonObject data = MidiRouter::instance()->save();
+			QJsonDocument doc(data);
+			QString jsonStr = doc.toJson(QJsonDocument::Compact);
+			obs_data_set_string(save_data, "MidiRouter", jsonStr.toUtf8().constData());
+		}
+
+		// Test MIDI Dock state
+		if (g_docks.test_midi) {
+			QJsonObject data = g_docks.test_midi->save_state();
+			QJsonDocument doc(data);
+			QString jsonStr = doc.toJson(QJsonDocument::Compact);
+			obs_data_set_string(save_data, "TestMidiDock", jsonStr.toUtf8().constData());
 		}
 	} else {
 		// Loading
@@ -138,6 +158,24 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(scenesJsonStr));
 			if (!doc.isNull() && doc.isObject()) {
 				g_docks.sourcerer_scenes->Load(doc.object());
+			}
+		}
+
+		// MIDI Router bindings
+		const char *midiJsonStr = obs_data_get_string(save_data, "MidiRouter");
+		if (midiJsonStr && *midiJsonStr) {
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(midiJsonStr));
+			if (!doc.isNull() && doc.isObject()) {
+				MidiRouter::instance()->load(doc.object());
+			}
+		}
+
+		// Test MIDI Dock state
+		const char *testMidiJsonStr = obs_data_get_string(save_data, "TestMidiDock");
+		if (testMidiJsonStr && *testMidiJsonStr && g_docks.test_midi) {
+			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(testMidiJsonStr));
+			if (!doc.isNull() && doc.isObject()) {
+				g_docks.test_midi->load_state(doc.object());
 			}
 		}
 	}
@@ -373,6 +411,9 @@ void on_plugin_loaded()
 	obs_frontend_add_dock_by_id("WrapperTestDock", "OBS Wrapper Test", g_docks.wrapper_test);
 	obs_frontend_add_dock_by_id("SourcererSources", "Sourcerer Sources", g_docks.sourcerer_sources);
 	obs_frontend_add_dock_by_id("SourcererScenes", "Sourcerer Scenes", g_docks.sourcerer_scenes);
+
+	g_docks.test_midi = new TestMidiDock(mainWindow);
+	obs_frontend_add_dock_by_id("TestMidiDock", "Test MIDI Dock", g_docks.test_midi);
 }
 
 void on_plugin_unload()
@@ -419,8 +460,14 @@ void on_plugin_unload()
 			obs_frontend_remove_dock("SourcererScenes");
 			delete g_docks.sourcerer_scenes;
 		}
+
+		if (g_docks.test_midi) {
+			obs_frontend_remove_dock("TestMidiDock");
+			delete g_docks.test_midi;
+		}
 	}
 
+	MidiRouter::cleanup();
 	AudioChSrcConfig::cleanup();
 
 	BrowserManager::cleanup();

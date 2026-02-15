@@ -20,8 +20,9 @@ CPMAddPackage(
   URI "gh:nlohmann/json@3.12.0"
   OPTIONS "JSON_BuildTests OFF"
 )
-CPMAddPackage("gh:Curve/lime#v6.0")
-CPMAddPackage("gh:Curve/channel#v2.3")
+#CPMAddPackage("gh:Curve/lime#v6.0")
+#CPMAddPackage("gh:Curve/channel#v2.3")
+#CPMAddPackage("gh:celtera/libremidi#v5.4.3")
 
 #CPMAddPackage(
 #  URI "gh:winsoft666/QWebView#v2.0.1"
@@ -78,6 +79,11 @@ set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
 find_package(libobs REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 
+# WinMM for MIDI input support
+if(WIN32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE winmm)
+endif()
+
 # link user deps
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
   #  fmt::fmt
@@ -90,6 +96,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
 #  CefViewCore
 #  QCefView
 #  QWebView.CEF
+#  libremidi
 )
 
 if(ENABLE_FRONTEND_API)
@@ -146,7 +153,6 @@ if ($ENV{COPY_PLUGIN_TO_DIR} AND DEFINED ENV{OBS_INSTALL_DIR})
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${OBS_PLUGINS_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${CMAKE_PROJECT_NAME}>" "${OBS_PLUGINS_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E echo "This is on the first line.\\nThis is on the second line."
     COMMENT "Deploying plugin to OBS plugins directory: ${OBS_PLUGINS_DIR}"
   )
 

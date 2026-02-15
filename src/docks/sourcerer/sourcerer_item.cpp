@@ -45,16 +45,15 @@ public:
 
 SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 {
-	// Semi-transparent black background
+	// Glassmorphic dark overlay background
 	setAutoFillBackground(true);
-	// setAttribute(Qt::WA_TransparentForMouseEvents); // REMOVED: Blocks button clicks!
 	QPalette pal = palette();
-	pal.setColor(QPalette::Window, QColor(0, 0, 0, 150));
+	pal.setColor(QPalette::Window, QColor(10, 10, 14, 180));
 	setPalette(pal);
 
 	layout = new QGridLayout(this);
-	layout->setContentsMargins(2, 2, 2, 2);
-	layout->setSpacing(2);
+	layout->setContentsMargins(4, 4, 4, 4);
+	layout->setSpacing(3);
 
 	// Create buttons
 	btnVisibility = new QPushButton(this);
@@ -73,8 +72,7 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	SetupButton(btnPlayPause, QString::fromUtf8("▶"), "Play/Pause");
 
 	btnProperties = new QPushButton(this);
-	SetupButton(btnProperties, QString::fromUtf8("⚙"),
-		    "Properties"); // Changed from Refresh to Gear
+	SetupButton(btnProperties, QString::fromUtf8("⚙"), "Properties");
 
 	btnFilters = new QPushButton(this);
 	SetupButton(btnFilters, QString::fromUtf8("Fx"), "Filters");
@@ -86,7 +84,7 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	// Row 0: Vis, Lock
 	// Row 1: Active, Interact
 	// Row 2: Play, DisablePrev
-	// Row 3: Properties, Filters
+	// Row 3: Filters, Properties
 	layout->addWidget(btnVisibility, 0, 0);
 	layout->addWidget(btnLock, 0, 1);
 	layout->addWidget(btnActive, 1, 0);
@@ -96,16 +94,16 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	layout->addWidget(btnFilters, 3, 0);
 	layout->addWidget(btnProperties, 3, 1);
 
-	// Opacity Effect for Animation
+	// Opacity effect for fade animation
 	opacityEffect = new QGraphicsOpacityEffect(this);
-	opacityEffect->setOpacity(0.0); // Start hidden
+	opacityEffect->setOpacity(0.0);
 	setGraphicsEffect(opacityEffect);
 
 	fadeAnim = new QPropertyAnimation(opacityEffect, "opacity", this);
-	fadeAnim->setDuration(50); // ms
+	fadeAnim->setDuration(80);
 	fadeAnim->setEasingCurve(QEasingCurve::InOutQuad);
 
-	hide(); // Initially hidden
+	hide();
 }
 
 void SourcererItemOverlay::ReflowButtons()
@@ -151,24 +149,34 @@ void SourcererItemOverlay::SetupButton(QPushButton *btn, const QString &text, co
 {
 	btn->setText(text);
 	btn->setToolTip(tooltip);
+	btn->setAccessibleName(tooltip);
 	btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-	btn->setCursor(Qt::ArrowCursor);
+	btn->setMinimumSize(28, 28);
+	btn->setCursor(Qt::PointingHandCursor);
+	btn->setFocusPolicy(Qt::TabFocus);
 
-	// Simple style
-	btn->setStyleSheet("QPushButton { "
-			   "  background-color: rgba(255, 255, 255, 30); "
-			   "  border: 1px solid rgba(255, 255, 255, 50); "
-			   "  color: white; "
-			   "  border-radius: 4px; "
-			   "  font-weight: bold; "
-			   "}"
-			   "QPushButton:hover { "
-			   "  background-color: rgba(255, 255, 255, 80); "
-			   "  border: 1px solid rgba(255, 255, 255, 150); "
-			   "}"
-			   "QPushButton:pressed { "
-			   "  background-color: rgba(255, 255, 255, 100); "
-			   "}");
+	btn->setStyleSheet(
+		"QPushButton {"
+		"  background-color: rgba(255, 255, 255, 18);"
+		"  border: 1px solid rgba(255, 255, 255, 30);"
+		"  color: rgba(255, 255, 255, 220);"
+		"  border-radius: 6px;"
+		"  font-size: 13px;"
+		"  padding: 2px;"
+		"}"
+		"QPushButton:hover {"
+		"  background-color: rgba(255, 255, 255, 50);"
+		"  border: 1px solid rgba(255, 255, 255, 90);"
+		"  color: white;"
+		"}"
+		"QPushButton:pressed {"
+		"  background-color: rgba(255, 255, 255, 70);"
+		"  border: 1px solid rgba(255, 255, 255, 120);"
+		"}"
+		"QPushButton:focus {"
+		"  outline: none;"
+		"  border: 2px solid rgba(80, 160, 255, 200);"
+		"}");
 }
 
 void SourcererItemOverlay::SetVisibleAnimated(bool visible)
@@ -520,27 +528,76 @@ void SourcererItem::UpdateOverlayVisibility()
 		overlay->SetVisibleAnimated(show);
 
 		if (show) {
-			// Update Icons based on state
+			// --- Visibility button ---
 			if (overlay->btnVisibility) {
 				overlay->btnVisibility->setText(isSceneItemVisible
 									? QString::fromUtf8("👁")
-									: QString::fromUtf8("❌")); // Or crossed eye
+									: QString::fromUtf8("❌"));
+				overlay->btnVisibility->setAccessibleName(
+					isSceneItemVisible ? "Hide Source" : "Show Source");
+				overlay->btnVisibility->setToolTip(
+					isSceneItemVisible ? "Hide Source" : "Show Source");
 			}
+
+			// --- Lock button ---
 			if (overlay->btnLock) {
 				overlay->btnLock->setText(isSceneItemLocked ? QString::fromUtf8("🔒")
-									    : QString::fromUtf8("🔓"));
+									  : QString::fromUtf8("🔓"));
+				overlay->btnLock->setAccessibleName(
+					isSceneItemLocked ? "Unlock Source" : "Lock Source");
+				overlay->btnLock->setToolTip(
+					isSceneItemLocked ? "Unlock Source" : "Lock Source");
 			}
+
+			// --- Active toggle (colored background for state) ---
 			if (overlay->btnActive) {
 				overlay->btnActive->setStyleSheet(
 					isSourceEnabled
-						? "QPushButton { color: #88ff88; font-weight: bold; background-color: rgba(0,0,0,50); border: 1px solid rgba(255,255,255,50); }"
-						: "QPushButton { color: #ff8888; font-weight: bold; background-color: rgba(0,0,0,50); border: 1px solid rgba(255,255,255,50); }");
+						? "QPushButton {"
+						  "  color: #a8ffb0; background-color: rgba(40, 160, 70, 60);"
+						  "  border: 1px solid rgba(100, 220, 120, 80); border-radius: 6px;"
+						  "  font-size: 13px; padding: 2px;"
+						  "}"
+						  "QPushButton:hover {"
+						  "  background-color: rgba(40, 160, 70, 100);"
+						  "  border: 1px solid rgba(100, 220, 120, 150);"
+						  "}"
+						  "QPushButton:pressed {"
+						  "  background-color: rgba(40, 160, 70, 130);"
+						  "}"
+						  "QPushButton:focus {"
+						  "  outline: none; border: 2px solid rgba(80, 160, 255, 200);"
+						  "}"
+						: "QPushButton {"
+						  "  color: #ffaaaa; background-color: rgba(180, 50, 50, 60);"
+						  "  border: 1px solid rgba(220, 80, 80, 80); border-radius: 6px;"
+						  "  font-size: 13px; padding: 2px;"
+						  "}"
+						  "QPushButton:hover {"
+						  "  background-color: rgba(180, 50, 50, 100);"
+						  "  border: 1px solid rgba(220, 80, 80, 150);"
+						  "}"
+						  "QPushButton:pressed {"
+						  "  background-color: rgba(180, 50, 50, 130);"
+						  "}"
+						  "QPushButton:focus {"
+						  "  outline: none; border: 2px solid rgba(80, 160, 255, 200);"
+						  "}");
+				overlay->btnActive->setAccessibleName(
+					isSourceEnabled ? "Deactivate Source" : "Activate Source");
+				overlay->btnActive->setToolTip(
+					isSourceEnabled ? "Deactivate Source" : "Activate Source");
 			}
+
+			// --- Disable Preview button ---
 			if (overlay->btnDisablePreview) {
-				overlay->btnDisablePreview->setText(isPreviewDisabled ? QString::fromUtf8("👁")
-										      : QString::fromUtf8("🚫"));
-				overlay->btnDisablePreview->setToolTip(isPreviewDisabled ? "Enable Preview"
-											 : "Disable Preview");
+				overlay->btnDisablePreview->setText(
+					isPreviewDisabled ? QString::fromUtf8("👁")
+							 : QString::fromUtf8("🚫"));
+				overlay->btnDisablePreview->setAccessibleName(
+					isPreviewDisabled ? "Enable Preview" : "Disable Preview");
+				overlay->btnDisablePreview->setToolTip(
+					isPreviewDisabled ? "Enable Preview" : "Disable Preview");
 			}
 		}
 	}
