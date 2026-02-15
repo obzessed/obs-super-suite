@@ -52,8 +52,8 @@ public:
 
 protected:
 	// Called when a matched MIDI CC arrives for a registered control.
-	// Default maps 0-127 → QSlider range, or toggles QPushButton.
-	virtual void on_midi_cc(const QString &control_name, int value);
+	// Value is already mapped through the binding's output range.
+	virtual void on_midi_cc(const QString &control_name, double value);
 
 	// Access the toolbar to add custom actions
 	QToolBar *toolbar() const;
@@ -90,7 +90,6 @@ public:
 	void set_controls(const QMap<QString, QWidget *> &controls);
 	void activate();
 	void deactivate();
-	void show_status(const QString &text);
 	bool is_active() const;
 
 signals:
@@ -106,6 +105,5 @@ private:
 
 	QMap<QString, QWidget *> m_controls;
 	QString m_hovered_control;
-	QLabel *m_status_label;
 	bool m_active = false;
 };

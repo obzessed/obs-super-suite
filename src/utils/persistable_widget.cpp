@@ -6,6 +6,11 @@
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QSlider>
+#include <QDial>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QComboBox>
+#include <QCheckBox>
 #include <QPushButton>
 #include <QTimer>
 
@@ -22,7 +27,7 @@ PersistableWidget::PersistableWidget(const QString &widget_id, QWidget *parent)
 	auto *router = MidiRouter::instance();
 
 	connect(router, &MidiRouter::midi_cc_received, this,
-		[this](const QString &wid, const QString &ctl, int val) {
+		[this](const QString &wid, const QString &ctl, double val) {
 			if (m_midi_enabled && wid == m_widget_id)
 				on_midi_cc(ctl, val);
 		});
@@ -139,26 +144,44 @@ void PersistableWidget::on_control_clicked_for_learn(const QString &control_name
 	if (!target)
 		return;
 
-	// Determine the output range from the control itself
-	int out_min = 0, out_max = 127;
+	// Auto-detect mapping mode and output range from the control type
+	MidiBinding::MapMode mode = MidiBinding::Range;
+	double out_min = 0.0, out_max = 127.0;
+	QStringList combo_items;
+
 	if (auto *slider = qobject_cast<QSlider *>(target)) {
+		mode = MidiBinding::Range;
 		out_min = slider->minimum();
 		out_max = slider->maximum();
+	} else if (auto *dial = qobject_cast<QDial *>(target)) {
+		mode = MidiBinding::Range;
+		out_min = dial->minimum();
+		out_max = dial->maximum();
+	} else if (auto *spin = qobject_cast<QSpinBox *>(target)) {
+		mode = MidiBinding::Range;
+		out_min = spin->minimum();
+		out_max = spin->maximum();
+	} else if (auto *dspin = qobject_cast<QDoubleSpinBox *>(target)) {
+		mode = MidiBinding::Range;
+		out_min = dspin->minimum();
+		out_max = dspin->maximum();
+	} else if (auto *combo = qobject_cast<QComboBox *>(target)) {
+		mode = MidiBinding::Select;
+		for (int i = 0; i < combo->count(); i++)
+			combo_items << combo->itemText(i);
+	} else if (qobject_cast<QCheckBox *>(target)) {
+		mode = MidiBinding::Toggle;
 	} else if (auto *btn = qobject_cast<QPushButton *>(target)) {
-		Q_UNUSED(btn);
-		out_min = 0;
-		out_max = 127; // threshold-based toggle
+		mode = btn->isCheckable() ? MidiBinding::Toggle : MidiBinding::Trigger;
 	}
 
 	auto *popup = new MidiControlPopup(
-		m_widget_id, control_name, out_min, out_max, this);
+		m_widget_id, control_name, mode, out_min, out_max, combo_items, this);
 
-	// When the popup closes, update the overlay status to reflect changes
+	// When the popup closes, repaint the overlay
 	connect(popup, &MidiControlPopup::closed, this, [this]() {
-		if (m_overlay->is_active()) {
-			m_overlay->show_status("Click a control to assign MIDI");
+		if (m_overlay->is_active())
 			m_overlay->update();
-		}
 	});
 
 	popup->show_near(target);
@@ -237,10 +260,16 @@ QStringList PersistableWidget::midi_control_names() const
 // Default MIDI CC handling
 // ---------------------------------------------------------------------------
 
-void PersistableWidget::on_midi_cc(const QString &control_name, int value)
+void PersistableWidget::on_midi_cc(const QString &control_name, double value)
 {
 	// The value is already mapped by MidiRouter through the binding's
-	// input/output ranges. We just set it directly on the control.
+	// map mode. We apply it to the control's native type.
+	//
+	// Range mode:   value in [output_min, output_max]
+	// Toggle mode:  0.0 or 1.0
+	// Select mode:  normalized 0.0 to 1.0
+	// Trigger mode: 0.0 or 1.0
+
 	auto it = m_midi_controls.find(control_name);
 	if (it == m_midi_controls.end())
 		return;
@@ -248,11 +277,29 @@ void PersistableWidget::on_midi_cc(const QString &control_name, int value)
 	QWidget *control = it.value();
 
 	if (auto *slider = qobject_cast<QSlider *>(control)) {
-		slider->setValue(value);
+		slider->setValue((int)qRound(value));
+	} else if (auto *dial = qobject_cast<QDial *>(control)) {
+		dial->setValue((int)qRound(value));
+	} else if (auto *spin = qobject_cast<QSpinBox *>(control)) {
+		spin->setValue((int)qRound(value));
+	} else if (auto *dspin = qobject_cast<QDoubleSpinBox *>(control)) {
+		dspin->setValue(value);
+	} else if (auto *combo = qobject_cast<QComboBox *>(control)) {
+		// Select mode: value is the item index
+		int count = combo->count();
+		if (count > 0) {
+			int idx = std::clamp((int)qRound(value), 0, count - 1);
+			combo->setCurrentIndex(idx);
+		}
+	} else if (auto *check = qobject_cast<QCheckBox *>(control)) {
+		// Toggle mode: flip on each rising edge
+		check->setChecked(!check->isChecked());
 	} else if (auto *btn = qobject_cast<QPushButton *>(control)) {
 		if (btn->isCheckable()) {
-			btn->setChecked(value > 63);
-		} else if (value > 63) {
+			// Toggle mode: flip on each rising edge
+			btn->setChecked(!btn->isChecked());
+		} else {
+			// Trigger mode: fire on rising edge
 			btn->click();
 		}
 	}
@@ -267,20 +314,6 @@ MidiAssignOverlay::MidiAssignOverlay(QWidget *parent)
 {
 	setMouseTracking(true);
 	setAttribute(Qt::WA_TransparentForMouseEvents, false);
-
-	m_status_label = new QLabel(this);
-	m_status_label->setAlignment(Qt::AlignCenter);
-	m_status_label->setStyleSheet(
-		"QLabel {"
-		"  color: #ffffff;"
-		"  background-color: rgba(30, 30, 30, 220);"
-		"  border: 1px solid rgba(100, 200, 255, 0.6);"
-		"  border-radius: 6px;"
-		"  padding: 8px 16px;"
-		"  font-size: 12px;"
-		"  font-weight: bold;"
-		"}");
-	m_status_label->hide();
 }
 
 void MidiAssignOverlay::set_controls(const QMap<QString, QWidget *> &controls)
@@ -294,7 +327,6 @@ void MidiAssignOverlay::activate()
 	m_hovered_control.clear();
 	setCursor(Qt::CrossCursor);
 	show();
-	show_status("Click a control to assign MIDI");
 	update();
 }
 
@@ -302,23 +334,8 @@ void MidiAssignOverlay::deactivate()
 {
 	m_active = false;
 	m_hovered_control.clear();
-	m_status_label->hide();
 	setCursor(Qt::ArrowCursor);
 	hide();
-}
-
-void MidiAssignOverlay::show_status(const QString &text)
-{
-	m_status_label->setText(text);
-	m_status_label->adjustSize();
-	// Center horizontally near the bottom
-	int x = (width() - m_status_label->width()) / 2;
-	int y = height() - m_status_label->height() - 12;
-	if (y < 8)
-		y = 8;
-	m_status_label->move(x, y);
-	m_status_label->show();
-	m_status_label->raise();
 }
 
 bool MidiAssignOverlay::is_active() const
