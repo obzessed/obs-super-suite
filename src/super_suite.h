@@ -13,6 +13,3 @@ void on_plugin_unload();
 #ifdef __cplusplus
 }
 #endif
-
-// Called when ASIO settings are changed to update running sources
-void refreshAsioSources();

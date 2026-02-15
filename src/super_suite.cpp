@@ -34,6 +34,7 @@
 
 #include "dialogs/canvas_manager.h"
 #include "dialogs/audio_channels.h"
+#include "dialogs/audio_channels_support.h"
 #include "dialogs/outputs_viewer.h"
 #include "dialogs/encoders_viewer.h"
 #include "dialogs/channels_viewer.h"
@@ -43,896 +44,50 @@
 #include "windows/encoding_graph_window.h"
 #pragma endregion
 
-// OBS Channels (64) Reservations
-// 1 - Scene Transition
-// 2 - Desktop Audio 1
-// 3 - Desktop Audio 2
-// 4 - Mix/Aux 1
-// 5 - Mix/Aux 2
-// 6 - Mix/Aux 3
-// 7 - Mix/Aux 4
-// 8 - 64 - Unreserved
-
-// 8-... - Downstream Keyer uses channels starting from (8-MAX_CHANNELS).
-// 63 - SoundBoard plugin puts a ffmpeg-source here to play its audio.
-
-/*
- * #define MAX_AUDIO_MIXES 6 (Tracks)
- * #define MAX_AUDIO_CHANNELS 8 (Channels per Source)
- * #define MAX_DEVICE_INPUT_CHANNELS 64 (Output Channels)
- */
-
-// Store ASIO sources with channel, canvas UUID, and source pointer
-struct AsioSourceEntry {
-	int channel;
-	QString canvasUuid;
-	obs_source_t *source;
-};
-static std::vector<AsioSourceEntry> asio_sources;
-static QPointer<AudioChannelsDialog> settings_dialog;
-static QPointer<ChannelsDialog> channels_view;
-static QPointer<OutputsViewer> outputs_viewer;
-static QPointer<EncodersViewer> encoders_viewer;
-static QPointer<DockWindowManager> dock_window_manager;
-static QPointer<MixerDock> mixer_dock;
-static QPointer<WrapperTestDock> wrapper_test_dock;
-static QPointer<SourcererSourcesDock> sourcerer_sources_dock;
-static QPointer<SourcererScenesDock> sourcerer_scenes_dock;
-static QPointer<CanvasManager> canvas_manager;
-static QPointer<BrowserManager> browser_manager;
-static QPointer<EncodingGraphWindow> encoding_graph;
-
-// Guard flag to prevent signal handlers from modifying config during createSources()
-static bool creating_sources = false;
-
-// Helper: Check if a source type is available (plugin installed)
-static bool source_type_exists(const char *type_id)
-{
-	bool found = false;
-	size_t idx = 0;
-	const char *id = nullptr;
-
-	while (obs_enum_source_types(idx++, &id)) {
-		if (id && strcmp(id, type_id) == 0) {
-			found = true;
-			break;
-		}
-	}
-	return found;
-}
-
-// Helper: Get canvas from UUID (empty = main canvas)
-static obs_canvas_t *get_canvas_for_uuid(const QString &uuid)
-{
-	if (uuid.isEmpty()) {
-		return obs_get_main_canvas();
-	}
-	obs_canvas_t *canvas = obs_get_canvas_by_uuid(uuid.toUtf8().constData());
-	return canvas ? canvas : obs_get_main_canvas(); // Fallback to main if not found
-}
-
-// Apply audio control settings to a source
-static void apply_audio_settings(obs_source_t *source, const AsioSourceConfig &cfg)
-{
-	if (!source)
-		return;
-
-	obs_source_set_muted(source, cfg.muted);
-	obs_source_set_monitoring_type(source, (obs_monitoring_type)cfg.monitoringType);
-	obs_source_set_volume(source, cfg.volume);
-	obs_source_set_balance_value(source, cfg.balance);
-
-	// Force mono via source flags
-	uint32_t flags = obs_source_get_flags(source);
-	if (cfg.forceMono) {
-		flags |= OBS_SOURCE_FLAG_FORCE_MONO;
-	} else {
-		flags &= ~OBS_SOURCE_FLAG_FORCE_MONO;
-	}
-	obs_source_set_flags(source, flags);
-
-	// Apply audio mixers (tracks)
-	obs_source_set_audio_mixers(source, cfg.audioMixers);
-
-	// Apply show in mixer state (audio_active controls mixer visibility, not final mix)
-	obs_source_set_audio_active(source, cfg.audioActive);
-}
-
-template<typename T> T *calldata_get_pointer(const calldata_t *data, const char *name)
-{
-	void *ptr = nullptr;
-	calldata_get_ptr(data, name, &ptr);
-	return reinterpret_cast<T *>(ptr);
-}
-
-const char *calldata_get_string(const calldata_t *data, const char *name)
-{
-	const char *value = nullptr;
-	calldata_get_string(data, name, &value);
-	return value;
-}
-
-// Helper: Find config index by source pointer
-// Uses source name matching which is stable even during createSources()
-static int find_config_index_for_source(obs_source_t *source)
-{
-	if (!source)
-		return -1;
-
-	const char *sourceName = obs_source_get_name(source);
-	if (!sourceName)
-		return -1;
-
-	const auto &sources = AudioChSrcConfig::get()->getSources();
-	for (int i = 0; i < sources.size(); i++) {
-		if (sources[i].name == QString::fromUtf8(sourceName)) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-// Helper: Get channel for a source from asio_sources (for UI updates)
-static int get_channel_for_source(obs_source_t *source)
-{
-	for (const auto &entry : asio_sources) {
-		if (entry.source == source) {
-			return entry.channel;
-		}
-	}
-	return -1;
-}
-
-// Signal callback: source renamed
-static void on_source_rename(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-
-	auto *source = calldata_get_pointer<obs_source_t>(cd, "source");
-	const char *new_name = calldata_string(cd, "new_name");
-	const char *prev_name = calldata_string(cd, "prev_name");
-
-	if (!source || !new_name || !prev_name)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	// Find config by previous name (source has already been renamed by OBS)
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	for (auto & source : sources) {
-		if (source.name == QString::fromUtf8(prev_name)) {
-			source.name = QString::fromUtf8(new_name);
-			AudioChSrcConfig::get()->save();
-
-			// Update UI using the source's UUID
-			if (settings_dialog) {
-				settings_dialog->updateSourceName(source.sourceUuid, QString::fromUtf8(new_name));
-			}
-
-			obs_log(LOG_INFO, "ASIO source renamed: '%s' -> '%s'", prev_name, new_name);
-			break;
-		}
-	}
-}
-
-// Signal callback: source settings updated
-static void on_source_update(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	// Find config by source name
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	obs_data_t *settings = obs_source_get_settings(source);
-	if (settings) {
-		const char *json = obs_data_get_json(settings);
-		if (json) {
-			QJsonParseError error;
-			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json), &error);
-			if (error.error == QJsonParseError::NoError && doc.isObject()) {
-				sources[idx].sourceSettings = doc.object();
-				AudioChSrcConfig::get()->save();
-				if (settings_dialog) {
-					settings_dialog->updateSourceSettings(sources[idx].sourceUuid,
-									      sources[idx].sourceSettings);
-					settings_dialog->updateSpeakerLayoutByUuid(sources[idx].sourceUuid);
-				}
-				obs_log(LOG_INFO, "ASIO source settings updated for '%s'", obs_source_get_name(source));
-			}
-		}
-		obs_data_release(settings);
-	}
-}
-
-// Helper function to save filter state for a source
-static void save_source_filters(obs_source_t *source)
-{
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	if (obs_data_array_t *filterArray = obs_source_backup_filters(source)) {
-		// Wrap in object with "filters" key for consistent parsing
-		obs_data_t *wrapper = obs_data_create();
-		obs_data_set_array(wrapper, "filters", filterArray);
-		if (const char *json = obs_data_get_json(wrapper)) {
-			QJsonParseError error;
-			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json), &error);
-			if (error.error == QJsonParseError::NoError && doc.isObject()) {
-				QJsonObject root = doc.object();
-				if (root.contains("filters") && root["filters"].isArray()) {
-					sources[idx].sourceFilters = root["filters"].toArray();
-					AudioChSrcConfig::get()->save();
-					if (settings_dialog) {
-						settings_dialog->updateSourceFilters(sources[idx].sourceUuid,
-										     sources[idx].sourceFilters);
-					}
-					obs_log(LOG_INFO, "Saved filters for '%s'", obs_source_get_name(source));
-				}
-			}
-		}
-		obs_data_release(wrapper);
-		obs_data_array_release(filterArray);
-	}
-}
-
-// Signal callback: filter added or removed
-static void on_filter_changed(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	save_source_filters(source);
-}
-
-// Signal callback: filter settings updated
-static void on_filter_settings_update(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(cd);
-
-	// 'data' is the parent source
-	auto *parent_source = static_cast<obs_source_t *>(data);
-	if (!parent_source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	save_source_filters(parent_source);
-}
-
-// Signal callback: filter added
-static void on_filter_added(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	auto *filter = static_cast<obs_source_t *>(calldata_ptr(cd, "filter"));
-
-	if (!source || !filter)
-		return;
-
-	// Connect to filter's update signal to catch setting changes
-	signal_handler_t *sh = obs_source_get_signal_handler(filter);
-	if (sh) {
-		signal_handler_connect(sh, "update", on_filter_settings_update, source);
-	}
-
-	// Skip config update if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	save_source_filters(source);
-}
-
-// Signal callback: mute state changed
-static void on_mute_changed(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	bool muted = calldata_bool(cd, "muted");
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	sources[idx].muted = muted;
-	AudioChSrcConfig::get()->save();
-	if (settings_dialog) {
-		settings_dialog->updateSourceMuted(sources[idx].sourceUuid, muted);
-	}
-}
-
-// Signal callback: volume changed
-static void on_volume_changed(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	float volume = (float)calldata_float(cd, "volume");
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	sources[idx].volume = volume;
-	AudioChSrcConfig::get()->save();
-	if (settings_dialog) {
-		settings_dialog->updateSourceVolume(sources[idx].sourceUuid, volume);
-	}
-}
-
-// Signal callback: audio monitoring type changed
-static void on_audio_monitoring_changed(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	int monitoringType = (int)calldata_int(cd, "type");
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	sources[idx].monitoringType = monitoringType;
-	AudioChSrcConfig::get()->save();
-	if (settings_dialog) {
-		settings_dialog->updateSourceMonitoring(sources[idx].sourceUuid, monitoringType);
-	}
-}
-
-// Signal callback: audio balance changed
-static void on_audio_balance_changed(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	float balance = (float)calldata_float(cd, "balance");
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	sources[idx].balance = balance;
-	AudioChSrcConfig::get()->save();
-	if (settings_dialog) {
-		settings_dialog->updateSourceBalance(sources[idx].sourceUuid, balance);
-	}
-}
-
-// Signal callback: source flags updated (for mono)
-static void on_update_flags(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	auto flags = static_cast<uint32_t>(calldata_int(cd, "flags"));
-	bool forceMono = (flags & OBS_SOURCE_FLAG_FORCE_MONO) != 0;
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	sources[idx].forceMono = forceMono;
-	AudioChSrcConfig::get()->save();
-	if (settings_dialog) {
-		settings_dialog->updateSourceMono(sources[idx].sourceUuid, forceMono);
-	}
-}
-
-// Signal callback: audio mixers changed (track selection)
-static void on_audio_mixers_changed(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	auto mixers = static_cast<uint32_t>(calldata_int(cd, "mixers"));
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	sources[idx].audioMixers = mixers;
-	AudioChSrcConfig::get()->save();
-	if (settings_dialog) {
-		settings_dialog->updateSourceAudioMixers(sources[idx].sourceUuid, mixers);
-	}
-}
-
-// Signal callback: audio activated (show in mixer)
-static void on_audio_activate(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	sources[idx].audioActive = true;
-	AudioChSrcConfig::get()->save();
-	if (settings_dialog) {
-		settings_dialog->updateSourceAudioActive(sources[idx].sourceUuid, true);
-	}
-}
-
-// Signal callback: audio deactivated (hide from mixer)
-static void on_audio_deactivate(void *data, calldata_t *cd)
-{
-	UNUSED_PARAMETER(data);
-	obs_source_t *source = (obs_source_t *)calldata_ptr(cd, "source");
-	if (!source)
-		return;
-
-	// Skip if we're in the middle of creating sources
-	if (creating_sources)
-		return;
-
-	int idx = find_config_index_for_source(source);
-	if (idx < 0)
-		return;
-
-	auto &sources = AudioChSrcConfig::get()->getSources();
-	sources[idx].audioActive = false;
-	AudioChSrcConfig::get()->save();
-	if (settings_dialog) {
-		settings_dialog->updateSourceAudioActive(sources[idx].sourceUuid, false);
-	}
-}
-
-// Connect signals to all existing filters of a source
-static void connect_existing_filters(obs_source_t *source)
-{
-	// We need to iterate over existing filters and attach update listener
-	// Note: obs_source_backup_filters returns data array, not sources.
-	// To get actual filter sources we'd need to use obs_source_enum_filters if available,
-	// but standard API might not expose a safe way to iterate filter *sources* directly easily without callback?
-	// Actually, obs_source_enum_filters takes a callback.
-
-	obs_source_enum_filters(
-		source,
-		[](obs_source_t *parent, obs_source_t *filter, void *param) {
-			UNUSED_PARAMETER(parent);
-			UNUSED_PARAMETER(param);
-
-			signal_handler_t *sh = obs_source_get_signal_handler(filter);
-			if (sh) {
-				// Check if already connected? signal_handler_connect is safe to call multiple times?
-				// It might duplicate. But we only call this on creation.
-				signal_handler_connect(sh, "update", on_filter_settings_update, parent);
-			}
-		},
-		nullptr);
-}
-
-// Connect signal handlers to a source
-static void connect_source_signals(obs_source_t *source)
-{
-	signal_handler_t *sh = obs_source_get_signal_handler(source);
-	if (sh) {
-		signal_handler_connect(sh, "rename", on_source_rename, nullptr);
-		signal_handler_connect(sh, "update", on_source_update, nullptr);
-		signal_handler_connect(sh, "filter_add", on_filter_added, nullptr);
-		signal_handler_connect(sh, "filter_remove", on_filter_changed, nullptr);
-		signal_handler_connect(sh, "reorder_filters", on_filter_changed, nullptr);
-
-		// Audio signals
-		signal_handler_connect(sh, "mute", on_mute_changed, nullptr);
-		signal_handler_connect(sh, "volume", on_volume_changed, nullptr);
-		signal_handler_connect(sh, "audio_monitoring", on_audio_monitoring_changed, nullptr);
-		signal_handler_connect(sh, "audio_balance", on_audio_balance_changed, nullptr);
-		signal_handler_connect(sh, "update_flags", on_update_flags, nullptr);
-		signal_handler_connect(sh, "audio_mixers", on_audio_mixers_changed, nullptr);
-		signal_handler_connect(sh, "audio_activate", on_audio_activate, nullptr);
-		signal_handler_connect(sh, "audio_deactivate", on_audio_deactivate, nullptr);
-	}
-
-	// Also connect to any existing filters (restored from config)
-	connect_existing_filters(source);
-}
-
-// Disconnect signal handlers from a source
-static void disconnect_source_signals(obs_source_t *source)
-{
-	signal_handler_t *sh = obs_source_get_signal_handler(source);
-	if (sh) {
-		signal_handler_disconnect(sh, "rename", on_source_rename, nullptr);
-		signal_handler_disconnect(sh, "update", on_source_update, nullptr);
-		signal_handler_disconnect(sh, "filter_add", on_filter_added, nullptr);
-		signal_handler_disconnect(sh, "filter_remove", on_filter_changed, nullptr);
-		signal_handler_disconnect(sh, "reorder_filters", on_filter_changed, nullptr);
-
-		// Audio signals
-		signal_handler_disconnect(sh, "mute", on_mute_changed, nullptr);
-		signal_handler_disconnect(sh, "volume", on_volume_changed, nullptr);
-		signal_handler_disconnect(sh, "audio_monitoring", on_audio_monitoring_changed, nullptr);
-		signal_handler_disconnect(sh, "audio_balance", on_audio_balance_changed, nullptr);
-		signal_handler_disconnect(sh, "update_flags", on_update_flags, nullptr);
-		signal_handler_disconnect(sh, "audio_mixers", on_audio_mixers_changed, nullptr);
-		signal_handler_disconnect(sh, "audio_activate", on_audio_activate, nullptr);
-		signal_handler_disconnect(sh, "audio_deactivate", on_audio_deactivate, nullptr);
-	}
-
-	// Disconnect from filters
-	obs_source_enum_filters(
-		source,
-		[](obs_source_t *parent, obs_source_t *filter, void *param) {
-			UNUSED_PARAMETER(parent);
-			UNUSED_PARAMETER(param);
-			signal_handler_t *sh = obs_source_get_signal_handler(filter);
-			if (sh) {
-				signal_handler_disconnect(sh, "update", on_filter_settings_update, parent);
-			}
-		},
-		nullptr);
-}
-
-// Helper to find existing source by name from our managed list
-static obs_source_t *find_managed_source_by_name(const char *name)
-{
-	for (const auto &entry : asio_sources) {
-		if (entry.source) {
-			const char *srcName = obs_source_get_name(entry.source);
-			if (srcName && strcmp(srcName, name) == 0) {
-				return entry.source;
-			}
-		}
-	}
-	return nullptr;
-}
-
-void createSources()
-{
-	// Set guard flag to prevent signal handlers from modifying config
-	creating_sources = true;
-
-	// 1. Detach all current sources from their canvas channels
-	// We do this first so that channels are free to be reassigned
-	for (auto &entry : asio_sources) {
-		if (entry.source) {
-			obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid);
-			if (canvas) {
-				if (entry.channel > 0 && entry.channel < MAX_CHANNELS) {
-					obs_canvas_set_channel(canvas, entry.channel - 1,
-							       nullptr); // OBS uses 0-indexed channels
-				}
-				obs_canvas_release(canvas);
-			}
-		}
-	}
-
-	// 2. Build map of existing managed sources by UUID for reuse
-	// UUID is stable across name changes and unique per source
-	std::map<std::string, std::pair<int, obs_source_t *>> reusable_sources; // uuid -> (oldChannel, source)
-	for (auto &entry : asio_sources) {
-		if (entry.source) {
-			const char *uuid = obs_source_get_uuid(entry.source);
-			if (uuid) {
-				reusable_sources[uuid] = {entry.channel, entry.source};
-			}
-		}
-	}
-
-	// 3. Prepare new list
-	std::vector<AsioSourceEntry> new_asio_sources;
-	auto &configs = AudioChSrcConfig::get()->getSources();
-
-	obs_log(LOG_INFO, "createSources: %zu existing sources, %d configs, %zu reusable", asio_sources.size(),
-		configs.size(), reusable_sources.size());
-
-	for (int i = 0; i < configs.size(); i++) {
-		auto &cfg = configs[i];
-		if (!cfg.enabled) {
-			continue;
-		}
-
-		obs_source_t *source = nullptr;
-		std::string configName = cfg.name.toUtf8().constData();
-		std::string configUuid = cfg.sourceUuid.toUtf8().constData();
-		int channel = cfg.outputChannel;
-
-		// Only valid channels (1-MAX_CHANNELS) will be assigned; -1 or invalid = no channel
-		bool validChannel = channel >= 1 && channel <= MAX_CHANNELS;
-
-		// Try to find existing source by UUID
-		auto it = configUuid.empty() ? reusable_sources.end() : reusable_sources.find(configUuid);
-		if (it != reusable_sources.end()) {
-			source = it->second.second;
-			int oldChannel = it->second.first;
-
-			// Sync name: if config name differs from source name, update source
-			const char *currentName = obs_source_get_name(source);
-			if (currentName && configName != currentName) {
-				obs_source_set_name(source, configName.c_str());
-				obs_log(LOG_INFO, "Renamed source '%s' -> '%s'", currentName, configName.c_str());
-			}
-
-			// If source was on a channel and is now unbound, clear the old channel
-			if (oldChannel > 0 && !validChannel) {
-				obs_canvas_t *oldCanvas = get_canvas_for_uuid(cfg.canvas);
-				obs_canvas_set_channel(oldCanvas, oldChannel - 1, nullptr);
-				obs_log(LOG_INFO, "Cleared channel %d (source '%s' now unbound)", oldChannel,
-					configName.c_str());
-				obs_canvas_release(oldCanvas);
-			}
-
-			obs_log(LOG_INFO, "Reused source '%s' by UUID (channel %d -> %d)", configName.c_str(),
-				oldChannel, channel);
-			reusable_sources.erase(it);
-		}
-
-		if (!source) {
-			// Check if source type is available (plugin might not be installed)
-			if (!source_type_exists(cfg.sourceType.toUtf8().constData())) {
-				obs_log(LOG_WARNING, "Source type '%s' not available, skipping '%s'",
-					cfg.sourceType.toUtf8().constData(), configName.c_str());
-				continue;
-			}
-
-			// Create new source
-			// Parse stored settings from JSON
-			QJsonDocument doc(cfg.sourceSettings);
-			obs_data_t *settings =
-				obs_data_create_from_json(doc.toJson(QJsonDocument::Compact).constData());
-			if (!settings)
-				settings = obs_data_create();
-
-			// a hacky way to fix the dup source creation where the built-in sources (Desktop-Audio and Mix/Aux)
-			// channel assigned source is saved and restored before us.
-			// special check for sources of channels 2-7 (Desktop-Audio and Mix/Aux)
-			if (asio_sources.empty()) { // is first attempt (loading from saved)
-				if (channel >= 2 && channel <= 7) {
-					obs_canvas_t *canvas = get_canvas_for_uuid(cfg.canvas);
-					if (const auto src = obs_canvas_get_channel(canvas, channel - 1)) {
-						obs_log(LOG_WARNING, "Source PreExisting at channel: %d", channel);
-						obs_canvas_set_channel(canvas, channel - 1,
-								       nullptr); // OBS uses 0-indexed channels
-						// just rename it to prevent clashes
-						obs_source_set_name(src, QString::fromUtf8("%1_")
-										 .arg(configName.c_str())
-										 .toUtf8()
-										 .constData());
-						obs_source_release(src);
-					}
-					obs_canvas_release(canvas);
-				}
-			}
-
-			source = obs_source_create(cfg.sourceType.toUtf8().constData(), configName.c_str(), settings,
-						   nullptr);
-
-			obs_data_release(settings);
-
-			if (source) {
-				obs_source_set_hidden(source, true);
-
-				// Check if OBS renamed the source (happens if duplicate name existed)
-				const char *actualName = obs_source_get_name(source);
-				if (actualName && configName != actualName) {
-					obs_log(LOG_WARNING, "OBS renamed source '%s' -> '%s' (duplicate existed)",
-						configName.c_str(), actualName);
-					cfg.name = QString::fromUtf8(actualName);
-					configName = actualName;
-
-					// Update settings dialog if open
-					if (settings_dialog) {
-						settings_dialog->updateSourceNameByIndex(i, cfg.name);
-					}
-				}
-
-				// Restore filters from config
-				if (!cfg.sourceFilters.isEmpty()) {
-					QJsonObject wrapper;
-					wrapper["filters"] = cfg.sourceFilters;
-					QJsonDocument doc(wrapper);
-
-					obs_data_t *filterData = obs_data_create_from_json(
-						doc.toJson(QJsonDocument::Compact).constData());
-
-					if (filterData) {
-						obs_data_array_t *filterArray =
-							obs_data_get_array(filterData, "filters");
-						if (filterArray) {
-							obs_source_restore_filters(source, filterArray);
-							obs_data_array_release(filterArray);
-							obs_log(LOG_INFO, "Restored filters for '%s'",
-								configName.c_str());
-						}
-						obs_data_release(filterData);
-					}
-				}
-
-				// Connect signal handlers
-				connect_source_signals(source);
-			}
-		}
-
-		if (source) {
-			// Apply audio settings from config
-			apply_audio_settings(source, cfg);
-
-			// Store source UUID in config
-			const char *uuid = obs_source_get_uuid(source);
-			if (uuid) {
-				cfg.sourceUuid = QString::fromUtf8(uuid);
-				// Update settings dialog if open
-				if (settings_dialog) {
-					settings_dialog->updateSourceUuid(i, cfg.sourceUuid);
-				}
-			}
-
-			// Assign to canvas channel (only if valid channel 1-MAX_CHANNELS)
-			if (validChannel) {
-				obs_canvas_t *canvas = get_canvas_for_uuid(cfg.canvas);
-				obs_canvas_set_channel(canvas, channel - 1, source); // OBS uses 0-indexed channels
-				obs_log(LOG_INFO, "Audio source '%s' (uuid: %s) assigned to channel %d (canvas: %s)",
-					configName.c_str(), uuid ? uuid : "?", channel,
-					cfg.canvas.isEmpty() ? "main" : cfg.canvas.toUtf8().constData());
-				obs_canvas_release(canvas);
-			} else {
-				obs_log(LOG_INFO, "Audio source '%s' (uuid: %s) created (no channel assigned)",
-					configName.c_str(), uuid ? uuid : "?");
-			}
-			new_asio_sources.push_back({channel, cfg.canvas, source});
-		} else {
-			obs_log(LOG_ERROR, "Failed to get/create ASIO source '%s'.", configName.c_str());
-		}
-	}
-
-	// 4. Clean up unused sources - must call obs_source_remove to actually destroy them
-	for (auto &[uuid, channelSourcePair] : reusable_sources) {
-		auto &[oldChannel, src] = channelSourcePair;
-		const char *srcName = obs_source_get_name(src);
-		disconnect_source_signals(src);
-		obs_source_set_audio_active(src, false); // else it won't free up the source
-
-		// obs_source_remove removes from OBS's internal source list and triggers destruction
-		// obs_source_release decrements our reference count
-		obs_source_remove(src);
-		const bool removed = obs_source_removed(src);
-		obs_source_release(src);
-		obs_log(LOG_INFO, "Removed source '%s' (uuid: %s, was on channel %d), %d", srcName ? srcName : "?",
-			uuid.c_str(), oldChannel, removed);
-	}
-
-	asio_sources = std::move(new_asio_sources);
-
-	// Clear guard flag - signal handlers can now modify config safely
-	creating_sources = false;
-
-	// Show error if no sources were created but there are configs
-	if (asio_sources.empty() && !configs.isEmpty()) {
-		// Only show error if we really have 0 sources active (all failed)
-		// But maybe some failed and some succeeded.
-	}
-}
-
-void cleanup()
-{
-	// Release and remove all managed sources
-	for (auto &entry : asio_sources) {
-		if (entry.source) {
-			// Disconnect signals first
-			disconnect_source_signals(entry.source);
-			obs_source_set_audio_active(entry.source, false); // else it won't free up the source
-			// Clear the canvas channel
-			if (obs_canvas_t *canvas = get_canvas_for_uuid(entry.canvasUuid)) {
-				if (entry.channel > 0) {
-					obs_canvas_set_channel(canvas, entry.channel - 1, nullptr);
-				}
-				obs_canvas_release(canvas);
-			}
-			// Remove from OBS source list and release our reference
-			obs_source_remove(entry.source);
-			obs_source_release(entry.source);
-		}
-	}
-	asio_sources.clear();
-}
-
-void refreshAsioSources()
-{
-	// Reload config and recreate sources
-	AudioChSrcConfig::get()->load();
-	createSources();
-}
+static struct GlobalDialogs {
+	QPointer<AudioChannelsDialog> audio_channels;
+	QPointer<ChannelsDialog> canvas_channels;
+	QPointer<OutputsViewer> outputs_viewer;
+	QPointer<EncodersViewer> encoders_viewer;
+	QPointer<DockWindowManager> dock_window_manager;
+	QPointer<CanvasManager> canvas_manager;
+	QPointer<BrowserManager> browser_dock_manager;
+	QPointer<EncodingGraphWindow> encoding_graph;
+} g_dialogs;
+
+static struct GlobalDocks {
+	QPointer<MixerDock> super_mixer;
+	QPointer<WrapperTestDock> wrapper_test;
+	QPointer<SourcererScenesDock> sourcerer_scenes;
+	QPointer<SourcererSourcesDock> sourcerer_sources;
+} g_docks;
 
 static void save_callback(obs_data_t *save_data, bool saving, void *)
 {
 	if (saving) {
-		if (dock_window_manager) {
-			QJsonObject data = dock_window_manager->saveToConfig();
+		if (g_dialogs.dock_window_manager) {
+			QJsonObject data = g_dialogs.dock_window_manager->saveToConfig();
 			QJsonDocument doc(data);
 			QString jsonStr = doc.toJson(QJsonDocument::Compact);
 			obs_data_set_string(save_data, "DockWindowManager", jsonStr.toUtf8().constData());
 		}
 
-		if (browser_manager) {
-			QJsonObject data = browser_manager->saveToConfig();
+		if (g_dialogs.browser_dock_manager) {
+			QJsonObject data = g_dialogs.browser_dock_manager->saveToConfig();
 			QJsonDocument doc(data);
 			QString jsonStr = doc.toJson(QJsonDocument::Compact);
 			obs_data_set_string(save_data, "BrowserManager", jsonStr.toUtf8().constData());
 		}
 
-		if (sourcerer_sources_dock) {
-			QJsonObject data = sourcerer_sources_dock->Save();
+		if (g_docks.sourcerer_sources) {
+			QJsonObject data = g_docks.sourcerer_sources->Save();
 			QJsonDocument doc(data);
 			QString jsonStr = doc.toJson(QJsonDocument::Compact);
 			obs_data_set_string(save_data, "SourcererSources", jsonStr.toUtf8().constData());
 		}
 
-		if (sourcerer_scenes_dock) {
-			QJsonObject data = sourcerer_scenes_dock->Save();
+		if (g_docks.sourcerer_scenes) {
+			QJsonObject data = g_docks.sourcerer_scenes->Save();
 			QJsonDocument doc(data);
 			QString jsonStr = doc.toJson(QJsonDocument::Compact);
 			obs_data_set_string(save_data, "SourcererScenes", jsonStr.toUtf8().constData());
@@ -941,14 +96,14 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 		// Loading
 		const char *dockWindowJsonStr = obs_data_get_string(save_data, "DockWindowManager");
 		if (dockWindowJsonStr && *dockWindowJsonStr) {
-			if (!dock_window_manager) {
+			if (!g_dialogs.dock_window_manager) {
 				auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-				dock_window_manager = new DockWindowManager(mainWindow);
+				g_dialogs.dock_window_manager = new DockWindowManager(mainWindow);
 			}
 
 			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(dockWindowJsonStr));
 			if (!doc.isNull() && doc.isObject()) {
-				dock_window_manager->loadFromConfig(doc.object());
+				g_dialogs.dock_window_manager->loadFromConfig(doc.object());
 			}
 		}
 
@@ -958,31 +113,31 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 			auto browser_manager_config_data = QByteArray(browserJsonStr);
 			// Load Browser Manager Config
 			if (!browser_manager_config_data.isEmpty()) {
-				if (!browser_manager) {
+				if (!g_dialogs.browser_dock_manager) {
 					auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-					browser_manager = new BrowserManager(mainWindow);
+					g_dialogs.browser_dock_manager = new BrowserManager(mainWindow);
 				}
 				if (const QJsonDocument doc = QJsonDocument::fromJson(browser_manager_config_data);
 				    !doc.isNull() && doc.isObject()) {
-					browser_manager->setDeferredLoad(true);
-					browser_manager->loadFromConfig(doc.object());
+					g_dialogs.browser_dock_manager->setDeferredLoad(true);
+					g_dialogs.browser_dock_manager->loadFromConfig(doc.object());
 				}
 			}
 		}
 
 		const char *sourcesJsonStr = obs_data_get_string(save_data, "SourcererSources");
-		if (sourcesJsonStr && *sourcesJsonStr && sourcerer_sources_dock) {
+		if (sourcesJsonStr && *sourcesJsonStr && g_docks.sourcerer_sources) {
 			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(sourcesJsonStr));
 			if (!doc.isNull() && doc.isObject()) {
-				sourcerer_sources_dock->Load(doc.object());
+				g_docks.sourcerer_sources->Load(doc.object());
 			}
 		}
 
 		const char *scenesJsonStr = obs_data_get_string(save_data, "SourcererScenes");
-		if (scenesJsonStr && *scenesJsonStr && sourcerer_scenes_dock) {
+		if (scenesJsonStr && *scenesJsonStr && g_docks.sourcerer_scenes) {
 			QJsonDocument doc = QJsonDocument::fromJson(QByteArray(scenesJsonStr));
 			if (!doc.isNull() && doc.isObject()) {
-				sourcerer_scenes_dock->Load(doc.object());
+				g_docks.sourcerer_scenes->Load(doc.object());
 			}
 		}
 	}
@@ -990,16 +145,17 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 
 void load_browser_docks()
 {
-	if (!browser_manager) {
+	if (!g_dialogs.browser_dock_manager) {
 		// TODO: recreate of dead
 	} else {
-		browser_manager->onOBSBrowserReady();
+		g_dialogs.browser_dock_manager->onOBSBrowserReady();
 	}
 }
 
 void unload_browser_docks()
 {
-	delete browser_manager;
+	delete g_dialogs.browser_dock_manager;
+	g_dialogs.browser_dock_manager = nullptr;
 }
 
 void on_obs_evt(obs_frontend_event event, void *data)
@@ -1012,8 +168,11 @@ void on_obs_evt(obs_frontend_event event, void *data)
 		// during profile load, which happens before or around FINISHED_LOADING.
 		// So we don't need manual load here if save_callback works as expected.
 		createSources();
-		if (browser_manager) {
-			browser_manager->onOBSBrowserReady();
+		if (g_dialogs.browser_dock_manager) {
+			g_dialogs.browser_dock_manager->onOBSBrowserReady();
+		}
+		if (g_docks.sourcerer_scenes) {
+			g_docks.sourcerer_scenes->FrontendReady();
 		}
 
 		break;
@@ -1030,7 +189,7 @@ void on_obs_evt(obs_frontend_event event, void *data)
 		createSources();
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP:
-		cleanup();
+		audio_sources_cleanup();
 		break;
 	case OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN:
 	case OBS_FRONTEND_EVENT_EXIT:
@@ -1046,7 +205,7 @@ void on_obs_evt(obs_frontend_event event, void *data)
 					nullptr, false);
 			},
 			nullptr, false);
-		cleanup();
+		audio_sources_cleanup();
 		break;
 	default:
 		break;
@@ -1057,103 +216,103 @@ static void show_settings_dialog(void *data)
 {
 	UNUSED_PARAMETER(data);
 
-	if (!settings_dialog) {
+	if (!g_dialogs.audio_channels) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		settings_dialog = new AudioChannelsDialog(mainWindow);
+		g_dialogs.audio_channels = new AudioChannelsDialog(mainWindow);
 	}
-	settings_dialog->toggle_show_hide();
+	g_dialogs.audio_channels->toggle_show_hide();
 }
 
 static void show_channels_view(void *data)
 {
 	UNUSED_PARAMETER(data);
 
-	if (!channels_view) {
+	if (!g_dialogs.canvas_channels) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		channels_view = new ChannelsDialog(mainWindow);
+		g_dialogs.canvas_channels = new ChannelsDialog(mainWindow);
 	}
-	channels_view->show();
-	channels_view->raise();
-	channels_view->activateWindow();
+	g_dialogs.canvas_channels->show();
+	g_dialogs.canvas_channels->raise();
+	g_dialogs.canvas_channels->activateWindow();
 }
 
 static void show_canvas_manager(void *data)
 {
 	UNUSED_PARAMETER(data);
 
-	if (!canvas_manager) {
+	if (!g_dialogs.canvas_manager) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		canvas_manager = new CanvasManager(mainWindow);
+		g_dialogs.canvas_manager = new CanvasManager(mainWindow);
 	}
-	canvas_manager->show();
-	canvas_manager->raise();
-	canvas_manager->activateWindow();
+	g_dialogs.canvas_manager->show();
+	g_dialogs.canvas_manager->raise();
+	g_dialogs.canvas_manager->activateWindow();
 }
 
 static void show_outputs_viewer(void *data)
 {
 	UNUSED_PARAMETER(data);
 
-	if (!outputs_viewer) {
+	if (!g_dialogs.outputs_viewer) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		outputs_viewer = new OutputsViewer(mainWindow);
+		g_dialogs.outputs_viewer = new OutputsViewer(mainWindow);
 	}
-	outputs_viewer->show();
-	outputs_viewer->raise();
-	outputs_viewer->activateWindow();
+	g_dialogs.outputs_viewer->show();
+	g_dialogs.outputs_viewer->raise();
+	g_dialogs.outputs_viewer->activateWindow();
 }
 
 static void show_encoders_viewer(void *data)
 {
 	UNUSED_PARAMETER(data);
 
-	if (!encoders_viewer) {
+	if (!g_dialogs.encoders_viewer) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		encoders_viewer = new EncodersViewer(mainWindow);
+		g_dialogs.encoders_viewer = new EncodersViewer(mainWindow);
 	}
-	encoders_viewer->show();
-	encoders_viewer->raise();
-	encoders_viewer->activateWindow();
+	g_dialogs.encoders_viewer->show();
+	g_dialogs.encoders_viewer->raise();
+	g_dialogs.encoders_viewer->activateWindow();
 }
 
 static void show_dock_window_manager(void *data)
 {
 	UNUSED_PARAMETER(data);
 
-	if (!dock_window_manager) {
+	if (!g_dialogs.dock_window_manager) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		dock_window_manager = new DockWindowManager(mainWindow);
+		g_dialogs.dock_window_manager = new DockWindowManager(mainWindow);
 	}
-	dock_window_manager->show();
-	dock_window_manager->raise();
-	dock_window_manager->activateWindow();
+	g_dialogs.dock_window_manager->show();
+	g_dialogs.dock_window_manager->raise();
+	g_dialogs.dock_window_manager->activateWindow();
 }
 
 static void show_browser_manager(void *data)
 {
 	UNUSED_PARAMETER(data);
 
-	if (!browser_manager) {
+	if (!g_dialogs.browser_dock_manager) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		browser_manager = new BrowserManager(mainWindow);
+		g_dialogs.browser_dock_manager = new BrowserManager(mainWindow);
 	}
-	browser_manager->show();
-	browser_manager->raise();
-	browser_manager->activateWindow();
+	g_dialogs.browser_dock_manager->show();
+	g_dialogs.browser_dock_manager->raise();
+	g_dialogs.browser_dock_manager->activateWindow();
 }
 
 static void show_encoding_graph(void *data)
 {
 	UNUSED_PARAMETER(data);
 
-	if (!encoding_graph) {
+	if (!g_dialogs.encoding_graph) {
 		auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 		// encoding_graph = new EncodingGraphWindow(mainWindow);
-		encoding_graph = new EncodingGraphWindow(nullptr);
+		g_dialogs.encoding_graph = new EncodingGraphWindow(nullptr);
 	}
-	encoding_graph->show();
-	encoding_graph->raise();
-	encoding_graph->activateWindow();
+	g_dialogs.encoding_graph->show();
+	g_dialogs.encoding_graph->raise();
+	g_dialogs.encoding_graph->activateWindow();
 }
 
 #ifdef __cplusplus
@@ -1206,14 +365,14 @@ void on_plugin_loaded()
 
 	// Create and register docks
 	auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	mixer_dock = new MixerDock(mainWindow);
-	wrapper_test_dock = new WrapperTestDock(mainWindow);
-	sourcerer_sources_dock = new SourcererSourcesDock(mainWindow);
-	sourcerer_scenes_dock = new SourcererScenesDock(mainWindow);
-	obs_frontend_add_dock_by_id("SuperMixerDock", obs_module_text("SuperMixer.Title"), mixer_dock);
-	obs_frontend_add_dock_by_id("WrapperTestDock", "OBS Wrapper Test", wrapper_test_dock);
-	obs_frontend_add_dock_by_id("SourcererSources", "Sourcerer Sources", sourcerer_sources_dock);
-	obs_frontend_add_dock_by_id("SourcererScenes", "Sourcerer Scenes", sourcerer_scenes_dock);
+	g_docks.super_mixer = new MixerDock(mainWindow);
+	g_docks.wrapper_test = new WrapperTestDock(mainWindow);
+	g_docks.sourcerer_sources = new SourcererSourcesDock(mainWindow);
+	g_docks.sourcerer_scenes = new SourcererScenesDock(mainWindow);
+	obs_frontend_add_dock_by_id("SuperMixerDock", obs_module_text("SuperMixer.Title"), g_docks.super_mixer);
+	obs_frontend_add_dock_by_id("WrapperTestDock", "OBS Wrapper Test", g_docks.wrapper_test);
+	obs_frontend_add_dock_by_id("SourcererSources", "Sourcerer Sources", g_docks.sourcerer_sources);
+	obs_frontend_add_dock_by_id("SourcererScenes", "Sourcerer Scenes", g_docks.sourcerer_scenes);
 }
 
 void on_plugin_unload()
@@ -1223,42 +382,42 @@ void on_plugin_unload()
 	// Clean up sources FIRST - this disconnects all signal handlers
 	// Must happen before deleting dialogs to prevent signal handlers
 	// from accessing deleted dialog pointers
-	cleanup();
+	audio_sources_cleanup();
 
 	// these are most probably won't execute, by this time obs gc's the main window which is the parent of these widgets
 	{
-		if (settings_dialog) {
-			settings_dialog->close();
-			delete settings_dialog;
+		if (g_dialogs.audio_channels) {
+			g_dialogs.audio_channels->close();
+			delete g_dialogs.audio_channels;
 		}
 
-		if (channels_view) {
-			delete channels_view;
+		if (g_dialogs.canvas_channels) {
+			delete g_dialogs.canvas_channels;
 		}
 
-		if (browser_manager) {
-			delete browser_manager;
+		if (g_dialogs.browser_dock_manager) {
+			delete g_dialogs.browser_dock_manager;
 		}
 
-		if (mixer_dock) {
+		if (g_docks.super_mixer) {
 			// Dock is managed by OBS frontend, just remove our reference
 			obs_frontend_remove_dock("SuperMixerDock");
-			delete mixer_dock;
+			delete g_docks.super_mixer;
 		}
 
-		if (wrapper_test_dock) {
+		if (g_docks.wrapper_test) {
 			obs_frontend_remove_dock("WrapperTestDock");
-			delete wrapper_test_dock;
+			delete g_docks.wrapper_test;
 		}
 
-		if (sourcerer_sources_dock) {
+		if (g_docks.sourcerer_sources) {
 			obs_frontend_remove_dock("SourcererSources");
-			delete sourcerer_sources_dock;
+			delete g_docks.sourcerer_sources;
 		}
 
-		if (sourcerer_scenes_dock) {
+		if (g_docks.sourcerer_scenes) {
 			obs_frontend_remove_dock("SourcererScenes");
-			delete sourcerer_scenes_dock;
+			delete g_docks.sourcerer_scenes;
 		}
 	}
 

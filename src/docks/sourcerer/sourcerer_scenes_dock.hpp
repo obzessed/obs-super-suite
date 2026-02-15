@@ -22,6 +22,7 @@ public:
 	void SetZoom(int width);
 	QJsonObject Save() const;
 	void Load(const QJsonObject &obj);
+	void FrontendReady();
 
 protected:
 	void showEvent(QShowEvent *event) override;
@@ -63,6 +64,7 @@ private:
 	QWidget *tbarContainer = nullptr;
 
 	QWidget *contentContainer = nullptr; // Wrapper for HLayout
+	bool frontendReady = false;
 
 	void SetupTBar();
 	void SetTBarPosition(TBarPosition pos);

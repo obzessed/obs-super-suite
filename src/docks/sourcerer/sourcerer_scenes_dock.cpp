@@ -133,6 +133,29 @@ static bool IsValidTBarTransition(const obs_source_t *transition)
 	return true;
 }
 
+static int obs_frontend_get_tbar_position_safe()
+{
+	if (obs_frontend_preview_program_mode_active()) {
+		return obs_frontend_get_tbar_position();
+	}
+
+	return 0;
+}
+
+static void obs_frontend_set_tbar_position_safe(int value)
+{
+	if (obs_frontend_preview_program_mode_active()) {
+		return obs_frontend_set_tbar_position(value);
+	}
+}
+
+static void obs_frontend_release_tbar_safe()
+{
+	if (obs_frontend_preview_program_mode_active()) {
+		return obs_frontend_release_tbar();
+	}
+}
+
 void SourcererScenesDock::SetupTBar()
 {
 	tBarScrollingWithCtrl = false;
@@ -148,6 +171,8 @@ void SourcererScenesDock::SetupTBar()
 	}
 
 	// workaround for https://github.com/obsproject/obs-studio/pull/13116
+	// FIXME: obs frontend won't have the `slider-tbar` init until we enable studio mode.
+	// accessing t-bar when obs started with studio-mode disabled causes obs to crash
 	static QSlider *buggyOBSTBarSlider = nullptr;
 	static bool checkedBuggyOBSTBar = false;
 
@@ -155,18 +180,18 @@ void SourcererScenesDock::SetupTBar()
 		if (buggyOBSTBarSlider) {
 			buggyOBSTBarSlider->setValue(value);
 		} else {
-			obs_frontend_set_tbar_position(value);
+			obs_frontend_set_tbar_position_safe(value);
 		}
 	};
 
 	if (!checkedBuggyOBSTBar) {
 		constexpr int test_value = T_BAR_PRECISION / 2;
 
-		auto orig_val = obs_frontend_get_tbar_position();
-		obs_frontend_set_tbar_position(test_value);
-		auto isBuggyOBSTBar = test_value != obs_frontend_get_tbar_position();
-		obs_frontend_set_tbar_position(orig_val);
-		obs_frontend_release_tbar();
+		auto orig_val = obs_frontend_get_tbar_position_safe();
+		obs_frontend_set_tbar_position_safe(test_value);
+		auto isBuggyOBSTBar = test_value != obs_frontend_get_tbar_position_safe();
+		obs_frontend_set_tbar_position_safe(orig_val);
+		obs_frontend_release_tbar_safe();
 
 		if (isBuggyOBSTBar) {
 			// OBSBasic < OBSMainWindow < QMainWindow
@@ -180,6 +205,9 @@ void SourcererScenesDock::SetupTBar()
 					buggyOBSTBarSlider = slider;
 					break;
 				}
+			}
+			if (!buggyOBSTBarSlider) {
+				obs_log(LOG_WARNING, "Failed to find buggy OBSBasic T-Bar slider. T-Bar may not work correctly.");
 			}
 		}
 
@@ -206,8 +234,23 @@ void SourcererScenesDock::SetupTBar()
 	tbarSlider->setToolTip("Transition T-Bar");
 	tbarSlider->installEventFilter(this);
 
+	if (obs_frontend_preview_program_mode_active()) {
+		obs_source_t *transition = obs_frontend_get_current_transition();
+		if (IsValidTBarTransition(transition)) {
+			tbarSlider->setEnabled(true);
+		} else {
+			tbarSlider->setEnabled(false);
+			tbarSlider->setToolTip("Transition T-Bar (Disabled - Unsupported Transition)");
+		}
+		if (transition)
+			obs_source_release(transition);
+	} else {
+		tbarSlider->setEnabled(false);
+		tbarSlider->setToolTip("Transition T-Bar (Disabled - Not in Studio Mode)");
+	}
+
 	// Initial value
-	tbarSlider->setValue(obs_frontend_get_tbar_position());
+	tbarSlider->setValue(obs_frontend_get_tbar_position_safe());
 
 	// Stylesheet for better visibility
 	tbarSlider->setStyleSheet(
@@ -293,6 +336,9 @@ void SourcererScenesDock::SetTBarPosition(TBarPosition pos)
 		return;
 
 	tBarPos = pos;
+
+	if (!frontendReady) return;
+
 	SetupTBar();
 }
 
@@ -304,7 +350,7 @@ void SourcererScenesDock::UpdateTBarValue()
 			return;
 
 		QSignalBlocker blocker(tbarSlider);
-		tbarSlider->setValue(obs_frontend_get_tbar_position());
+		tbarSlider->setValue(obs_frontend_get_tbar_position_safe());
 	}
 }
 
@@ -692,8 +738,7 @@ void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *dat
 	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_STOPPED) {
 		blog(LOG_INFO, "Transition Stopped");
 	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_CHANGED) {
-		obs_source_t *transition = obs_frontend_get_current_transition();
-		if (transition) {
+		if (obs_source_t *transition = obs_frontend_get_current_transition()) {
 			const char *name = obs_source_get_name(transition);
 			blog(LOG_INFO, "Transition Changed to: %s", name);
 			obs_source_release(transition);
@@ -710,6 +755,13 @@ void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *dat
 	if (!dock->liveMode && !dock->syncSelection)
 		return;
 
+	if (event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
+		blog(LOG_INFO, "Studio Mode %s", (event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED) ? "Enabled" : "Disabled");
+		// Show or Hide T-Bar based on Studio Mode
+
+		dock->SetupTBar();
+	}
+
 	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED ||
 	    event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED ||
 	    event == OBS_FRONTEND_EVENT_TRANSITION_STOPPED || event == OBS_FRONTEND_EVENT_TRANSITION_CHANGED) {
@@ -723,7 +775,7 @@ void SourcererScenesDock::HandleTBarRelease()
 		return;
 
 	// Always call the frontend release to ensure UI consistency and event firing
-	obs_frontend_release_tbar();
+	obs_frontend_release_tbar_safe();
 
 	// Force update shortly after release to catch any resets
 	QTimer::singleShot(10, [this] { UpdateTBarValue(); });
@@ -852,4 +904,9 @@ void SourcererScenesDock::Load(const QJsonObject &obj)
 	if (obj.contains("tBarPosition")) {
 		SetTBarPosition(static_cast<TBarPosition>(obj["tBarPosition"].toInt(0)));
 	}
+}
+
+void SourcererScenesDock::FrontendReady()
+{
+	SetupTBar();
 }

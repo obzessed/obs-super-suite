@@ -6,6 +6,7 @@
 #include "./audio_channels.h"
 #include "./audio_source_dialog.h"
 #include "../models/audio_channel_source_config.h"
+#include "./audio_channels_support.h"
 #include "../super_suite.h"
 
 #include <QShowEvent>
@@ -20,6 +21,8 @@
 #include <QSlider>
 #include <QComboBox>
 #include <QCheckBox>
+
+AudioChannelsDialog* AudioChannelsDialog::instance_ = nullptr;
 
 enum TableItemUserDataSlot: int {
 	kTIDS_SourceSettings = Qt::UserRole + 0,
@@ -59,6 +62,10 @@ AudioChannelsDialog::AudioChannelsDialog(QWidget *parent)
 	  btnAdd(nullptr),
 	  btnRemove(nullptr)
 {
+	if (instance_) {
+		obs_log(LOG_ERROR, "AudioChannelsDialog already created");
+	}
+	instance_ = this;
 	setupUi();
 	loadFromConfig();
 }
@@ -67,6 +74,13 @@ AudioChannelsDialog::~AudioChannelsDialog()
 {
 	// Don't save here - we save on every change in the UI
 	// Saving during shutdown could access cleaned-up resources
+
+	instance_ = nullptr;
+}
+
+AudioChannelsDialog *AudioChannelsDialog::getInstance()
+{
+	return instance_;
 }
 
 void AudioChannelsDialog::setupUi()

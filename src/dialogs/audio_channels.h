@@ -18,10 +18,12 @@ class AudioSourceDialog;
 
 class AudioChannelsDialog : public QDialog {
 	Q_OBJECT
-
+	static AudioChannelsDialog* instance_; // Singleton instance pointer for global access in signal handlers
 public:
 	explicit AudioChannelsDialog(QWidget *parent = nullptr);
 	~AudioChannelsDialog() override;
+
+	static AudioChannelsDialog *getInstance();
 
 	void toggle_show_hide();
 	
