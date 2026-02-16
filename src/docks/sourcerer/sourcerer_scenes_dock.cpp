@@ -135,6 +135,7 @@ static bool IsValidTBarTransition(const obs_source_t *transition)
 
 static int obs_frontend_get_tbar_position_safe()
 {
+	// workaround for https://github.com/obsproject/obs-studio/pull/13128
 	if (obs_frontend_preview_program_mode_active()) {
 		return obs_frontend_get_tbar_position();
 	}
@@ -144,15 +145,17 @@ static int obs_frontend_get_tbar_position_safe()
 
 static void obs_frontend_set_tbar_position_safe(int value)
 {
+	// workaround for https://github.com/obsproject/obs-studio/pull/13128
 	if (obs_frontend_preview_program_mode_active()) {
-		return obs_frontend_set_tbar_position(value);
+		obs_frontend_set_tbar_position(value);
 	}
 }
 
 static void obs_frontend_release_tbar_safe()
 {
+	// workaround for https://github.com/obsproject/obs-studio/pull/13128
 	if (obs_frontend_preview_program_mode_active()) {
-		return obs_frontend_release_tbar();
+		obs_frontend_release_tbar();
 	}
 }
 
