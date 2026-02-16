@@ -15,13 +15,13 @@ public:
 	// --- Input ---
 
 	// Enumerate available MIDI input devices
-	virtual QStringList available_devices() const = 0;
+	virtual QStringList available_input_devices() const = 0;
 
 	// Open a device by index. Returns true on success.
-	virtual bool open_device(int index) = 0;
+	virtual bool open_input_device(int index) = 0;
 
 	// Close all open input devices
-	virtual void close_all() = 0;
+	virtual void close_all_inputs() = 0;
 
 	// --- Output ---
 

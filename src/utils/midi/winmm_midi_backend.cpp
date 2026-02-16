@@ -12,13 +12,13 @@ WinMmMidiBackend::WinMmMidiBackend(QObject *parent)
 
 WinMmMidiBackend::~WinMmMidiBackend()
 {
-	WinMmMidiBackend::close_all();
+	WinMmMidiBackend::close_all_inputs();
 	WinMmMidiBackend::close_all_outputs();
 }
 
 // ===== Input ==============================================================
 
-QStringList WinMmMidiBackend::available_devices() const
+QStringList WinMmMidiBackend::available_input_devices() const
 {
 	QStringList devices;
 	UINT count = midiInGetNumDevs();
@@ -33,7 +33,7 @@ QStringList WinMmMidiBackend::available_devices() const
 	return devices;
 }
 
-bool WinMmMidiBackend::open_device(int index)
+bool WinMmMidiBackend::open_input_device(int index)
 {
 	// Check if already open
 	for (const auto &dev : m_open_devices) {
@@ -57,7 +57,7 @@ bool WinMmMidiBackend::open_device(int index)
 	return true;
 }
 
-void WinMmMidiBackend::close_all()
+void WinMmMidiBackend::close_all_inputs()
 {
 	for (auto &dev : m_open_devices) {
 		midiInStop(dev.handle);

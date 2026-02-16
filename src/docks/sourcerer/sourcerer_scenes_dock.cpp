@@ -163,16 +163,6 @@ void SourcererScenesDock::SetupTBar()
 {
 	tBarScrollingWithCtrl = false;
 
-	{
-		// find canvasEditor object in main window children
-
-		const auto *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-		auto *canvasEditor = mainWin->findChild<QWidget *>(QStringLiteral("canvasEditor"));
-		auto *previewLayout = mainWin->findChild<QWidget *>(QStringLiteral("previewLayout"));
-		obs_log(LOG_ERROR, "Found canvasEditor: %s", canvasEditor ? "Yes" : "No");
-		obs_log(LOG_ERROR, "Found previewLayout: %s", previewLayout ? "Yes" : "No");
-	}
-
 	// workaround for https://github.com/obsproject/obs-studio/pull/13116
 	// FIXME: obs frontend won't have the `slider-tbar` init until we enable studio mode.
 	// accessing t-bar when obs started with studio-mode disabled causes obs to crash
@@ -763,6 +753,34 @@ void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *dat
 		// Show or Hide T-Bar based on Studio Mode
 
 		dock->SetupTBar();
+
+
+		// EXPERIMENTATION: to modify the OBSBasic Preview and Program.
+		{
+			// find canvasEditor object in main window children
+			const auto *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+			auto *canvasEditor = mainWin->findChild<QWidget *>(QStringLiteral("canvasEditor"));
+			obs_log(LOG_ERROR, "Found canvasEditor: %s", canvasEditor ? "Yes" : "No");
+			if (canvasEditor) {
+				auto *previewLayout = canvasEditor->findChild<QHBoxLayout *>(QStringLiteral("previewLayout"));
+				auto *previewDisabledWidget = canvasEditor->findChild<QFrame *>(QStringLiteral("previewDisabledWidget"));
+				obs_log(LOG_ERROR, "Found previewLayout: %s", previewLayout ? "Yes" : "No");
+				obs_log(LOG_ERROR, "Found previewDisabledWidget: %s", previewDisabledWidget ? "Yes" : "No");
+			}
+			auto *previewContainer = mainWin->findChild<QWidget *>(QStringLiteral("previewContainer"));
+			obs_log(LOG_ERROR, "Found previewContainer: %s", previewContainer ? "Yes" : "No");
+			if (previewContainer) {
+				auto *previewTextLayout = previewContainer->findChild<QVBoxLayout *>(QStringLiteral("previewTextLayout"));
+				auto *previewLabel = previewContainer->findChild<QLabel *>(QStringLiteral("previewLabel"));
+				obs_log(LOG_ERROR, "Found previewTextLayout: %s", previewTextLayout ? "Yes" : "No");
+				obs_log(LOG_ERROR, "Found previewLabel: %s", previewLabel ? "Yes" : "No");
+			}
+			auto *contextContainer = mainWin->findChild<QFrame *>(QStringLiteral("contextContainer"));
+			obs_log(LOG_ERROR, "Found contextContainer: %s", contextContainer ? "Yes" : "No");
+			if (contextContainer) {
+			}
+
+		}
 	}
 
 	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED ||

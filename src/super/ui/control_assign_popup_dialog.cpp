@@ -397,6 +397,26 @@ bool BindingPanel::needs_preview_convergence() const {
 	return m_preview_state.needs_convergence();
 }
 
+double BindingPanel::sync_pipeline_state(int raw) {
+	sync_preview_params();
+	auto p = m_preview_state.preview_pipeline(raw);
+	m_last_preview = p;
+	// Labels only — no graph push, no dot pulse
+	for(int i=0;i<m_pre_filter_rows.size()&&i<p.after_pre_filter.size();i++) {
+		double in = (i==0) ? double(raw) : p.after_pre_filter[i-1];
+		m_pre_filter_rows[i]->set_preview_label(in, p.after_pre_filter[i]);
+	}
+	for(int i=0;i<m_interp_rows.size()&&i<p.after_interp.size();i++) {
+		double in = (i==0) ? p.normalized : p.after_interp[i-1];
+		m_interp_rows[i]->set_preview_label(in, p.after_interp[i]);
+	}
+	for(int i=0;i<m_post_filter_rows.size()&&i<p.after_post_filter.size();i++) {
+		double in = (i==0) ? p.mapped : p.after_post_filter[i-1];
+		m_post_filter_rows[i]->set_preview_label(in, p.after_post_filter[i]);
+	}
+	return p.final_value;
+}
+
 // ===== ControlAssignPopup =================================================
 static const char *POPUP_STYLE =
 	"QDialog{background:rgba(28,28,36,245);}"
@@ -438,8 +458,8 @@ ControlAssignPopup::ControlAssignPopup(const QString &port_id,
 	mark_clean();
 	if (m_adapter && m_adapter->backend())
 		connect(m_adapter->backend(), &MidiBackend::midi_message, this, &ControlAssignPopup::on_raw_midi);
-	// Initial preview so graphs show something
-	refresh_preview(); // FIXME: this modifies the timedomain and posibly triggering output changes
+	// Initial state so labels/meters show current values (no graph push)
+	sync_ui_state();
 }
 ControlAssignPopup::~ControlAssignPopup() { emit closed(); }
 
@@ -458,8 +478,8 @@ void ControlAssignPopup::setup_ui() {
 		if (m_pipeline_visual) { m_pipeline_visual->raise(); m_pipeline_visual->activateWindow(); return; }
 		m_pipeline_visual = new PipelineVisualDialog(m_display_name, m_default_out_min, m_default_out_max, window());
 		m_pipeline_visual->show();
-		// Immediately feed with current data
-		refresh_preview(); // FIXME: this modifies the timedomain and posibly triggering output changes
+		// Set static state — no time-domain push
+		sync_ui_state();
 	});
 	m_master_preview->add_pipeline_button(m_pipeline_btn);
 	// Status
@@ -525,7 +545,7 @@ void ControlAssignPopup::populate_devices() {
 	m_cached_out_devices.clear(); m_cached_out_devices<<"(Any)";
 	if(m_adapter&&m_adapter->backend()){
 		auto *be=m_adapter->backend();
-		for(auto &d:be->available_devices()) m_cached_in_devices<<d;
+		for(auto &d:be->available_input_devices()) m_cached_in_devices<<d;
 		for(auto &d:be->available_output_devices()) m_cached_out_devices<<d;
 	}
 	for(auto *p:m_panels) p->populate_devices(m_cached_in_devices);
@@ -542,7 +562,7 @@ void ControlAssignPopup::sync_panels_from_adapter() {
 		connect(p,&BindingPanel::expand_requested,this,&ControlAssignPopup::on_panel_expand);
 		connect(p,&BindingPanel::remove_requested,this,&ControlAssignPopup::on_panel_remove);
 		connect(p,&BindingPanel::changed,this,&ControlAssignPopup::mark_dirty);
-		connect(p,&BindingPanel::changed,this,&ControlAssignPopup::refresh_preview);
+		connect(p,&BindingPanel::changed,this,&ControlAssignPopup::sync_ui_state);
 	}
 	if(!m_panels.isEmpty()){m_panels.first()->set_expanded(true);m_active_panel=0;}
 }
@@ -571,7 +591,7 @@ void ControlAssignPopup::on_add_clicked() {
 	connect(p,&BindingPanel::expand_requested,this,&ControlAssignPopup::on_panel_expand);
 	connect(p,&BindingPanel::remove_requested,this,&ControlAssignPopup::on_panel_remove);
 	connect(p,&BindingPanel::changed,this,&ControlAssignPopup::mark_dirty);
-	connect(p,&BindingPanel::changed,this,&ControlAssignPopup::refresh_preview);
+	connect(p,&BindingPanel::changed,this,&ControlAssignPopup::sync_ui_state);
 	on_panel_expand(idx); mark_dirty();
 }
 void ControlAssignPopup::on_add_output_clicked() {
@@ -687,6 +707,15 @@ void ControlAssignPopup::refresh_preview() {
 	m_master_preview->set_value(val);
 	if (m_pipeline_visual)
 		m_pipeline_visual->feed(m_last_raw, panel->last_preview());
+}
+
+void ControlAssignPopup::sync_ui_state() {
+	if (m_active_panel < 0 || m_active_panel >= m_panels.size()) return;
+	auto *panel = m_panels[m_active_panel];
+	double val = panel->sync_pipeline_state(m_last_raw);
+	m_master_preview->set_static_value(val);
+	if (m_pipeline_visual)
+		m_pipeline_visual->set_static(m_last_raw, panel->last_preview());
 }
 
 void ControlAssignPopup::toggle_monitor(bool e) {

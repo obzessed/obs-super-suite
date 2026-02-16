@@ -51,6 +51,7 @@ public:
 	PipelineVisualDialog(const QString &name, double out_min, double out_max,
 		QWidget *parent = nullptr);
 	void feed(int raw, const PipelinePreview &p);
+	void set_static(int raw, const PipelinePreview &p);
 protected:
 	void paintEvent(QPaintEvent *) override;
 private:
@@ -87,12 +88,15 @@ public:
 		const QColor &secondary_color, double val_min, double val_max,
 		QWidget *parent = nullptr);
 	void push(double primary, double secondary);
+	void seed(const QVector<double> &pri, const QVector<double> &sec,
+		int head, bool full, double last_pri, double last_sec);
 protected:
 	void paintEvent(QPaintEvent *) override;
 	void contextMenuEvent(QContextMenuEvent *) override;
 private:
 	void draw_series(QPainter &p, const QVector<double> &buf, int head, bool full,
 		const QColor &col, const QRect &area);
+	void draw_linear_ref(QPainter &p, const QRect &area);
 	void draw_fader_v(QPainter &p, const QRect &area, double val,
 		const QColor &col, const QString &label);
 	void draw_fader_h(QPainter &p, const QRect &area, double val,
@@ -155,6 +159,7 @@ public:
 	StageRow(int index, const QColor &dot_color, QWidget *parent = nullptr);
 	virtual ~StageRow();
 	void set_preview(double in, double out);
+	void set_preview_label(double in, double out);
 	void set_index(int idx);
 	int index() const { return m_index; }
 	void pulse_activity();
@@ -216,6 +221,7 @@ class MasterPreview : public QWidget {
 public:
 	MasterPreview(const QString &name, double min, double max, QWidget *parent = nullptr);
 	void set_value(double val);
+	void set_static_value(double val);
 	void pulse_input();
 	void set_raw_midi(int raw);
 	void add_pipeline_button(QPushButton *btn) { m_pipeline_btn_slot->addWidget(btn); }
@@ -293,6 +299,7 @@ public:
 	void sync_preview_params();
 	const MidiPortBinding &preview_state() const { return m_preview_state; }
 	void pulse_header_activity();
+	double sync_pipeline_state(int raw_midi);
 signals:
 	void expand_requested(int index);
 	void remove_requested(int index);
@@ -466,6 +473,7 @@ private:
 	int m_last_raw = 0;
 	void on_preview_tick();
 	void refresh_preview();
+	void sync_ui_state();
 
 	// Pipeline Visualizer
 	QPushButton *m_pipeline_btn = nullptr;

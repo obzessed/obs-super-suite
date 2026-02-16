@@ -103,7 +103,7 @@ signals:
 	void midi_note_received(const QString &widget_id, const QString &control_name, int velocity);
 	// Emitted when learn mode captures a binding
 	void binding_learned(const MidiBinding &binding);
-	// Emitted when learn mode is cancelled
+	// Emitted when learn mode is canceled
 	void learn_cancelled();
 
 private:

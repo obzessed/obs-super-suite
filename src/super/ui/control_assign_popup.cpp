@@ -136,6 +136,76 @@ void PipelineVisualDialog::feed(int raw, const PipelinePreview &p) {
 	update();
 }
 
+void PipelineVisualDialog::set_static(int raw, const PipelinePreview &p) {
+	// Rebuild columns if stage count or names changed (same logic as feed)
+	int n_pre = p.after_pre_filter.size();
+	int n_int = p.after_interp.size();
+	int n_post = p.after_post_filter.size();
+	int total = n_pre + 1 + n_int + 1 + n_post;
+	QStringList all_names = p.pre_filter_names + p.interp_names + p.post_filter_names;
+	QString name_key = all_names.join("|");
+	if (total != m_prev_col_count || name_key != m_prev_name_key) {
+		m_columns.clear();
+		auto mk = [&](const QString &l, const QColor &col, double mn, double mx) {
+			Column c; c.label = l; c.color = col;
+			c.val_min = mn; c.val_max = mx;
+			c.buf_in.resize(COL_BUF, 0); c.buf_out.resize(COL_BUF, 0);
+			m_columns.append(c);
+		};
+		for (int i = 0; i < n_pre; i++) {
+			QString name = (i < p.pre_filter_names.size()) ? p.pre_filter_names[i] : "";
+			mk(QString("Pre #%1\n%2").arg(i+1).arg(name), QColor(46,204,113), 0, 127);
+		}
+		mk(QString("Norm\n%1-%2\u21920-1").arg(p.input_min).arg(p.input_max),
+			QColor(180,140,255), 0, 127);
+		for (int i = 0; i < n_int; i++) {
+			QString name = (i < p.interp_names.size()) ? p.interp_names[i] : "";
+			mk(QString("Interp #%1\n%2").arg(i+1).arg(name), QColor(52,152,219), 0, 1.0);
+		}
+		mk(QString("Map\n0-1\u2192%1-%2")
+			.arg(p.output_min,0,'f',1).arg(p.output_max,0,'f',1),
+			QColor(255,180,80), m_out_min, m_out_max);
+		for (int i = 0; i < n_post; i++) {
+			QString name = (i < p.post_filter_names.size()) ? p.post_filter_names[i] : "";
+			mk(QString("Post #%1\n%2").arg(i+1).arg(name), QColor(230,126,34), m_out_min, m_out_max);
+		}
+		m_prev_col_count = total;
+		m_prev_name_key = name_key;
+	}
+	// Set static values — no ring buffer push
+	int ci = 0;
+	for (int i = 0; i < n_pre; i++, ci++) {
+		auto &c = m_columns[ci];
+		c.last_in = (i==0) ? double(raw) : p.after_pre_filter[i-1];
+		c.last_out = p.after_pre_filter[i];
+		c.dimmed = (i < p.pre_filter_enabled.size()) && !p.pre_filter_enabled[i];
+	}
+	{ auto &c = m_columns[ci++];
+		c.last_in = p.pre_filtered;
+		c.last_out = p.normalized * 127.0;
+	}
+	for (int i = 0; i < n_int; i++, ci++) {
+		auto &c = m_columns[ci];
+		c.last_in = (i==0) ? p.normalized : p.after_interp[i-1];
+		c.last_out = p.after_interp[i];
+		c.dimmed = (i < p.interp_enabled.size()) && !p.interp_enabled[i];
+	}
+	{ auto &c = m_columns[ci++];
+		double interp_last = n_int > 0 ? p.after_interp.last() : p.normalized;
+		double range = m_out_max - m_out_min;
+		c.last_in = m_out_min + interp_last * range;
+		c.last_out = p.mapped;
+	}
+	for (int i = 0; i < n_post; i++, ci++) {
+		auto &c = m_columns[ci];
+		c.last_in = (i==0) ? p.mapped : p.after_post_filter[i-1];
+		c.last_out = p.after_post_filter[i];
+		c.dimmed = (i < p.post_filter_enabled.size()) && !p.post_filter_enabled[i];
+	}
+	m_raw = raw; m_final = p.final_value;
+	update();
+}
+
 void PipelineVisualDialog::draw_col_graph(QPainter &p, const QRect &area, const Column &c) {
 	int count = c.full ? COL_BUF : c.head;
 	if (count < 2) return;
@@ -320,11 +390,38 @@ void GraphDetailDialog::push(double primary, double secondary) {
 	if (m_head == 0) m_full = true;
 	update();
 }
+void GraphDetailDialog::seed(const QVector<double> &pri, const QVector<double> &sec,
+	int head, bool full, double last_pri, double last_sec)
+{
+	// Copy MiniGraph buffers into our larger buffer, resampling if sizes differ
+	int src_count = full ? pri.size() : head;
+	if (src_count < 1) return;
+	m_head = 0; m_full = false;
+	for (int i = 0; i < src_count; i++) {
+		int src_idx = full ? (head + i) % pri.size() : i;
+		m_primary[m_head] = pri[src_idx];
+		m_secondary[m_head] = (src_idx < sec.size()) ? sec[src_idx] : 0.0;
+		m_head = (m_head + 1) % BUF_SIZE;
+		if (m_head == 0) m_full = true;
+	}
+	m_last_primary = last_pri;
+	m_last_secondary = last_sec;
+	update();
+}
+void GraphDetailDialog::draw_linear_ref(QPainter &p, const QRect &area) {
+	// Dimmed diagonal "identity" line when no data
+	QPen pen(QColor(60,60,80), 1.0, Qt::DashLine);
+	p.setPen(pen); p.setBrush(Qt::NoBrush);
+	p.drawLine(area.bottomLeft(), area.topRight());
+}
 void GraphDetailDialog::draw_series(QPainter &p, const QVector<double> &buf,
 	int head, bool full, const QColor &col, const QRect &area)
 {
 	int count = full ? BUF_SIZE : head;
-	if (count < 2) return;
+	if (count < 2) {
+		draw_linear_ref(p, area);
+		return;
+	}
 	double range = (m_max == m_min) ? 1.0 : (m_max - m_min);
 	int x0 = area.left(), w = area.width(), h = area.height(), y0 = area.top();
 	QVector<QPointF> pts;
@@ -600,7 +697,7 @@ void MiniGraph::paintEvent(QPaintEvent *) {
 			draw_series(p, m_samples, m_head, m_full, grey);
 		} else {
 			p.setPen(QPen(grey, 0.5, Qt::DashLine));
-			p.drawLine(0, height()/2, width(), height()/2);
+			p.drawLine(QPoint(0, height()), QPoint(width(), 0));
 		}
 		// Dark overlay
 		p.setPen(Qt::NoPen);
@@ -627,6 +724,12 @@ void MiniGraph::mouseDoubleClickEvent(QMouseEvent *) {
 	QColor sec = m_dual ? m_line_color_b : m_line_color;
 	m_detail = new GraphDetailDialog(title, m_line_color, sec, m_min, m_max,
 		window());
+	// Seed with existing buffer data so graph isn't empty on open
+	int last_idx = (m_head > 0) ? m_head - 1 : (m_full ? m_sample_count - 1 : 0);
+	double last_a = (m_full || m_head > 0) ? m_samples[last_idx] : 0.0;
+	double last_b = m_dual && (m_full || m_head > 0) ? m_samples_b[last_idx] : 0.0;
+	m_detail->seed(m_samples, m_dual ? m_samples_b : m_samples,
+		m_head, m_full, last_a, last_b);
 	m_detail->show();
 }
 // ===== StageRow (base) ====================================================
@@ -682,6 +785,13 @@ void StageRow::set_preview(double in, double out) {
 	}
 	m_preview->setText(QString("%1→%2").arg(in,0,'f',2).arg(out,0,'f',2));
 	m_graph->push_dual(out, in);
+}
+void StageRow::set_preview_label(double in, double out) {
+	bool on = m_enabled->isChecked();
+	m_graph->set_dimmed(!on);
+	if (!on) { m_preview->setText("—"); return; }
+	m_preview->setText(QString("%1→%2").arg(in,0,'f',2).arg(out,0,'f',2));
+	// No graph push, no dot pulse
 }
 void StageRow::set_index(int idx) { m_index = idx; }
 void StageRow::pulse_activity() { if (m_enabled->isChecked()) m_dot->pulse(); }
@@ -844,6 +954,12 @@ void MasterPreview::set_value(double val) {
 	// Push dual: primary = output, secondary = raw input (both in output range)
 	m_graph->push_dual(val, m_last_raw_norm);
 	m_output_dot->pulse();
+}
+void MasterPreview::set_static_value(double val) {
+	m_value_label->setText(QString::number(val,'f',3));
+	double norm = (m_max==m_min) ? 0 : qBound(0.0,(val-m_min)/(m_max-m_min),1.0);
+	m_meter->setValue(int(norm*1000));
+	// No graph push, no dot pulse
 }
 void MasterPreview::pulse_input() { m_input_dot->pulse(); }
 void MasterPreview::set_raw_midi(int raw) {

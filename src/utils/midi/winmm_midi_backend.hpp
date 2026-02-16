@@ -15,9 +15,9 @@ public:
 	~WinMmMidiBackend() override;
 
 	// --- Input ---
-	QStringList available_devices() const override;
-	bool open_device(int index) override;
-	void close_all() override;
+	QStringList available_input_devices() const override;
+	bool open_input_device(int index) override;
+	void close_all_inputs() override;
 
 	// --- Output ---
 	QStringList available_output_devices() const override;

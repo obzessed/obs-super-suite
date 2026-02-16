@@ -46,28 +46,28 @@ MidiBackend *MidiRouter::backend() const
 
 QStringList MidiRouter::available_devices() const
 {
-	return m_backend ? m_backend->available_devices() : QStringList();
+	return m_backend ? m_backend->available_input_devices() : QStringList();
 }
 
 bool MidiRouter::open_device(int index)
 {
-	return m_backend ? m_backend->open_device(index) : false;
+	return m_backend ? m_backend->open_input_device(index) : false;
 }
 
 void MidiRouter::open_all_devices()
 {
 	if (!m_backend)
 		return;
-	QStringList devices = m_backend->available_devices();
+	QStringList devices = m_backend->available_input_devices();
 	for (int i = 0; i < devices.size(); i++) {
-		m_backend->open_device(i);
+		m_backend->open_input_device(i);
 	}
 }
 
 void MidiRouter::close_all()
 {
 	if (m_backend) {
-		m_backend->close_all();
+		m_backend->close_all_inputs();
 	}
 }
 
