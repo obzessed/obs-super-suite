@@ -38,10 +38,19 @@ public:
 	// If device == -1, send to all open output devices.
 	virtual void send_cc(int device, int channel, int cc, int value) = 0;
 
+	// --- Hot-Detection ---
+
+	// Start/stop periodic device polling for hot-detect
+	virtual void start_device_poll(int interval_ms = 2000) { Q_UNUSED(interval_ms); }
+	virtual void stop_device_poll() {}
+
 signals:
 	// Raw MIDI message from device
 	// status: full status byte (msg_type | channel)
 	// data1:  first data byte  (CC number / note number)
 	// data2:  second data byte (CC value / velocity)
 	void midi_message(int device, int status, int data1, int data2);
+
+	// Emitted when device lists change (add/remove)
+	void devices_changed();
 };

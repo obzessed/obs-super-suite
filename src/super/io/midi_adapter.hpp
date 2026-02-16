@@ -62,8 +62,6 @@ struct InterpStage {
 		Smooth     = 2, // EMA smoothing (param1 = factor 0.01-1.0)
 		SCurve     = 3, // Hermite smoothstep
 		Easing     = 4, // QEasingCurve (param1 = curve type index)
-		AnimateTo  = 5, // Slew to target (param1 = duration ms, param2 = easing)
-		AnimateFrom= 6, // Slew from previous (param1 = duration ms, param2 = easing)
 	};
 
 	int type = Linear;
@@ -131,9 +129,7 @@ struct PipelinePreview {
 // ---------------------------------------------------------------------------
 enum class ActionMode {
 	SetValue    = 0,  // Direct set_value on ControlPort
-	AnimateTo   = 1,  // port->animate_to(value, param1_ms, param2_easing)
-	AnimateFrom = 2,  // Animate from current to target
-	Trigger     = 3,  // Fire value=1.0 then reset to 0.0
+	Trigger     = 1,  // Fire value=1.0 then reset to 0.0
 };
 
 // ---------------------------------------------------------------------------
@@ -200,8 +196,9 @@ struct MidiPortBinding {
 
 	// End-of-pipeline action
 	ActionMode action_mode = ActionMode::SetValue;
-	double action_param1 = 500.0;  // AnimateTo duration ms
-	double action_param2 = 0.0;    // AnimateTo easing curve index
+	// Action (currently unused params, kept for future expansion)
+	double action_param1 = 0.0;
+	double action_param2 = 0.0;
 
 	// Toggle/Trigger
 	int threshold = 63;

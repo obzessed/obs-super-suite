@@ -6,6 +6,7 @@
 #include <mmsystem.h>
 
 #include <vector>
+#include <QTimer>
 
 class WinMmMidiBackend : public MidiBackend {
 	Q_OBJECT
@@ -25,9 +26,15 @@ public:
 	void close_all_outputs() override;
 	void send_cc(int device, int channel, int cc, int value) override;
 
+	// --- Hot-Detection ---
+	void start_device_poll(int interval_ms = 2000) override;
+	void stop_device_poll() override;
+
 private:
 	static void CALLBACK midi_in_proc(HMIDIIN hMidi, UINT wMsg,
 		DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2);
+
+	void check_device_changes();
 
 	struct OpenDevice {
 		HMIDIIN handle;
@@ -40,4 +47,9 @@ private:
 		int index;
 	};
 	std::vector<OpenOutputDevice> m_open_outputs;
+
+	// Hot-detect
+	QTimer *m_poll_timer = nullptr;
+	QStringList m_cached_inputs;
+	QStringList m_cached_outputs;
 };

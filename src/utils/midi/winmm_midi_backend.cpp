@@ -8,6 +8,8 @@
 WinMmMidiBackend::WinMmMidiBackend(QObject *parent)
 	: MidiBackend(parent)
 {
+	m_cached_inputs = available_input_devices();
+	m_cached_outputs = available_output_devices();
 }
 
 WinMmMidiBackend::~WinMmMidiBackend()
@@ -168,5 +170,34 @@ void WinMmMidiBackend::send_cc(int device, int channel, int cc, int value)
 				break;
 			}
 		}
+	}
+}
+
+// ===== Hot-Detection ======================================================
+
+void WinMmMidiBackend::start_device_poll(int interval_ms)
+{
+	if (!m_poll_timer) {
+		m_poll_timer = new QTimer(this);
+		connect(m_poll_timer, &QTimer::timeout, this, &WinMmMidiBackend::check_device_changes);
+	}
+	m_cached_inputs = available_input_devices();
+	m_cached_outputs = available_output_devices();
+	m_poll_timer->start(interval_ms);
+}
+
+void WinMmMidiBackend::stop_device_poll()
+{
+	if (m_poll_timer) m_poll_timer->stop();
+}
+
+void WinMmMidiBackend::check_device_changes()
+{
+	QStringList in_now = available_input_devices();
+	QStringList out_now = available_output_devices();
+	if (in_now != m_cached_inputs || out_now != m_cached_outputs) {
+		m_cached_inputs = in_now;
+		m_cached_outputs = out_now;
+		emit devices_changed();
 	}
 }

@@ -38,8 +38,8 @@ void BindingPanel::setup_ui() {
 	m_cc_spin = new QSpinBox(src); m_cc_spin->setRange(0,127); sf->addRow("CC/Note:",m_cc_spin);
 	bl->addWidget(src);
 
-	// 2. Pre-Filters (raw domain) — not for Select
-	if (m_map_mode != MidiPortBinding::Select) {
+	// 2. Pre-Filters (raw domain)
+	{
 		m_pre_filter_group = new QGroupBox("Pre-Filters (Raw MIDI)", m_body);
 		auto *pfv = new QVBoxLayout(m_pre_filter_group); pfv->setContentsMargins(4,4,4,4); pfv->setSpacing(2);
 		m_pre_filter_layout = new QVBoxLayout(); m_pre_filter_layout->setSpacing(2);
@@ -62,8 +62,8 @@ void BindingPanel::setup_ui() {
 		bl->addWidget(m_range_group);
 	}
 
-	// 4. Interpolation Chain (Range mode)
-	if (m_map_mode == MidiPortBinding::Range) {
+	// 4. Interpolation Chain (Range or Select mode)
+	if (m_map_mode == MidiPortBinding::Range || m_map_mode == MidiPortBinding::Select) {
 		m_interp_group = new QGroupBox("Interpolation Chain", m_body);
 		auto *iv = new QVBoxLayout(m_interp_group); iv->setContentsMargins(4,4,4,4); iv->setSpacing(2);
 		m_interp_layout = new QVBoxLayout(); m_interp_layout->setSpacing(2);
@@ -98,8 +98,8 @@ void BindingPanel::setup_ui() {
 		bl->addWidget(m_threshold_group);
 	}
 
-	// 5. Post-Filters (output domain) — not for Select
-	if (m_map_mode != MidiPortBinding::Select) {
+	// 5. Post-Filters (output domain)
+	{
 		m_post_filter_group = new QGroupBox("Post-Filters (Output)", m_body);
 		auto *pov = new QVBoxLayout(m_post_filter_group); pov->setContentsMargins(4,4,4,4); pov->setSpacing(2);
 		m_post_filter_layout = new QVBoxLayout(); m_post_filter_layout->setSpacing(2);
@@ -116,26 +116,10 @@ void BindingPanel::setup_ui() {
 		m_action_group = new QGroupBox("Action", m_body);
 		auto *af = new QFormLayout(m_action_group); af->setContentsMargins(8,4,8,4); af->setSpacing(3);
 		m_action_combo = new QComboBox(m_action_group);
-		m_action_combo->addItem("Set Value",0); m_action_combo->addItem("Animate To",1);
-		m_action_combo->addItem("Animate From",2); m_action_combo->addItem("Trigger",3);
+		m_action_combo->addItem("Set Value",0); m_action_combo->addItem("Trigger",1);
 		af->addRow("Mode:",m_action_combo);
-		m_action_p1_label = new QLabel("ms:",m_action_group);
-		m_action_p1 = new QDoubleSpinBox(m_action_group); m_action_p1->setRange(10,10000); m_action_p1->setDecimals(0); m_action_p1->setValue(500);
-		af->addRow(m_action_p1_label,m_action_p1);
-		m_action_p2_label = new QLabel("Easing:",m_action_group);
-		m_action_p2 = new QDoubleSpinBox(m_action_group); m_action_p2->setRange(0,40); m_action_p2->setDecimals(0);
-		af->addRow(m_action_p2_label,m_action_p2);
+		connect(m_action_combo,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this]{emit changed();});
 		bl->addWidget(m_action_group);
-		auto update_action_vis = [this]{
-			bool anim = m_action_combo->currentData().toInt() >= 1 && m_action_combo->currentData().toInt() <= 2;
-			m_action_p1_label->setVisible(anim); m_action_p1->setVisible(anim);
-			m_action_p2_label->setVisible(anim); m_action_p2->setVisible(anim);
-			emit changed();
-		};
-		connect(m_action_combo,QOverload<int>::of(&QComboBox::currentIndexChanged),this,update_action_vis);
-		connect(m_action_p1,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this]{emit changed();});
-		connect(m_action_p2,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this]{emit changed();});
-		update_action_vis();
 	}
 
 	// 7. Options
@@ -448,6 +432,18 @@ ControlAssignPopup::ControlAssignPopup(const QString &port_id,
 	setStyleSheet(POPUP_STYLE);
 	setup_ui();
 	populate_devices();
+	// Hot-detect MIDI device plug/unplug
+	if (m_adapter && m_adapter->backend()) {
+		auto *be = m_adapter->backend();
+		connect(be, &MidiBackend::devices_changed, this, [this]{
+			populate_devices();
+			// Flash title to show device change detected
+			QString orig = windowTitle();
+			setWindowTitle(orig + "  🔌");
+			QTimer::singleShot(1500, this, [this, orig]{ setWindowTitle(orig); });
+		});
+		be->start_device_poll(2000);
+	}
 	sync_panels_from_adapter();
 	sync_outputs_from_adapter();
 	// Preview convergence timer — keeps graphs updating during time-based filters

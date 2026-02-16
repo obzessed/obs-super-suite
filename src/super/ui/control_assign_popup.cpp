@@ -808,29 +808,59 @@ InterpStageRow::InterpStageRow(int index, QWidget *parent)
 {
 	m_type->addItem("Linear",0); m_type->addItem("Quantize",1);
 	m_type->addItem("Smooth",2); m_type->addItem("S-Curve",3);
-	m_type->addItem("Easing",4); m_type->addItem("Animate To",5);
-	m_type->addItem("Animate From",6);
+	m_type->addItem("Easing",4);
+
+	// Named easing curve combo (hidden until Easing type is selected)
+	m_easing_combo = new QComboBox(this);
+	m_easing_combo->setFixedWidth(110);
+	m_easing_combo->addItem("Linear",        (int)QEasingCurve::Linear);
+	m_easing_combo->addItem("InQuad",        (int)QEasingCurve::InQuad);
+	m_easing_combo->addItem("OutQuad",       (int)QEasingCurve::OutQuad);
+	m_easing_combo->addItem("InOutQuad",     (int)QEasingCurve::InOutQuad);
+	m_easing_combo->addItem("InCubic",       (int)QEasingCurve::InCubic);
+	m_easing_combo->addItem("OutCubic",      (int)QEasingCurve::OutCubic);
+	m_easing_combo->addItem("InOutCubic",    (int)QEasingCurve::InOutCubic);
+	m_easing_combo->addItem("InExpo",        (int)QEasingCurve::InExpo);
+	m_easing_combo->addItem("OutExpo",       (int)QEasingCurve::OutExpo);
+	m_easing_combo->addItem("InOutExpo",     (int)QEasingCurve::InOutExpo);
+	m_easing_combo->addItem("InBounce",      (int)QEasingCurve::InBounce);
+	m_easing_combo->addItem("OutBounce",     (int)QEasingCurve::OutBounce);
+	m_easing_combo->addItem("InOutBounce",   (int)QEasingCurve::InOutBounce);
+	m_easing_combo->addItem("InElastic",     (int)QEasingCurve::InElastic);
+	m_easing_combo->addItem("OutElastic",    (int)QEasingCurve::OutElastic);
+	m_easing_combo->addItem("InOutElastic",  (int)QEasingCurve::InOutElastic);
+	m_easing_combo->addItem("InBack",        (int)QEasingCurve::InBack);
+	m_easing_combo->addItem("OutBack",       (int)QEasingCurve::OutBack);
+	m_easing_combo->addItem("InOutBack",     (int)QEasingCurve::InOutBack);
+	m_easing_combo->addItem("InSine",        (int)QEasingCurve::InSine);
+	m_easing_combo->addItem("OutSine",       (int)QEasingCurve::OutSine);
+	m_easing_combo->addItem("InOutSine",     (int)QEasingCurve::InOutSine);
+	m_easing_combo->addItem("InCirc",        (int)QEasingCurve::InCirc);
+	m_easing_combo->addItem("OutCirc",       (int)QEasingCurve::OutCirc);
+	m_easing_combo->addItem("InOutCirc",     (int)QEasingCurve::InOutCirc);
+	m_easing_combo->setVisible(false);
+	connect(m_easing_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]{ emit changed(); });
+
 	auto *row = new QHBoxLayout(this);
 	setup_base_row(row);
+	row->insertWidget(row->count()-1, m_easing_combo); // Before preview
 	connect(m_type,QOverload<int>::of(&QComboBox::currentIndexChanged),this,&InterpStageRow::on_type_changed);
 	on_type_changed(0);
 }
 void InterpStageRow::on_type_changed(int) {
 	int t = m_type->currentData().toInt();
-	bool s1=false,s2=false;
+	bool s1=false,s2=false,easing=false;
 	switch(t){
 	case InterpStage::Quantize: s1=true; m_p1_label->setText("%:"); m_p1->setRange(1,100); m_p1->setDecimals(0); m_p1->setSingleStep(1);
 		if(m_p1->value()<1) m_p1->setValue(10); break;
 	case InterpStage::Smooth: s1=true; m_p1_label->setText("%:"); m_p1->setRange(1,100); m_p1->setDecimals(0); m_p1->setSingleStep(5);
 		if(m_p1->value()<1) m_p1->setValue(30); break;
-	case InterpStage::Easing: s1=true; m_p1_label->setText("Crv:"); m_p1->setRange(0,40); m_p1->setDecimals(0); break;
-	case InterpStage::AnimateTo: case InterpStage::AnimateFrom:
-		s1=s2=true; m_p1_label->setText("ms:"); m_p1->setRange(10,10000); m_p1->setDecimals(0); if(m_p1->value()<10)m_p1->setValue(500);
-		m_p2_label->setText("Eas:"); m_p2->setRange(0,40); m_p2->setDecimals(0); break;
+	case InterpStage::Easing: easing=true; break;
 	default: break;
 	}
 	m_p1_label->setVisible(s1); m_p1->setVisible(s1);
 	m_p2_label->setVisible(s2); m_p2->setVisible(s2);
+	m_easing_combo->setVisible(easing);
 	update_title("Interp", m_index + 1);
 	emit changed();
 }
@@ -840,7 +870,10 @@ void InterpStageRow::load(const InterpStage &s) {
 	// Quantize/Smooth: internal 0-1 → display 0-100
 	if (s.type == InterpStage::Quantize || s.type == InterpStage::Smooth)
 		m_p1->setValue(s.param1 * 100.0);
-	else
+	else if (s.type == InterpStage::Easing) {
+		int ei = m_easing_combo->findData(static_cast<int>(s.param1));
+		if (ei >= 0) m_easing_combo->setCurrentIndex(ei);
+	} else
 		m_p1->setValue(s.param1);
 	m_p2->setValue(s.param2);
 }
@@ -850,6 +883,8 @@ InterpStage InterpStageRow::build() const {
 	// Quantize/Smooth: display 0-100 → internal 0-1
 	if (s.type == InterpStage::Quantize || s.type == InterpStage::Smooth)
 		s.param1 = m_p1->value() / 100.0;
+	else if (s.type == InterpStage::Easing)
+		s.param1 = static_cast<double>(m_easing_combo->currentData().toInt());
 	else
 		s.param1 = m_p1->value();
 	s.param2 = m_p2->value();

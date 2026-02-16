@@ -33,6 +33,8 @@
 #include "docks/test_super_dock.hpp"
 #include "docks/sourcerer/sourcerer_scenes_dock.hpp"
 #include "docks/sourcerer/sourcerer_sources_dock.hpp"
+#include "windows/graph_editor_window.hpp"
+#include "windows/surface_editor_window.hpp"
 
 #include "utils/midi/midi_router.hpp"
 
@@ -59,6 +61,8 @@ static struct GlobalDialogs {
 	QPointer<CanvasManager> canvas_manager;
 	QPointer<BrowserManager> browser_dock_manager;
 	QPointer<EncodingGraphWindow> encoding_graph;
+	QPointer<GraphEditorWindow> graph_editor;
+	QPointer<SurfaceEditorWindow> surface_editor;
 } g_dialogs;
 
 static struct GlobalDocks {
@@ -393,6 +397,24 @@ static void show_encoding_graph(void *data)
 	g_dialogs.encoding_graph->activateWindow();
 }
 
+static void show_graph_editor(void *)
+{
+	if (!g_dialogs.graph_editor)
+		g_dialogs.graph_editor = new GraphEditorWindow(nullptr);
+	g_dialogs.graph_editor->show();
+	g_dialogs.graph_editor->raise();
+	g_dialogs.graph_editor->activateWindow();
+}
+
+static void show_surface_editor(void *)
+{
+	if (!g_dialogs.surface_editor)
+		g_dialogs.surface_editor = new SurfaceEditorWindow(nullptr);
+	g_dialogs.surface_editor->show();
+	g_dialogs.surface_editor->raise();
+	g_dialogs.surface_editor->activateWindow();
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -432,6 +454,10 @@ void on_plugin_loaded()
 	// Add Encoding Graph menu item
 	obs_frontend_add_tools_menu_item(obs_module_text("EncodingGraph.Title"), show_encoding_graph, nullptr);
 
+	// Graph Editor & Surface Editor
+	obs_frontend_add_tools_menu_item("Graph Editor", show_graph_editor, nullptr);
+	obs_frontend_add_tools_menu_item("Surface Editor", show_surface_editor, nullptr);
+
 	obs_frontend_add_save_callback(save_callback, nullptr);
 
 	// Try to load initial state
@@ -457,6 +483,8 @@ void on_plugin_loaded()
 
 	g_docks.test_super = new TestSuperDock(mainWindow);
 	obs_frontend_add_dock_by_id("TestSuperDock", "Test Super Dock", g_docks.test_super);
+
+
 }
 
 void on_plugin_unload()

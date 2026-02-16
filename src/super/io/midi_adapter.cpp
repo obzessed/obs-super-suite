@@ -153,27 +153,6 @@ double InterpStage::process(double val) const
 			static_cast<int>(param1)));
 		return curve.valueForProgress(qBound(0.0, val, 1.0));
 	}
-	case AnimateTo:
-	case AnimateFrom: {
-		double duration = param1 > 0 ? param1 : 500.0;
-		int easing_idx = static_cast<int>(param2);
-		if (!rt_init) {
-			rt_current = val; rt_target = val; rt_from = val;
-			rt_init = true; rt_timer.start();
-			return val;
-		}
-		if (std::abs(val - rt_target) > 0.0001) {
-			rt_from = rt_current;
-			rt_target = val;
-			rt_timer.restart();
-		}
-		double progress = qBound(0.0,
-			static_cast<double>(rt_timer.elapsed()) / duration, 1.0);
-		QEasingCurve curve(static_cast<QEasingCurve::Type>(easing_idx));
-		double eased = curve.valueForProgress(progress);
-		rt_current = rt_from + eased * (rt_target - rt_from);
-		return rt_current;
-	}
 	}
 	return val;
 }
@@ -182,9 +161,9 @@ QString InterpStage::type_name() const
 {
 	static const char *names[] = {
 		"Linear", "Quantize", "Smooth", "S-Curve",
-		"Easing", "Animate To", "Animate From"
+		"Easing"
 	};
-	return names[qBound(0, type, 6)];
+	return names[qBound(0, type, 4)];
 }
 
 QJsonObject InterpStage::to_json() const
@@ -411,14 +390,6 @@ PipelinePreview MidiPortBinding::preview_pipeline(int raw) const
 	switch (action_mode) {
 	case ActionMode::SetValue:
 		p.action_description = QString("Set → %1").arg(val, 0, 'f', 3);
-		break;
-	case ActionMode::AnimateTo:
-		p.action_description = QString("Animate → %1 (%2ms)")
-			.arg(val, 0, 'f', 3).arg(action_param1, 0, 'f', 0);
-		break;
-	case ActionMode::AnimateFrom:
-		p.action_description = QString("AnimFrom → %1 (%2ms)")
-			.arg(val, 0, 'f', 3).arg(action_param1, 0, 'f', 0);
 		break;
 	case ActionMode::Trigger:
 		p.action_description = val > 0.5 ? "Trigger ⚡" : "—";
@@ -693,20 +664,6 @@ static void dispatch_action(ControlPort *port, double value,
 	case ActionMode::SetValue:
 		port->set_value(QVariant(value));
 		break;
-	case ActionMode::AnimateTo:
-		port->animate_to(QVariant(value),
-			static_cast<int>(param1),
-			static_cast<QEasingCurve::Type>(static_cast<int>(param2)));
-		break;
-	case ActionMode::AnimateFrom: {
-		// Store current, jump to current, animate to target
-		double cur = port->as_double();
-		port->set_value(QVariant(cur));
-		port->animate_to(QVariant(value),
-			static_cast<int>(param1),
-			static_cast<QEasingCurve::Type>(static_cast<int>(param2)));
-		break;
-	}
 	case ActionMode::Trigger:
 		port->set_value(QVariant(1.0));
 		// Reset after one frame via singleshot

@@ -198,6 +198,7 @@ public:
 	InterpStage build() const;
 private:
 	void on_type_changed(int combo_idx);
+	QComboBox *m_easing_combo = nullptr;
 };
 
 // ---------------------------------------------------------------------------
