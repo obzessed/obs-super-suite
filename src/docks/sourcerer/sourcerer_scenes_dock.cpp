@@ -774,34 +774,6 @@ void SourcererScenesDock::FrontendEvent(obs_frontend_event event, void *data)
 
 		// Show or Hide T-Bar based on Studio Mode
 		dock->SetupTBar();
-
-		// EXPERIMENTATION: to modify the OBSBasic Preview and Program.
-		{
-			// find canvasEditor object in main window children
-			const auto *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-			auto *canvasEditor = mainWin->findChild<QWidget *>(QStringLiteral("canvasEditor"));
-			obs_log(LOG_ERROR, "Found canvasEditor: %s", canvasEditor ? "Yes" : "No");
-			if (canvasEditor) {
-				auto *previewLayout = canvasEditor->findChild<QHBoxLayout *>(QStringLiteral("previewLayout"));
-				auto *previewDisabledWidget = canvasEditor->findChild<QFrame *>(QStringLiteral("previewDisabledWidget"));
-				obs_log(LOG_ERROR, "Found previewLayout: %s", previewLayout ? "Yes" : "No");
-				obs_log(LOG_ERROR, "Found previewDisabledWidget: %s", previewDisabledWidget ? "Yes" : "No");
-			}
-			auto *previewContainer = mainWin->findChild<QWidget *>(QStringLiteral("previewContainer"));
-			obs_log(LOG_ERROR, "Found previewContainer: %s", previewContainer ? "Yes" : "No");
-			if (previewContainer) {
-				auto *previewTextLayout = previewContainer->findChild<QVBoxLayout *>(QStringLiteral("previewTextLayout"));
-				auto *previewLabel = previewContainer->findChild<QLabel *>(QStringLiteral("previewLabel"));
-				obs_log(LOG_ERROR, "Found previewTextLayout: %s", previewTextLayout ? "Yes" : "No");
-				obs_log(LOG_ERROR, "Found previewLabel: %s", previewLabel ? "Yes" : "No");
-			}
-			auto *contextContainer = mainWin->findChild<QFrame *>(QStringLiteral("contextContainer"));
-			obs_log(LOG_ERROR, "Found contextContainer: %s", contextContainer ? "Yes" : "No");
-			if (contextContainer) {
-				// ...
-			}
-
-		}
 	}
 
 	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED ||
@@ -954,40 +926,50 @@ void SourcererScenesDock::FrontendReady()
 {
 	SetupTBar();
 
+	bool attachedSceneListHandlers = false;
 	// find the scenes dock and attach reorder handlers.
 	{
 		auto mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+
 		for (const auto *dock : mainWin->findChildren<QDockWidget *>("scenesDock")) {
-			obs_log(LOG_ERROR, "DOCK NAME: %s", dock->objectName().toStdString().c_str());
+			// obs_log(LOG_ERROR, "DOCK NAME: %s", dock->objectName().toStdString().c_str());
 
 			if (dock->objectName() == "scenesDock") {
-				obs_log(LOG_ERROR, "Found scenesDock, attaching signal handlers");
+				// obs_log(LOG_ERROR, "Found scenesDock, attaching signal handlers");
 
 				// SceneTree < QListWidget < QListView
 				for (const auto *sceneList : dock->findChildren<QListWidget *>("scenes")) {
-					obs_log(LOG_ERROR, "Found scenes list widget, attaching item changed handler");
+					// obs_log(LOG_ERROR, "Found scenes list widget, attaching item changed handler");
 
 					// detect takeItem and insertItem to detect scene reorders.
 					if (QAbstractItemModel *model = sceneList->model()) {
 						connect(model, &QAbstractItemModel::rowsMoved, this,
 							[this](const QModelIndex &sourceParent, int sourceStart, int sourceEnd, const QModelIndex &destinationParent, int destinationRow) {
-								obs_log(LOG_ERROR, "rowsMoved: %p, %d-%d, %p, %d", &sourceParent, sourceStart, sourceEnd, &destinationParent, destinationRow);
+								// obs_log(LOG_ERROR, "rowsMoved: %p, %d-%d, %p, %d", &sourceParent, sourceStart, sourceEnd, &destinationParent, destinationRow);
 								QMetaObject::invokeMethod(this, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
 							});
 
 						connect(model, &QAbstractItemModel::rowsInserted, this,
 							[this](const QModelIndex &parent, int first, int last) {
-								obs_log(LOG_ERROR, "rowsInserted: %p, %d, %d", &parent, first, last);
+								// obs_log(LOG_ERROR, "rowsInserted: %p, %d, %d", &parent, first, last);
 								QMetaObject::invokeMethod(this, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
 							});
 						connect(model, &QAbstractItemModel::rowsRemoved, this,
 							[this](const QModelIndex &parent, int first, int last) {
-								obs_log(LOG_ERROR, "rowsRemoved: %p, %d, %d", &parent, first, last);
+								// obs_log(LOG_ERROR, "rowsRemoved: %p, %d, %d", &parent, first, last);
 								QMetaObject::invokeMethod(this, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
 							});
+
+						attachedSceneListHandlers = true;
+						goto loopEnd;
 					}
 				}
 			}
+		}
+
+loopEnd:
+		if (!attachedSceneListHandlers) {
+			obs_log(LOG_ERROR, "Failed to find scenes list widget to attach handlers. Scene reordering may not update the dock correctly.");
 		}
 	}
 }

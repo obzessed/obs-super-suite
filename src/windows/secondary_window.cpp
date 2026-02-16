@@ -134,7 +134,7 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 	if (opacityMenu->title().isEmpty()) opacityMenu->setTitle("Window Opacity");
 	const int opacities[] = {20, 40, 60, 80, 100};
 	// Create action group to make them exclusive visually
-	QActionGroup *opacityGroup = new QActionGroup(&menu);
+	auto *opacityGroup = new QActionGroup(&menu);
 	for (int val : opacities) {
 		QString text = QString("%1%").arg(val);
 		QAction *act = opacityMenu->addAction(text);
@@ -148,8 +148,6 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 			setWindowOpacity(val / 100.0);
 		});
 	}
-
-	menu.addSeparator();
 
 	menu.addSeparator();
 
@@ -174,11 +172,11 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 			dlg.setWindowTitle(obs_module_text("DockWindowManager.Snapshot.SaveTitle"));
 			if (dlg.windowTitle().isEmpty()) dlg.setWindowTitle("Save Layout Snapshot");
 			
-			QVBoxLayout *layout = new QVBoxLayout(&dlg);
+			auto *layout = new QVBoxLayout(&dlg);
 			
 			// Name Input
 			layout->addWidget(new QLabel("Snapshot Name:", &dlg));
-			QLineEdit *nameEdit = new QLineEdit(&dlg);
+			auto *nameEdit = new QLineEdit(&dlg);
 			nameEdit->setText(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"));
 			nameEdit->selectAll();
 			layout->addWidget(nameEdit);
@@ -186,33 +184,33 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 			// Options
 			QString savePrefix = "Save ";
 			
-			QCheckBox *chkPos = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.Pos"), &dlg);
+			auto *chkPos = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.Pos"), &dlg);
 			if (chkPos->text() == savePrefix) chkPos->setText("Save Window Position & Size");
 			chkPos->setChecked(true);
 			layout->addWidget(chkPos);
 			
-			QCheckBox *chkDocks = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.Docks"), &dlg);
+			auto *chkDocks = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.Docks"), &dlg);
 			if (chkDocks->text() == savePrefix) chkDocks->setText("Save Docks Layout");
 			chkDocks->setChecked(true);
 			layout->addWidget(chkDocks);
 			
-			QCheckBox *chkOpacity = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.Opacity"), &dlg);
+			auto *chkOpacity = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.Opacity"), &dlg);
 			if (chkOpacity->text() == savePrefix) chkOpacity->setText("Save Opacity");
 			chkOpacity->setChecked(true);
 			layout->addWidget(chkOpacity);
 			
-			QCheckBox *chkTop = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.StayOnTop"), &dlg);
+			auto *chkTop = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.StayOnTop"), &dlg);
 			if (chkTop->text() == savePrefix) chkTop->setText("Save 'Stay on Top' State");
 			chkTop->setChecked(true);
 			layout->addWidget(chkTop);
 			
-			QCheckBox *chkTitles = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.DockHeaders"), &dlg);
+			auto *chkTitles = new QCheckBox(savePrefix + obs_module_text("DockWindowManager.Snapshot.Option.DockHeaders"), &dlg);
 			if (chkTitles->text() == savePrefix) chkTitles->setText("Save 'Show Dock Headers' State");
 			chkTitles->setChecked(true);
 			layout->addWidget(chkTitles);
 
 			// Buttons
-			QDialogButtonBox *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+			auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
 			connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
 			connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 			layout->addWidget(btns);
@@ -290,15 +288,15 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 			dlg.setWindowTitle(obs_module_text("DockWindowManager.Snapshot.DeleteTitle"));
 			if (dlg.windowTitle().isEmpty()) dlg.setWindowTitle("Delete Snapshots");
 
-			QVBoxLayout *layout = new QVBoxLayout(&dlg);
+			auto *layout = new QVBoxLayout(&dlg);
 			
 			QString selectMsg = obs_module_text("DockWindowManager.Snapshot.SelectDelete");
 			if (selectMsg.isEmpty()) selectMsg = "Select snapshots to delete:";
 			layout->addWidget(new QLabel(selectMsg, &dlg));
 			
-			QListWidget *list = new QListWidget(&dlg);
+			auto *list = new QListWidget(&dlg);
 			for (const QString &name : names) {
-				QListWidgetItem *item = new QListWidgetItem(name, list);
+				auto *item = new QListWidgetItem(name, list);
 				item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
 				item->setCheckState(Qt::Unchecked);
 			}
@@ -344,7 +342,7 @@ void SecondaryWindow::contextMenuEvent(QContextMenuEvent *event)
 	QMenu *importMenu = menu.addMenu(obs_module_text("SecondaryWindow.Context.ImportDock"));
 	if (importMenu->title().isEmpty()) importMenu->setTitle("Import Dock");
 	
-	QMainWindow *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	bool foundAny = false;
 
 	if (mainWindow) {
@@ -523,8 +521,7 @@ void SecondaryWindow::reparentDock(QDockWidget *dock)
 
 void SecondaryWindow::closeEvent(QCloseEvent *event)
 {
-	QMainWindow *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	if (mainWindow) {
+	if (auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window())) {
 		initialDocks.clear();
 
 		// Reparent all docks back to main window
@@ -555,7 +552,7 @@ void SecondaryWindow::hotkey_callback(void *data, obs_hotkey_id id, obs_hotkey_t
 	UNUSED_PARAMETER(id);
 	UNUSED_PARAMETER(hotkey);
 	
-	SecondaryWindow *win = static_cast<SecondaryWindow*>(data);
+	auto *win = static_cast<SecondaryWindow*>(data);
 	if (pressed && win) {
 		QMetaObject::invokeMethod(win, "toggleVisibility", Q_ARG(bool, true));
 	}
@@ -598,7 +595,7 @@ void SecondaryWindow::setShowDockTitles(bool visible)
 
 void SecondaryWindow::onDockTopLevelChanged(bool topLevel)
 {
-	QDockWidget *dock = qobject_cast<QDockWidget *>(sender());
+	auto *dock = qobject_cast<QDockWidget *>(sender());
 	if (!dock) return;
 	
 	if (topLevel) {
@@ -626,7 +623,7 @@ void SecondaryWindow::restoreInitialDocks()
 {
 	if (initialDocks.isEmpty()) return;
 
-	QMainWindow *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	auto *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	if (!mainWindow) return;
 
 	// Find the docks by name in the main window

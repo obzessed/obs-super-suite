@@ -50,6 +50,8 @@
 
 #include "windows/dock_window_manager.h"
 #include "windows/encoding_graph_window.h"
+
+#include "windows/tweaks_panel.hpp"
 #pragma endregion
 
 static struct GlobalDialogs {
@@ -63,7 +65,12 @@ static struct GlobalDialogs {
 	QPointer<EncodingGraphWindow> encoding_graph;
 	QPointer<GraphEditorWindow> graph_editor;
 	QPointer<SurfaceEditorWindow> surface_editor;
+	QPointer<TweaksPanel> tweaks_panel;
 } g_dialogs;
+
+static struct GlobalInstances {
+	QPointer<TweaksImpl> tweaks_impl;
+} g_instances;
 
 static struct GlobalDocks {
 	QPointer<MixerDock> super_mixer;
@@ -137,6 +144,16 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 				QString jsonStr = doc.toJson(QJsonDocument::Compact);
 				obs_data_set_string(save_data, "ControlVariables", jsonStr.toUtf8().constData());
 			}
+		}
+
+		// Tweaks settings
+		if (g_instances.tweaks_impl) {
+			obs_data_set_int(save_data, "TweaksProgramOptions",
+					 g_instances.tweaks_impl->GetProgramOptionsState());
+			obs_data_set_int(save_data, "TweaksProgramLayout",
+					 g_instances.tweaks_impl->GetProgramLayoutState());
+			obs_data_set_int(save_data, "TweaksPreviewLayout",
+					 g_instances.tweaks_impl->GetPreviewLayoutState());
 		}
 	} else {
 		// Loading
@@ -222,6 +239,17 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 				super::ControlRegistry::instance().load_variables(doc.object());
 			}
 		}
+
+		// Tweaks settings
+		if (g_instances.tweaks_impl) {
+			g_instances.tweaks_impl->SetProgramOptionsState(
+				obs_data_get_int(save_data, "TweaksProgramOptions"));
+			g_instances.tweaks_impl->SetProgramLayoutState(
+				obs_data_get_int(save_data, "TweaksProgramLayout"));
+			g_instances.tweaks_impl->SetPreviewLayoutState(
+				obs_data_get_int(save_data, "TweaksPreviewLayout"));
+			g_instances.tweaks_impl->ApplyTweaks();
+		}
 	}
 }
 
@@ -256,6 +284,9 @@ void on_obs_evt(obs_frontend_event event, void *data)
 		if (g_docks.sourcerer_scenes) {
 			g_docks.sourcerer_scenes->FrontendReady();
 		}
+
+		if (g_instances.tweaks_impl)
+			g_instances.tweaks_impl->FrontendReady();
 
 		break;
 	case OBS_FRONTEND_EVENT_PROFILE_CHANGED: {
@@ -415,6 +446,15 @@ static void show_surface_editor(void *)
 	g_dialogs.surface_editor->activateWindow();
 }
 
+static void show_tweaks_panel(void *)
+{
+	if (!g_dialogs.tweaks_panel)
+		g_dialogs.tweaks_panel = new TweaksPanel(g_instances.tweaks_impl, nullptr);
+	g_dialogs.tweaks_panel->show();
+	g_dialogs.tweaks_panel->raise();
+	g_dialogs.tweaks_panel->activateWindow();
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -458,6 +498,9 @@ void on_plugin_loaded()
 	obs_frontend_add_tools_menu_item("Graph Editor", show_graph_editor, nullptr);
 	obs_frontend_add_tools_menu_item("Surface Editor", show_surface_editor, nullptr);
 
+	// Add Tweaks Panel menu item
+	obs_frontend_add_tools_menu_item("Super Suite Tweaks", show_tweaks_panel, nullptr);
+
 	obs_frontend_add_save_callback(save_callback, nullptr);
 
 	// Try to load initial state
@@ -484,7 +527,8 @@ void on_plugin_loaded()
 	g_docks.test_super = new TestSuperDock(mainWindow);
 	obs_frontend_add_dock_by_id("TestSuperDock", "Test Super Dock", g_docks.test_super);
 
-
+	// Create Global Instances
+	g_instances.tweaks_impl = new TweaksImpl();
 }
 
 void on_plugin_unload()
@@ -545,6 +589,10 @@ void on_plugin_unload()
 
 	MidiRouter::cleanup();
 	AudioChSrcConfig::cleanup();
+
+	if (g_instances.tweaks_impl) {
+		delete g_instances.tweaks_impl;
+	}
 
 	BrowserManager::cleanup();
 }
