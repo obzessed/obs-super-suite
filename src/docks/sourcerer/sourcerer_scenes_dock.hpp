@@ -24,6 +24,9 @@ public:
 	void Load(const QJsonObject &obj);
 	void FrontendReady();
 
+private slots:
+	void PerformRefresh();
+
 protected:
 	void showEvent(QShowEvent *event) override;
 	bool eventFilter(QObject *obj, QEvent *event) override;
@@ -56,6 +59,8 @@ private:
 
 	void OnItemClicked(SourcererItem *item);
 	void OnItemDoubleClicked(SourcererItem *item);
+
+	QTimer *refreshTimer = nullptr;
 
 	// T-Bar
 	enum class TBarPosition { Hidden, Left, Right, Top, Bottom };

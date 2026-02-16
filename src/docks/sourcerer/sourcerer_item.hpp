@@ -29,6 +29,7 @@ public:
 	QPushButton *btnPlayPause = nullptr;
 	QPushButton *btnFilters = nullptr;
 	QPushButton *btnDisablePreview = nullptr;
+	QPushButton *btnProjector = nullptr;
 
 	void ReflowButtons();
 

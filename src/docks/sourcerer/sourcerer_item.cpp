@@ -77,6 +77,9 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	btnFilters = new QPushButton(this);
 	SetupButton(btnFilters, QString::fromUtf8("Fx"), "Filters");
 
+	btnProjector = new QPushButton(this);
+	SetupButton(btnProjector, QString::fromUtf8("📽"), "Windowed Projector");
+
 	btnDisablePreview = new QPushButton(this);
 	SetupButton(btnDisablePreview, QString::fromUtf8("🚫"), "Toggle Preview");
 
@@ -93,6 +96,7 @@ SourcererItemOverlay::SourcererItemOverlay(QWidget *parent) : QWidget(parent)
 	layout->addWidget(btnDisablePreview, 2, 1);
 	layout->addWidget(btnFilters, 3, 0);
 	layout->addWidget(btnProperties, 3, 1);
+	layout->addWidget(btnProjector, 4, 0);
 
 	// Opacity effect for fade animation
 	opacityEffect = new QGraphicsOpacityEffect(this);
@@ -132,6 +136,8 @@ void SourcererItemOverlay::ReflowButtons()
 		visibleButtons.push_back(btnFilters);
 	if (btnProperties && !btnProperties->isHidden())
 		visibleButtons.push_back(btnProperties);
+	if (btnProjector && !btnProjector->isHidden())
+		visibleButtons.push_back(btnProjector);
 
 	for (size_t i = 0; i < visibleButtons.size(); ++i) {
 		int row = (int)i / 2;
@@ -368,6 +374,13 @@ void SourcererItem::SetupOverlayConnections()
 
 	connect(overlay->btnDisablePreview, &QPushButton::clicked,
 		[this]() { SetPreviewDisabled(!isPreviewDisabled); });
+
+	connect(overlay->btnProjector, &QPushButton::clicked, [this]() {
+		if (source) {
+			const char *name = obs_source_get_name(source);
+			obs_frontend_open_projector("Source", -1, nullptr, name);
+		}
+	});
 }
 
 void SourcererItem::SetOverlayEnabled(bool enabled)
@@ -472,9 +485,13 @@ void SourcererItem::UpdateOverlayButtonState()
 		overlay->btnProperties->setVisible(configurable);
 	}
 
-	// 8. Disable Preview - Always visible
 	if (overlay->btnDisablePreview) {
 		overlay->btnDisablePreview->setVisible(true);
+	}
+
+	// 9. Projector - Always visible
+	if (overlay->btnProjector) {
+		overlay->btnProjector->setVisible(true);
 	}
 
 	overlay->ReflowButtons();

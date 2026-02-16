@@ -523,9 +523,30 @@ void SecondaryWindow::reparentDock(QDockWidget *dock)
 
 void SecondaryWindow::closeEvent(QCloseEvent *event)
 {
-	// Just hide instead of closing to preserve dock state? 
-	// Or actually close and let caller handle show/hide.
-	// For now, standard behavior.
+	QMainWindow *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	if (mainWindow) {
+		initialDocks.clear();
+
+		// Reparent all docks back to main window
+		// We use findChildren to locate them. specific direct children check might be safer 
+		// but typically docks are direct children or managed by QMainWindow layout.
+		QList<QDockWidget *> docks = findChildren<QDockWidget *>();
+		for (QDockWidget *dock : docks) {
+			// Ensure we are only moving docks that we actually own/manage
+			// and not some internal sub-widgets if any (unlikely for QDockWidget)
+			if (dock->parent() == this || dock->window() == this) {
+				if (!dock->objectName().isEmpty()) {
+					initialDocks.append(dock->objectName());
+				}
+
+				dock->hide();
+				dock->setParent(mainWindow);
+				mainWindow->addDockWidget(Qt::LeftDockWidgetArea, dock);
+				dock->setFloating(true);
+			}
+		}
+	}
+
 	QMainWindow::closeEvent(event);
 }
 
@@ -599,4 +620,32 @@ void SecondaryWindow::onDockTopLevelChanged(bool topLevel)
 			}
 		}
 	}
+}
+
+void SecondaryWindow::restoreInitialDocks()
+{
+	if (initialDocks.isEmpty()) return;
+
+	QMainWindow *mainWindow = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	if (!mainWindow) return;
+
+	// Find the docks by name in the main window
+	QList<QDockWidget *> allDocks = mainWindow->findChildren<QDockWidget *>();
+	for (QDockWidget *dock : allDocks) {
+		if (initialDocks.contains(dock->objectName())) {
+			// Condition: Skip if it is docked in main window AND visible
+			// If it is floating, we can take it back.
+			// If it is hidden, we can take it back.
+			bool isDockedInMain = !dock->isFloating() && (dock->window() == mainWindow);
+			bool isVisible = dock->isVisible();
+
+			if (isDockedInMain && isVisible) {
+				continue; // Skip, user is using it in main window
+			}
+
+			reparentDock(dock);
+		}
+	}
+	// Clear the list so we don't try to restore them again unless they are saved again on close
+	initialDocks.clear();
 }

@@ -74,6 +74,7 @@ SourcererSourcesDock::~SourcererSourcesDock()
 		signal_handler_disconnect(sh, "item_locked", SceneItemLocked, this);
 		signal_handler_disconnect(sh, "item_add", SceneItemAdd, this);
 		signal_handler_disconnect(sh, "item_remove", SceneItemRemove, this);
+		signal_handler_disconnect(sh, "reorder", SceneItemReorder, this);
 		obs_source_release(connectedScene);
 	}
 	DisconnectAllScenes();
@@ -163,6 +164,9 @@ void SourcererSourcesDock::contextMenuEvent(QContextMenuEvent *event)
 	toggleStatus->setChecked(statusBar->isVisible());
 
 	connect(toggleStatus, &QAction::toggled, statusBar, &QWidget::setVisible);
+	
+	QAction *refreshAction = menu.addAction(tr("Refresh"));
+	connect(refreshAction, &QAction::triggered, [this]() { Refresh(); });
 
 	QAction *toggleAll = menu.addAction(tr("All Sources"));
 	toggleAll->setCheckable(true);
@@ -659,6 +663,14 @@ void SourcererSourcesDock::SourceRemove(void *data, calldata_t *cd)
 	}
 }
 
+void SourcererSourcesDock::SceneItemReorder(void *data, calldata_t *cd)
+{
+	Q_UNUSED(cd); // param might contain scene but we refresh current view anyway
+	SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(data);
+	// Reordering means we need to refresh to reflect new order
+	QMetaObject::invokeMethod(dock, &SourcererSourcesDock::Refresh, Qt::QueuedConnection);
+}
+
 void SourcererSourcesDock::UpdateSceneConnection()
 {
 	obs_source_t *scene_source = nullptr;
@@ -717,6 +729,7 @@ void SourcererSourcesDock::ConnectSceneSignals(obs_source_t *source)
 	signal_handler_connect(sh, "item_locked", SceneItemLocked, this);
 	signal_handler_connect(sh, "item_add", SceneItemAdd, this);
 	signal_handler_connect(sh, "item_remove", SceneItemRemove, this);
+	signal_handler_connect(sh, "reorder", SceneItemReorder, this);
 
 	// Recurse into groups if this is a scene
 	obs_scene_t *scene = obs_scene_from_source(source);
@@ -746,6 +759,7 @@ void SourcererSourcesDock::DisconnectAllScenes()
 		signal_handler_disconnect(sh, "item_locked", SceneItemLocked, this);
 		signal_handler_disconnect(sh, "item_add", SceneItemAdd, this);
 		signal_handler_disconnect(sh, "item_remove", SceneItemRemove, this);
+		signal_handler_disconnect(sh, "reorder", SceneItemReorder, this);
 		obs_source_release(source);
 	}
 	monitoredScenes.clear();

@@ -75,6 +75,7 @@ private:
 	static void SceneItemLocked(void *data, calldata_t *cd);
 	static void SceneItemAdd(void *data, calldata_t *cd);
 	static void SceneItemRemove(void *data, calldata_t *cd);
+	static void SceneItemReorder(void *data, calldata_t *cd);
 	static void SourceCreate(void *data, calldata_t *cd);
 	static void SourceRemove(void *data, calldata_t *cd);
 };

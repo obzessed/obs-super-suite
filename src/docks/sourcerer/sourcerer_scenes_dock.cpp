@@ -1,5 +1,6 @@
 #include "sourcerer_scenes_dock.hpp"
 
+#include "QListWidget"
 #include "plugin-support.h"
 
 #include <QVBoxLayout>
@@ -7,6 +8,7 @@
 #include <QEvent>
 #include <QKeyEvent>
 #include <QWheelEvent>
+#include <QDockWidget>
 #include <QContextMenuEvent>
 #include <QJsonObject>
 #include <QMenu>
@@ -107,6 +109,10 @@ SourcererScenesDock::SourcererScenesDock(QWidget *parent) : QWidget(parent)
 
 	statusLayout->addStretch(); // Push slider to the right
 	statusLayout->addWidget(zoomSlider);
+
+	refreshTimer = new QTimer(this);
+	refreshTimer->setSingleShot(true);
+	connect(refreshTimer, &QTimer::timeout, this, &SourcererScenesDock::PerformRefresh);
 
 	mainLayout->addWidget(statusBar);
 
@@ -418,6 +424,9 @@ void SourcererScenesDock::contextMenuEvent(QContextMenuEvent *event)
 
 	connect(toggleStatus, &QAction::toggled, statusBar, &QWidget::setVisible);
 
+	QAction *refreshAction = menu.addAction(tr("Refresh"));
+	connect(refreshAction, &QAction::triggered, [this]() { Refresh(); });
+
 	QAction *toggleLiveMode = menu.addAction(tr("Live Mode"));
 	toggleLiveMode->setCheckable(true);
 	toggleLiveMode->setChecked(liveMode);
@@ -662,6 +671,13 @@ void SourcererScenesDock::Clear()
 
 void SourcererScenesDock::Refresh()
 {
+	// Debounce
+	if (refreshTimer)
+		refreshTimer->start(100);
+}
+
+void SourcererScenesDock::PerformRefresh()
+{
 	Clear();
 
 	struct obs_frontend_source_list scenes = {};
@@ -710,50 +726,54 @@ void SourcererScenesDock::Refresh()
 		HighlightCurrentScene();
 }
 
-void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *data)
+void SourcererScenesDock::FrontendEvent(obs_frontend_event event, void *data)
 {
-	SourcererScenesDock *dock = static_cast<SourcererScenesDock *>(data);
+	const auto dock = static_cast<SourcererScenesDock *>(data);
 
 	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED) {
-		obs_source_t *scene = obs_frontend_get_current_scene();
-		if (scene) {
+		if (obs_source_t *scene = obs_frontend_get_current_scene()) {
 			const char *name = obs_source_get_name(scene);
-			blog(LOG_INFO, "Scene Switched (Program): %s", name);
+			obs_log(LOG_INFO, "Scene Switched (Program): %s", name);
 			obs_source_release(scene);
 		}
 	} else if (event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED) {
-		obs_source_t *scene = obs_frontend_get_current_preview_scene();
-		if (scene) {
+		if (obs_source_t *scene = obs_frontend_get_current_preview_scene()) {
 			const char *name = obs_source_get_name(scene);
-			blog(LOG_INFO, "Scene Switched (Preview): %s", name);
+			obs_log(LOG_INFO, "Scene Switched (Preview): %s", name);
 			obs_source_release(scene);
 		}
 	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_STOPPED) {
-		blog(LOG_INFO, "Transition Stopped");
+		obs_log(LOG_INFO, "Transition Stopped");
 	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_CHANGED) {
 		if (obs_source_t *transition = obs_frontend_get_current_transition()) {
 			const char *name = obs_source_get_name(transition);
-			blog(LOG_INFO, "Transition Changed to: %s", name);
+			obs_log(LOG_INFO, "Transition Changed to: %s", name);
 			obs_source_release(transition);
 		}
 	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_DURATION_CHANGED) {
-		blog(LOG_INFO, "Transition Duration Changed");
+		obs_log(LOG_INFO, "Transition Duration Changed");
 	} else if (event == OBS_FRONTEND_EVENT_TBAR_VALUE_CHANGED) {
 		dock->UpdateTBarValue();
 	} else if (event == OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED) {
+		obs_log(LOG_WARNING, "OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED");
 		// Use queued connection to avoid crashes if triggered by source removal from within dock
 		QMetaObject::invokeMethod(dock, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
+	} else if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED) {
+		obs_log(LOG_WARNING, "OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED");
+
+		QMetaObject::invokeMethod(dock, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
+	} else if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_LIST_CHANGED) {
+		obs_log(LOG_WARNING, "OBS_FRONTEND_EVENT_SCENE_COLLECTION_LIST_CHANGED");
 	}
 
 	if (!dock->liveMode && !dock->syncSelection)
 		return;
 
 	if (event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
-		blog(LOG_INFO, "Studio Mode %s", (event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED) ? "Enabled" : "Disabled");
+		obs_log(LOG_INFO, "Studio Mode %s", (event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED) ? "Enabled" : "Disabled");
+
 		// Show or Hide T-Bar based on Studio Mode
-
 		dock->SetupTBar();
-
 
 		// EXPERIMENTATION: to modify the OBSBasic Preview and Program.
 		{
@@ -778,6 +798,7 @@ void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *dat
 			auto *contextContainer = mainWin->findChild<QFrame *>(QStringLiteral("contextContainer"));
 			obs_log(LOG_ERROR, "Found contextContainer: %s", contextContainer ? "Yes" : "No");
 			if (contextContainer) {
+				// ...
 			}
 
 		}
@@ -788,6 +809,8 @@ void SourcererScenesDock::FrontendEvent(enum obs_frontend_event event, void *dat
 	    event == OBS_FRONTEND_EVENT_TRANSITION_STOPPED || event == OBS_FRONTEND_EVENT_TRANSITION_CHANGED) {
 		dock->HighlightCurrentScene();
 	}
+
+	// obs_log(LOG_ERROR, "Frontend Event: %d", event);
 }
 
 void SourcererScenesDock::HandleTBarRelease()
@@ -823,7 +846,7 @@ void SourcererScenesDock::HighlightCurrentScene() const
 		obs_source_t *activeSource = obs_transition_get_active_source(transition);
 		if (activeSource == nullptr) {
 			ftbActive = true;
-			blog(LOG_INFO, "FTB Active (No active source in transition)");
+			obs_log(LOG_INFO, "FTB Active (No active source in transition)");
 		}
 		obs_source_release(transition);
 	}
@@ -930,4 +953,41 @@ void SourcererScenesDock::Load(const QJsonObject &obj)
 void SourcererScenesDock::FrontendReady()
 {
 	SetupTBar();
+
+	// find the scenes dock and attach reorder handlers.
+	{
+		auto mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+		for (const auto *dock : mainWin->findChildren<QDockWidget *>("scenesDock")) {
+			obs_log(LOG_ERROR, "DOCK NAME: %s", dock->objectName().toStdString().c_str());
+
+			if (dock->objectName() == "scenesDock") {
+				obs_log(LOG_ERROR, "Found scenesDock, attaching signal handlers");
+
+				// SceneTree < QListWidget < QListView
+				for (const auto *sceneList : dock->findChildren<QListWidget *>("scenes")) {
+					obs_log(LOG_ERROR, "Found scenes list widget, attaching item changed handler");
+
+					// detect takeItem and insertItem to detect scene reorders.
+					if (QAbstractItemModel *model = sceneList->model()) {
+						connect(model, &QAbstractItemModel::rowsMoved, this,
+							[this](const QModelIndex &sourceParent, int sourceStart, int sourceEnd, const QModelIndex &destinationParent, int destinationRow) {
+								obs_log(LOG_ERROR, "rowsMoved: %p, %d-%d, %p, %d", &sourceParent, sourceStart, sourceEnd, &destinationParent, destinationRow);
+								QMetaObject::invokeMethod(this, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
+							});
+
+						connect(model, &QAbstractItemModel::rowsInserted, this,
+							[this](const QModelIndex &parent, int first, int last) {
+								obs_log(LOG_ERROR, "rowsInserted: %p, %d, %d", &parent, first, last);
+								QMetaObject::invokeMethod(this, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
+							});
+						connect(model, &QAbstractItemModel::rowsRemoved, this,
+							[this](const QModelIndex &parent, int first, int last) {
+								obs_log(LOG_ERROR, "rowsRemoved: %p, %d, %d", &parent, first, last);
+								QMetaObject::invokeMethod(this, &SourcererScenesDock::Refresh, Qt::QueuedConnection);
+							});
+					}
+				}
+			}
+		}
+	}
 }

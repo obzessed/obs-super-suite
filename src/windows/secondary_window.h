@@ -23,6 +23,10 @@ public:
 protected:
 	void contextMenuEvent(QContextMenuEvent *event) override;
 	void closeEvent(QCloseEvent *event) override;
+	void showEvent(QShowEvent *event) override {
+		restoreInitialDocks();
+		QMainWindow::showEvent(event);
+	}
 
 public:
 	Q_INVOKABLE void toggleVisibility(bool pressed);
@@ -34,11 +38,14 @@ public:
 private:
 	void setupUi();
 	void checkCentralWidgetVisibility();
+	void restoreInitialDocks();
 	
 	QLabel *instructionLabel = nullptr;
 	obs_hotkey_id hotkeyId;
 	DockWindowManager *manager = nullptr;
 	bool showDockTitles = true;
+	
+	QList<QString> initialDocks;
 	
 private slots:
 	void onDockTopLevelChanged(bool topLevel);
