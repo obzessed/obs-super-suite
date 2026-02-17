@@ -33,6 +33,7 @@
 #include "docks/test_super_dock.hpp"
 #include "docks/volume_meter_demo_dock.hpp"
 #include "docks/daw_mixer_demo_dock.hpp"
+#include "docks/s_mixer_demo_dock.hpp"
 #include "docks/sourcerer/sourcerer_scenes_dock.hpp"
 #include "docks/sourcerer/sourcerer_sources_dock.hpp"
 #include "windows/graph_editor_window.hpp"
@@ -83,6 +84,7 @@ static struct GlobalDocks {
 	QPointer<TestSuperDock> test_super;
 	QPointer<VolumeMeterDemoDock> volume_meter_demo;
 	QPointer<DawMixerDemoDock> daw_mixer_demo;
+	QPointer<SMixerDemoDock> s_mixer_demo;
 } g_docks;
 
 int volumeMeterDemoStyle = -1;
@@ -548,6 +550,9 @@ void on_plugin_loaded()
 	g_docks.daw_mixer_demo = new DawMixerDemoDock(mainWindow);
 	obs_frontend_add_dock_by_id("DawMixerDemoDock", "DAW Mixer Demo", g_docks.daw_mixer_demo);
 
+	g_docks.s_mixer_demo = new SMixerDemoDock(mainWindow);
+	obs_frontend_add_dock_by_id("SMixerDemoDock", "Super Mixer Demo", g_docks.s_mixer_demo);
+
 	// Restore style
 	if (volumeMeterDemoStyle >= 0 && volumeMeterDemoStyle < 4)
 		g_docks.volume_meter_demo->setSelectedStyleIndex(volumeMeterDemoStyle);
@@ -619,6 +624,11 @@ void on_plugin_unload()
 		if (g_docks.daw_mixer_demo) {
 			obs_frontend_remove_dock("DawMixerDemoDock");
 			delete g_docks.daw_mixer_demo;
+		}
+
+		if (g_docks.s_mixer_demo) {
+			obs_frontend_remove_dock("SMixerDemoDock");
+			delete g_docks.s_mixer_demo;
 		}
 	}
 

@@ -16,5 +16,10 @@
         <file>assets/icons/trash-2.svg</file>
         <file>assets/icons/toggle-on.svg</file>
         <file>assets/icons/toggle-off.svg</file>
+        <file>assets/icons/super/mixer/control-monitor.svg</file>
+        <file>assets/icons/super/mixer/control-mute.svg</file>
+        <file>assets/icons/super/mixer/control-record.svg</file>
+        <file>assets/icons/super/mixer/fader-handle.svg</file>
+        <file>assets/icons/super/mixer/fx-icon.svg</file>
     </qresource>
 </RCC>
