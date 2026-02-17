@@ -3,9 +3,12 @@
 #include <QWidget>
 #include <QLabel>
 #include <QPushButton>
+#include <QVBoxLayout>
 #include <QSlider>
 #include <QDial>
 #include <QMutex>
+#include <QCheckBox>
+#include <QScrollArea>
 #include <obs.hpp>
 
 class DawMixerMeter;
@@ -32,6 +35,9 @@ private slots:
 	void on_fader_changed(int value);
 	void on_mute_clicked();
 	void on_pan_changed(int value);
+	void toggle_expand();
+	void refresh_filters();
+	void refresh_tracks();
 
 private:
 	void setup_ui();
@@ -44,23 +50,44 @@ private:
 	static void obs_source_volume_cb(void *data, calldata_t *cd);
 	static void obs_source_mute_cb(void *data, calldata_t *cd);
 	static void obs_source_rename_cb(void *data, calldata_t *cd);
+	static void obs_source_filter_add_cb(void *data, calldata_t *cd);
+	static void obs_source_filter_remove_cb(void *data, calldata_t *cd);
 
 	obs_source_t *source = nullptr;
 	obs_volmeter_t *volmeter = nullptr;
 
 	// UI
+	QWidget *color_strip = nullptr;
 	QLabel *name_label = nullptr;
-	QPushButton *settings_btn = nullptr;
-	QLabel *pan_label = nullptr;
-	QDial *pan_dial = nullptr;
-	QLabel *pan_value_label = nullptr;
-	QPushButton *clip_led = nullptr;
-	QLabel *ovr_label = nullptr;
+	
+	// Controls
+	QPushButton *mute_btn = nullptr;
+	QPushButton *solo_btn = nullptr;
+	QPushButton *bus_btn = nullptr; // "Master", "Piano Bus", etc.
+	
+	// Pan
+	QSlider *pan_slider = nullptr;
+	
+	// Value display
+	QLabel *val_label = nullptr; // e.g. "-9.0"
+
+	// Fader section
 	QSlider *fader = nullptr;
 	DawMixerMeter *meter_l = nullptr;
 	DawMixerMeter *meter_r = nullptr;
 
+	// OVR/Clip
+	QPushButton *clip_led = nullptr; // Integrated into meter or separate? content shows separate usually
+	// Note: In the image, clip is implicitly at the top of the meter or a light. We'll keep the LED for now but maybe style it differently.
+
+	// Side Panel
+	QWidget *side_panel = nullptr;
+	QVBoxLayout *effects_layout = nullptr;
+	QVBoxLayout *sends_layout = nullptr; // Track checkboxes
+	QPushButton *expand_btn = nullptr;
+
 	// State
+	bool expanded = false;
 	bool updating_from_source = false;
 	bool clipping = false;
 
