@@ -31,6 +31,8 @@
 #include "docks/wrapper_test_dock.h"
 #include "docks/test_midi_dock.hpp"
 #include "docks/test_super_dock.hpp"
+#include "docks/volume_meter_demo_dock.hpp"
+#include "docks/daw_mixer_demo_dock.hpp"
 #include "docks/sourcerer/sourcerer_scenes_dock.hpp"
 #include "docks/sourcerer/sourcerer_sources_dock.hpp"
 #include "windows/graph_editor_window.hpp"
@@ -79,11 +81,16 @@ static struct GlobalDocks {
 	QPointer<SourcererSourcesDock> sourcerer_sources;
 	QPointer<TestMidiDock> test_midi;
 	QPointer<TestSuperDock> test_super;
+	QPointer<VolumeMeterDemoDock> volume_meter_demo;
+	QPointer<DawMixerDemoDock> daw_mixer_demo;
 } g_docks;
+
+int volumeMeterDemoStyle = -1;
 
 static void save_callback(obs_data_t *save_data, bool saving, void *)
 {
 	if (saving) {
+		// Saving
 		if (g_dialogs.dock_window_manager) {
 			QJsonObject data = g_dialogs.dock_window_manager->saveToConfig();
 			QJsonDocument doc(data);
@@ -155,6 +162,11 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 			obs_data_set_int(save_data, "TweaksPreviewLayout",
 					 g_instances.tweaks_impl->GetPreviewLayoutState());
 		}
+
+		// Volume Meter Demo style
+		if (g_docks.volume_meter_demo)
+			obs_data_set_int(save_data, "VolumeMeterDemoStyle",
+					 g_docks.volume_meter_demo->getSelectedStyleIndex());
 	} else {
 		// Loading
 		const char *dockWindowJsonStr = obs_data_get_string(save_data, "DockWindowManager");
@@ -250,6 +262,9 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 				obs_data_get_int(save_data, "TweaksPreviewLayout"));
 			g_instances.tweaks_impl->ApplyTweaks();
 		}
+
+		// Volume Meter Demo style
+		volumeMeterDemoStyle = obs_data_get_int(save_data, "VolumeMeterDemoStyle");
 	}
 }
 
@@ -527,6 +542,16 @@ void on_plugin_loaded()
 	g_docks.test_super = new TestSuperDock(mainWindow);
 	obs_frontend_add_dock_by_id("TestSuperDock", "Test Super Dock", g_docks.test_super);
 
+	g_docks.volume_meter_demo = new VolumeMeterDemoDock(mainWindow);
+	obs_frontend_add_dock_by_id("VolumeMeterDemoDock", "Volume Meter Demo", g_docks.volume_meter_demo);
+
+	g_docks.daw_mixer_demo = new DawMixerDemoDock(mainWindow);
+	obs_frontend_add_dock_by_id("DawMixerDemoDock", "DAW Mixer Demo", g_docks.daw_mixer_demo);
+
+	// Restore style
+	if (volumeMeterDemoStyle >= 0 && volumeMeterDemoStyle < 4)
+		g_docks.volume_meter_demo->setSelectedStyleIndex(volumeMeterDemoStyle);
+
 	// Create Global Instances
 	g_instances.tweaks_impl = new TweaksImpl();
 }
@@ -584,6 +609,16 @@ void on_plugin_unload()
 		if (g_docks.test_super) {
 			obs_frontend_remove_dock("TestSuperDock");
 			delete g_docks.test_super;
+		}
+
+		if (g_docks.volume_meter_demo) {
+			obs_frontend_remove_dock("VolumeMeterDemoDock");
+			delete g_docks.volume_meter_demo;
+		}
+
+		if (g_docks.daw_mixer_demo) {
+			obs_frontend_remove_dock("DawMixerDemoDock");
+			delete g_docks.daw_mixer_demo;
 		}
 	}
 
