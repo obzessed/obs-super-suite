@@ -9,27 +9,34 @@
 namespace super {
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+static constexpr float OBS_MAX_ALLOWED_DB = 26.0f; // Advanced Audio Properties let's us adjust this value upto 26dB (i.e: 2000%)
+static constexpr float OBS_MAX_ALLOWED_GAIN = 19.9526f; // 10^(26/20)
+
+// +6dB headroom (like DAWs)
+static constexpr float MAX_DB = 6.0f;
+static constexpr float MAX_GAIN = 1.9953f; // 10^(6/20)
+
+// Unity gain (0dB) slider position
+// norm_unity = cbrt(1.0 / MAX_GAIN) ≈ 0.7937
+static constexpr int UNITY_VALUE = 794;
+
+// ============================================================================
 // SMixerFader
 // ============================================================================
 
 SMixerFader::SMixerFader(QWidget *parent) : QSlider(Qt::Vertical, parent)
 {
 	setRange(0, 1000);
-	setValue(800); // Unity
+	setValue(UNITY_VALUE); // Unity gain (0dB)
 	setFixedWidth(50);
-	
-	// Create space for dB labels on left via margins?
-	// QSlider logic usually fills the rect.
-	// We will manually constrain the slider rect in drawing and let QSlider logic work
-	// by adjusting our drawing to where we want the interaction.
-	// OR better: use layout margins if QSlider respects it.
-	// But QSlider paints background.
-	// We will override paintEvent completely.
 	
 	connect(this, &QSlider::valueChanged, this, [this](int val) {
 		if (!m_updating) {
 			float norm = val / 1000.0f;
-			float vol = norm * norm * norm;
+			float vol = norm * norm * norm * MAX_GAIN;
 			emit volumeChanged(vol);
 			emit faderMoved(val);
 		}
@@ -39,7 +46,8 @@ SMixerFader::SMixerFader(QWidget *parent) : QSlider(Qt::Vertical, parent)
 void SMixerFader::setVolume(float linear_volume)
 {
 	m_updating = true;
-	float norm = cbrtf(std::max(0.0f, linear_volume));
+	float clamped = std::max(0.0f, std::min(linear_volume, MAX_GAIN));
+	float norm = cbrtf(clamped / MAX_GAIN);
 	int val = static_cast<int>(norm * 1000.0f);
 	setValue(std::clamp(val, 0, 1000));
 	m_updating = false;
@@ -48,7 +56,7 @@ void SMixerFader::setVolume(float linear_volume)
 float SMixerFader::volume() const
 {
 	float norm = value() / 1000.0f;
-	return norm * norm * norm;
+	return norm * norm * norm * MAX_GAIN;
 }
 
 float SMixerFader::volumeDb() const
@@ -75,11 +83,11 @@ void SMixerFader::mouseDoubleClickEvent(QMouseEvent *event)
 {
 	if (event->modifiers() & Qt::ControlModifier) {
 		// Go to -6dB
-		// norm = 10^(-6/60) = 0.7943
-		setValue(794);
+		// norm = cbrt(10^(-6/20) / MAX_GAIN) = cbrt(0.5012 / 1.9953) ≈ 0.6310
+		setValue(631);
 	} else {
-		// Go to 0dB (Unity / Top)
-		setValue(1000);
+		// Go to 0dB (Unity)
+		setValue(UNITY_VALUE);
 	}
 }
 
@@ -110,8 +118,6 @@ void SMixerFader::paintEvent(QPaintEvent *event)
 	p.setBrush(QColor(20, 20, 20));
 	p.drawRoundedRect(0, 0, trackAreaW - 2, h - 1, 4, 4);
 
-
-
 	// Draw Groove
 	int top = 20; 
 	int bottom = h - 20;
@@ -126,14 +132,24 @@ void SMixerFader::paintEvent(QPaintEvent *event)
 	f.setPixelSize(9);
 	f.setFamily("Segoe UI");
 	p.setFont(f);
-	p.setPen(QColor(0xFF, 0xFF, 0xFF));
 	int trackH = bottom - top;
 	for (int i = 0; i < DB_MARKS_COUNT; i++) {
 		int db = DB_MARKS[i];
-		int val = (db > -60) ? static_cast<int>(1000.0f * powf(10.0f, db / 60.0f)) : 0;
-		float ratio = static_cast<float>(val) / 1000.0f;
 		
-		int y = bottom - static_cast<int>(ratio * trackH);
+		// Convert dB to slider norm position
+		// linear = 10^(db/20), norm = cbrt(linear / MAX_GAIN)
+		float linear = (db > -60) ? powf(10.0f, db / 20.0f) : 0.0f;
+		float norm = (linear > 0.0f) ? cbrtf(linear / MAX_GAIN) : 0.0f;
+		
+		int y = bottom - static_cast<int>(norm * trackH);
+		
+		// Color: Red for positive dB, white for 0dB, gray for negative
+		QColor textColor;
+		if (db > 0)       textColor = QColor("#ff6666");
+		else if (db == 0) textColor = QColor("#ffffff");
+		else              textColor = QColor("#999999");
+		
+		p.setPen(textColor);
 		
 		// Text (Align Left, towards fader)
 		QString text = (db > 0) ? QString("+%1").arg(db) : QString::number(db);
