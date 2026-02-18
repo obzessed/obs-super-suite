@@ -83,6 +83,27 @@ static obs_source_t *findFilterByName(obs_source_t *source, const char *name)
 	return data.foundFilter;
 }
 
+// Helper to find filter by UUID
+static obs_source_t *findFilterByUuid(obs_source_t *source, const char *uuid)
+{
+	struct FindData {
+		const char *targetUuid;
+		obs_source_t *foundFilter;
+	} data = {uuid, nullptr};
+
+	obs_source_enum_filters(source, [](obs_source_t *, obs_source_t *filter, void *param) {
+		auto *d = static_cast<FindData *>(param);
+		if (d->foundFilter) return;
+
+		const char *u = obs_source_get_uuid(filter);
+		if (u && strcmp(u, d->targetUuid) == 0) {
+			d->foundFilter = filter;
+		}
+	}, &data);
+
+	return data.foundFilter;
+}
+
 // Simple button that paints an SVG icon with color tinting on hover/press
 class SMixerFilterAddButton : public QPushButton {
 public:
@@ -209,6 +230,27 @@ void SMixerEffectsRack::setupUi()
 	
 	connect(m_list->model(), &QAbstractItemModel::rowsMoved, this, &SMixerEffectsRack::onReorder);
 	
+	// Double-click to open properties
+	connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+		if (!m_source || !item) return;
+
+		obs_source_t *filter = nullptr;
+		QString uuid = item->data(Qt::UserRole + 1).toString();
+		if (!uuid.isEmpty()) {
+			filter = findFilterByUuid(m_source, uuid.toUtf8().constData());
+		}
+		
+		if (!filter) {
+			QString name = item->data(Qt::UserRole).toString();
+			if (!name.isEmpty())
+				filter = findFilterByName(m_source, name.toUtf8().constData());
+		}
+
+		if (filter) {
+			obs_frontend_open_source_properties(filter);
+		}
+	});
+
 	layout->addWidget(m_list);
 }
 
@@ -255,10 +297,13 @@ void SMixerEffectsRack::refresh()
 		auto *rack = d->rack;
 
 		const char *name = obs_source_get_name(filter);
+		const char *uuid = obs_source_get_uuid(filter);
 		bool enabled = obs_source_enabled(filter);
 
 		auto *item = new QListWidgetItem(rack->m_list);
 		item->setData(Qt::UserRole, QString::fromUtf8(name));
+		if (uuid)
+			item->setData(Qt::UserRole + 1, QString::fromUtf8(uuid));
 		
 		// Create Row Widget
 		auto *row = new QWidget();
@@ -346,10 +391,20 @@ void SMixerEffectsRack::onReorder()
 	int count = m_list->count();
 	for (int i = count - 1; i >= 0; i--) {
 		QListWidgetItem *item = m_list->item(i);
-		QString name = item->data(Qt::UserRole).toString();
-		if (name.isEmpty()) continue;
+		
+		obs_source_t *filter = nullptr;
+		QString uuid = item->data(Qt::UserRole + 1).toString();
+		if (!uuid.isEmpty()) {
+			filter = findFilterByUuid(m_source, uuid.toUtf8().constData());
+		}
+		
+		// Fallback to name
+		if (!filter) {
+			QString name = item->data(Qt::UserRole).toString();
+			if (!name.isEmpty())
+				filter = findFilterByName(m_source, name.toUtf8().constData());
+		}
 
-		obs_source_t *filter = findFilterByName(m_source, name.toUtf8().constData());
 		if (filter) {
 			obs_source_filter_set_order(m_source, filter, OBS_ORDER_MOVE_TOP);
 			// Filter pointer from enum is borrowed/internal, so we don't release.
