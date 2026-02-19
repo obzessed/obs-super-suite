@@ -21,5 +21,8 @@
         <file>assets/icons/super/mixer/control-record.svg</file>
         <file>assets/icons/super/mixer/fader-handle.svg</file>
         <file>assets/icons/super/mixer/fx-icon.svg</file>
+        <file>assets/icons/super/mixer/fx-add.svg</file>
+        <file>assets/icons/super/mixer/chevron-up.svg</file>
+        <file>assets/icons/super/mixer/chevron-down.svg</file>
     </qresource>
 </RCC>

@@ -14,9 +14,9 @@ SMixerSidePanel::SMixerSidePanel(QWidget *parent) : QWidget(parent)
 void SMixerSidePanel::setupUi()
 {
 	setFixedWidth(160); // Matches the requested side panel width
+	setObjectName("sidePanel");
 	setStyleSheet(
-		"background: #1e1e1e;"
-		"border-left: 1px solid #333;"
+		"#sidePanel { background: #1e1e1e; border-left: 1px solid #333; }"
 	);
 
 	// Direct Vertical Layout allows Effects Rack to expand and fill space

@@ -44,6 +44,8 @@ protected:
 private:
 	void setupUi();
 	void clearItems();
+	void showAddFilterMenu();
+	void addFilter(const QString &typeId);
 
 	QLabel *m_header_label = nullptr;
 	QPushButton *m_add_btn = nullptr;

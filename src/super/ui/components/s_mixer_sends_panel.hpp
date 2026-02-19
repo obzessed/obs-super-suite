@@ -16,10 +16,28 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <vector>
+#include <QVariantAnimation>
 #include <obs.hpp>
 #include "s_mixer_switch.hpp"
 
 namespace super {
+
+// Chevron button that rotates 180 degrees when toggled, with smooth animation
+class SMixerChevron : public QPushButton {
+	Q_OBJECT
+public:
+	explicit SMixerChevron(QWidget *parent = nullptr);
+	void setExpanded(bool expanded);
+
+protected:
+	void paintEvent(QPaintEvent *) override;
+
+private:
+	void animateTo(qreal endAngle);
+
+	qreal m_angle = 0.0;
+	QVariantAnimation *m_anim = nullptr;
+};
 
 class SMixerSendsPanel : public QWidget {
 	Q_OBJECT
@@ -58,7 +76,7 @@ private:
 
 	QWidget *m_content_container = nullptr;
 	QLabel *m_header_label = nullptr;
-	QPushButton *m_collapse_btn = nullptr;
+	SMixerChevron *m_collapse_btn = nullptr;
 	QVBoxLayout *m_items_layout = nullptr;
 
 	obs_source_t *m_source = nullptr;

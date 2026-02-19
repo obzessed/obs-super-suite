@@ -33,6 +33,7 @@
 // ============================================================================
 
 #include <QWidget>
+#include <QLabel>
 #include <QMutex>
 #include <QPushButton>
 #include <obs.hpp>
@@ -119,6 +120,7 @@ private:
 	SMixerFader *m_fader = nullptr;
 	SMixerStereoMeter *m_meter = nullptr;
 	SMixerDbLabel *m_db_label = nullptr;
+	QLabel *m_peak_label = nullptr;
 	SMixerPanSlider *m_pan_slider = nullptr;
 	SMixerSidePanel *m_side_panel = nullptr;
 	QWidget *m_side_panel_sep = nullptr;
@@ -135,8 +137,14 @@ private:
 	float m_disp_peak_l = -60.0f, m_disp_peak_r = -60.0f;
 	float m_disp_mag_l = -60.0f, m_disp_mag_r = -60.0f;
 
+	// Peak Hold
+	float m_max_peak_hold = -60.0f;
+
 	static constexpr int STRIP_WIDTH = 96;
 	static constexpr int SIDE_PANEL_WIDTH = 160;
+
+protected:
+	bool eventFilter(QObject *obj, QEvent *event) override;
 };
 
 } // namespace super

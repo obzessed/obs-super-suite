@@ -47,16 +47,16 @@ void SMixerDbLabel::updateText()
 			"border: 1px solid #333;"
 		);
 	} else {
-		m_label->setText(QString::asprintf("%.1f", m_db));
+		float display_db = m_db;
+		if (display_db > -0.05f && display_db < 0.0f) display_db = 0.0f;
+		m_label->setText(QString::asprintf("%.1f", display_db));
 
-		// Green tint for near-unity, orange for hot, red for clipping
-		QString color = "#aaa";
-		if (m_db >= 0.0f)
+		// Green tint for normal, orange for hot, red for clipping
+		QString color = "#00ff00"; // Default Green
+		if (m_db >= -0.05f) // Near zero or positive
 			color = "#ff4444";
-		else if (m_db >= -3.0f)
+		else if (m_db >= -5.0f)
 			color = "#ffaa00";
-		else if (m_db >= -12.0f)
-			color = "#00e5ff";
 
 		m_label->setStyleSheet(QString(
 			"color: %1; font-size: 10px; font-weight: bold;"

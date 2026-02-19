@@ -1,7 +1,7 @@
 #include "s_mixer_effects_rack.hpp"
 
 #include <QHBoxLayout>
-#include <QVBoxLayout> // Still used for main layout
+#include <QVBoxLayout>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QCheckBox>
@@ -9,6 +9,8 @@
 #include <QFontMetrics>
 #include <QIcon>
 #include <QPixmap>
+#include <QMenu>
+#include <QInputDialog>
 
 #include <QListWidgetItem>
 #include <QSignalBlocker>
@@ -108,11 +110,11 @@ static obs_source_t *findFilterByUuid(obs_source_t *source, const char *uuid)
 class SMixerFilterAddButton : public QPushButton {
 public:
 	explicit SMixerFilterAddButton(QWidget *parent = nullptr) : QPushButton(parent) {
-		setFixedSize(22, 16);
+		setFixedSize(22, 14);
 		setCursor(Qt::PointingHandCursor);
 		setToolTip("Add Filter");
-		// Ensure background doesn't interfere
-		setStyleSheet("QPushButton { border: none; background: transparent; }");
+		// Ensure background doesn't interfere, reset native styling
+		setStyleSheet("QPushButton { border: none; background: transparent; padding: 0px; margin: 0px; min-height: 0px; }");
 	}
 
 protected:
@@ -122,12 +124,12 @@ protected:
 		p.setRenderHint(QPainter::SmoothPixmapTransform);
 
 		// Determine tint color based on state
-		QColor color = QColor("#888"); // Default gray
+		auto color = QColor("#888"); // Default gray
 		if (isDown()) color = QColor("#ffffff"); // White on press
 		else if (underMouse()) color = QColor("#00e5ff"); // Cyan on hover
 
 		// Load icon (static to avoid reload)
-		static const QIcon icon(":/super/assets/icons/super/mixer/fx-icon.svg");
+		static const QIcon icon(":/super/assets/icons/super/mixer/fx-add.svg");
 		
 		int dim = 14; 
 		int x = (width() - dim) / 2;
@@ -156,6 +158,56 @@ protected:
 };
 
 // ============================================================================
+// Filter Type Enumeration
+// ============================================================================
+
+struct FilterTypeInfo {
+	QString id;           // e.g. "noise_gate_filter"
+	QString displayName;  // e.g. "Noise Gate"
+};
+
+static QList<FilterTypeInfo> getAvailableFilterTypes()
+{
+	QList<FilterTypeInfo> result;
+	
+	size_t idx = 0;
+	const char *typeId = nullptr;
+	while (obs_enum_filter_types(idx++, &typeId)) {
+		if (!typeId) continue;
+		
+		uint32_t flags = obs_get_source_output_flags(typeId);
+		
+		// Skip disabled/internal
+		if (flags & OBS_SOURCE_CAP_DISABLED) continue;
+		
+		const char *displayName = obs_source_get_display_name(typeId);
+		if (!displayName || !*displayName) continue;
+		
+		result.append({QString::fromUtf8(typeId), QString::fromUtf8(displayName)});
+	}
+	
+	// Sort alphabetically by display name
+	std::sort(result.begin(), result.end(), [](const FilterTypeInfo &a, const FilterTypeInfo &b) {
+		return a.displayName.compare(b.displayName, Qt::CaseInsensitive) < 0;
+	});
+	
+	return result;
+}
+
+static QString generateUniqueFilterName(obs_source_t *source, const QString &baseName)
+{
+	QString name = baseName;
+	int counter = 1;
+	
+	while (findFilterByName(source, name.toUtf8().constData())) {
+		counter++;
+		name = QString("%1 %2").arg(baseName).arg(counter);
+	}
+	
+	return name;
+}
+
+// ============================================================================
 // SMixerEffectsRack Implementation
 // ============================================================================
 
@@ -172,20 +224,16 @@ void SMixerEffectsRack::setupUi()
 
 	// Header Container
 	auto *headerWidget = new QWidget(this);
-	headerWidget->setObjectName("headerRow");
-	headerWidget->setStyleSheet("#headerRow { border-bottom: 1px solid #333; padding-bottom: 4px; }");
+	headerWidget->setObjectName("fxHeaderRow");
+	headerWidget->setStyleSheet(
+		"#fxHeaderRow { border-bottom: 1px solid #333; }"
+	);
 	
 	auto *header = new QHBoxLayout(headerWidget);
-	header->setContentsMargins(0, 8, 0, 4); // Top padding 8, bottom 4
-	header->setSpacing(0);
+	header->setContentsMargins(8, 6, 8, 6);
+	header->setSpacing(4);
 
-	// Collapse Button -> Disabled/Hidden (replaced with spacer to keep title centered)
-	auto *spacer = new QWidget(headerWidget);
-	spacer->setFixedSize(28, 16);
-	header->addWidget(spacer);
-
-	header->addStretch();
-	
+	// Title (Left-aligned for cleaner look)
 	m_header_label = new QLabel("EFFECTS", headerWidget);
 	m_header_label->setStyleSheet(
 		"color: #888; font-weight: bold; font-size: 10px;"
@@ -197,15 +245,10 @@ void SMixerEffectsRack::setupUi()
 
 	header->addStretch();
 
+	// Add Filter Button (Right)
 	m_add_btn = new SMixerFilterAddButton(headerWidget);
-	connect(m_add_btn, &QPushButton::clicked, this, [this]() {
-		if (m_source)
-			obs_frontend_open_source_filters(m_source);
-	});
+	connect(m_add_btn, &QPushButton::clicked, this, &SMixerEffectsRack::showAddFilterMenu);
 	header->addWidget(m_add_btn);
-	
-	// Disabled collapse trigger
-	// headerWidget->installEventFilter(this);
 
 	layout->addWidget(headerWidget);
 
@@ -215,9 +258,9 @@ void SMixerEffectsRack::setupUi()
 	m_list->setFrameShape(QFrame::NoFrame);
 	m_list->setStyleSheet(
 		"QListWidget { background: transparent; border: none; outline: none; }"
-		"QListWidget::item { border: none; padding: 2px 0px; }"
+		"QListWidget::item { border: none; padding: 1px 0px; }"
 		"QListWidget::item:selected { background: transparent; }"
-		"QListWidget::item:hover { background: transparent; }"
+		"QListWidget::item:hover { background: rgba(255,255,255,8); }"
 	);
 	m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -252,6 +295,126 @@ void SMixerEffectsRack::setupUi()
 	});
 
 	layout->addWidget(m_list);
+}
+
+void SMixerEffectsRack::showAddFilterMenu()
+{
+	if (!m_source) return;
+	
+	QMenu menu(this);
+	menu.setStyleSheet(
+		"QMenu {"
+		"  background: #2a2a2a; border: 1px solid #444;"
+		"  color: #ddd; font-size: 11px;"
+		"  font-family: 'Segoe UI', sans-serif;"
+		"  padding: 4px 0px;"
+		"  border-radius: 4px;"
+		"}"
+		"QMenu::item {"
+		"  padding: 5px 20px 5px 12px;"
+		"}"
+		"QMenu::item:selected {"
+		"  background: #00e5ff; color: #111;"
+		"}"
+		"QMenu::separator {"
+		"  height: 1px; background: #444; margin: 4px 8px;"
+		"}"
+	);
+	
+	auto filterTypes = getAvailableFilterTypes();
+	
+	if (filterTypes.isEmpty()) {
+		auto *noFilters = menu.addAction("No filters available");
+		noFilters->setEnabled(false);
+	} else {
+		// Separate audio and video filters
+		QList<FilterTypeInfo> audioFilters;
+		QList<FilterTypeInfo> videoFilters;
+		QList<FilterTypeInfo> otherFilters;
+		
+		for (const auto &ft : filterTypes) {
+			uint32_t flags = obs_get_source_output_flags(ft.id.toUtf8().constData());
+			if (flags & OBS_SOURCE_AUDIO) {
+				audioFilters.append(ft);
+			} else if (flags & OBS_SOURCE_VIDEO) {
+				videoFilters.append(ft);
+			} else {
+				otherFilters.append(ft);
+			}
+		}
+		
+		// Audio filters section
+		if (!audioFilters.isEmpty()) {
+			// auto *sectionLabel = menu.addAction("— Audio —");
+			// sectionLabel->setEnabled(false);
+			for (const auto &ft : audioFilters) {
+				auto *action = menu.addAction(ft.displayName);
+				action->setData(ft.id);
+			}
+		}
+		
+		// Video filters section
+		// if (!videoFilters.isEmpty()) {
+		// 	if (!audioFilters.isEmpty())
+		// 		menu.addSeparator();
+		// 	auto *sectionLabel = menu.addAction("— Video —");
+		// 	sectionLabel->setEnabled(false);
+		// 	for (const auto &ft : videoFilters) {
+		// 		auto *action = menu.addAction(ft.displayName);
+		// 		action->setData(ft.id);
+		// 	}
+		// }
+		
+		// Other filters
+		// if (!otherFilters.isEmpty()) {
+		// 	if (!audioFilters.isEmpty() || !videoFilters.isEmpty())
+		// 		menu.addSeparator();
+		// 	for (const auto &ft : otherFilters) {
+		// 		auto *action = menu.addAction(ft.displayName);
+		// 		action->setData(ft.id);
+		// 	}
+		// }
+		
+		// Separator + open filters dialog
+		menu.addSeparator();
+		auto *openDialog = menu.addAction("Open Filters Dialog...");
+		connect(openDialog, &QAction::triggered, this, [this]() {
+			if (m_source)
+				obs_frontend_open_source_filters(m_source);
+		});
+	}
+	
+	QAction *selected = menu.exec(m_add_btn->mapToGlobal(QPoint(0, m_add_btn->height())));
+	if (selected && selected->data().isValid()) {
+		QString typeId = selected->data().toString();
+		if (!typeId.isEmpty()) {
+			addFilter(typeId);
+		}
+	}
+}
+
+void SMixerEffectsRack::addFilter(const QString &typeId)
+{
+	if (!m_source) return;
+	
+	const char *displayName = obs_source_get_display_name(typeId.toUtf8().constData());
+	QString baseName = displayName ? QString::fromUtf8(displayName) : typeId;
+	QString filterName = generateUniqueFilterName(m_source, baseName);
+	
+	// Create the filter source
+	OBSSourceAutoRelease filter = obs_source_create(
+		typeId.toUtf8().constData(),
+		filterName.toUtf8().constData(),
+		nullptr, nullptr
+	);
+	
+	if (filter) {
+		obs_source_filter_add(m_source, filter);
+		refresh();
+
+		// Open properties immediately after adding to encourage configuration
+		obs_frontend_open_source_properties(filter);
+	}
 }
 
 void SMixerEffectsRack::setSource(obs_source_t *source)
@@ -308,15 +471,14 @@ void SMixerEffectsRack::refresh()
 		// Create Row Widget
 		auto *row = new QWidget();
 		auto *h = new QHBoxLayout(row);
-		// Adjusted margins: Left 12, Right 16 (for scrollbar clearance), Top 4, Bottom 4
-		h->setContentsMargins(12, 4, 16, 4); 
-		h->setSpacing(8);
+		h->setContentsMargins(8, 3, 8, 3); 
+		h->setSpacing(6);
 
 		// Filter name (Left) - Using Elided Label
 		auto *lbl = new SMixerElidedLabel(name ? name : "(Unnamed)", row);
 		lbl->setStyleSheet(QString(
-			"color: %1; font-size: 11px; font-family: 'Segoe UI', sans-serif;"
-		).arg(enabled ? "#eee" : "#888"));
+			"border: none; color: %1; font-size: 11px; font-family: 'Segoe UI', sans-serif;"
+		).arg(enabled ? "#ddd" : "#666"));
 		lbl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 		h->addWidget(lbl);
 
@@ -337,8 +499,8 @@ void SMixerEffectsRack::refresh()
 		// Update label color on toggle
 		QObject::connect(sw, &SMixerSwitch::toggled, lbl, [lbl](bool checked) {
 			lbl->setStyleSheet(QString(
-				"color: %1; font-size: 11px; font-family: 'Segoe UI', sans-serif;"
-			).arg(checked ? "#eee" : "#888"));
+				"border: none; color: %1; font-size: 11px; font-family: 'Segoe UI', sans-serif;"
+			).arg(checked ? "#ddd" : "#666"));
 		});
 
 		// Listen for external changes

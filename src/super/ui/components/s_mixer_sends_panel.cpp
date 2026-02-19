@@ -1,12 +1,99 @@
 #include "s_mixer_sends_panel.hpp"
+#include "s_mixer_switch.hpp"
 
 #include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QLabel>
 #include <QPushButton>
 #include <QEvent>
 #include <QMouseEvent>
+#include <QVariantAnimation>
+#include <QEasingCurve>
+#include <QIcon>
+#include <QPainter>
+#include <QPixmap>
 #include <algorithm>
 
 namespace super {
+
+// ============================================================================
+// SMixerChevron Implementation
+// ============================================================================
+
+SMixerChevron::SMixerChevron(QWidget *parent) : QPushButton(parent) {
+	setFixedSize(22, 14);
+	setCursor(Qt::PointingHandCursor);
+	setToolTip("Collapse");
+	// Reset native styling
+	setStyleSheet("border: none; background: transparent; padding: 0px; margin: 0px; min-height: 0px;");
+}
+
+void SMixerChevron::setExpanded(bool expanded) {
+	// Expanded: Points Up (0 deg) - "Click to collapse"
+	// Collapsed: Points Down (180 deg) - "Click to expand" (Upside-down relative to Up)
+	// Or if "upside-down" means 180 is the "Effect" state?
+	// Let's assume Expanded = 0 (Normal Up), Collapsed = 180 (Inverted).
+	// Wait, Standard chevron-up points UP.
+	// If Expanded, we see content. Button usually collapses. Icon UP is fine.
+	// If Collapsed, we don't. Button expands. Icon DOWN (180).
+
+	qreal target = expanded ? 0.0 : 180.0;
+	animateTo(target);
+}
+
+void SMixerChevron::paintEvent(QPaintEvent *) {
+	QPainter p(this);
+	p.setRenderHint(QPainter::Antialiasing);
+	p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+	// Determine color
+	QColor color = QColor("#666");
+	if (underMouse()) color = QColor("#fff");
+	if (isDown()) color = QColor("#ccc");
+
+	int dim = 12; // Small icon
+
+	p.translate(width() / 2, height() / 2);
+	p.rotate(m_angle);
+	p.translate(-dim / 2, -dim / 2);
+
+	static const QIcon icon(":/super/assets/icons/super/mixer/chevron-down.svg");
+
+	if (!icon.isNull()) {
+		QPixmap pix(dim, dim);
+		pix.fill(Qt::transparent);
+		QPainter ip(&pix);
+		ip.setRenderHint(QPainter::Antialiasing);
+		icon.paint(&ip, pix.rect(), Qt::AlignCenter);
+		ip.setCompositionMode(QPainter::CompositionMode_SourceIn);
+		ip.fillRect(pix.rect(), color);
+		ip.end();
+		p.drawPixmap(0, 0, pix);
+	} else {
+		// Fallback text
+		p.setPen(color);
+		p.drawText(QRect(0, 0, dim, dim), Qt::AlignCenter, "^");
+	}
+}
+
+void SMixerChevron::animateTo(qreal endAngle) {
+	if (qAbs(m_angle - endAngle) < 0.1) return;
+
+	if (!m_anim) {
+		m_anim = new QVariantAnimation(this);
+		m_anim->setDuration(150);
+		m_anim->setEasingCurve(QEasingCurve::OutCubic);
+		connect(m_anim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v){
+			m_angle = v.toReal();
+			update();
+		});
+	}
+
+	m_anim->stop();
+	m_anim->setStartValue(m_angle);
+	m_anim->setEndValue(endAngle);
+	m_anim->start();
+}
 
 // ============================================================================
 // SMixerSendsPanel Implementation
@@ -25,38 +112,29 @@ SMixerSendsPanel::~SMixerSendsPanel()
 void SMixerSendsPanel::setupUi()
 {
 	auto *layout = new QVBoxLayout(this);
-	layout->setContentsMargins(0, 8, 0, 8); // Top/Bottom padding for the whole panel
-	layout->setSpacing(8);
+	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(0);
 
 	// Header Container
 	auto *headerWidget = new QWidget(this);
-	headerWidget->setObjectName("headerRow");
-	headerWidget->setStyleSheet("#headerRow { border-bottom: 1px solid #333; padding-bottom: 4px; }");
+	headerWidget->setObjectName("sendsHeaderRow");
+	headerWidget->setStyleSheet(
+		"#sendsHeaderRow { border-bottom: 1px solid #333; }"
+	);
 	
 	auto *header = new QHBoxLayout(headerWidget);
-	header->setContentsMargins(0, 0, 0, 0);
-	header->setSpacing(0);
+	header->setContentsMargins(8, 6, 8, 6);
+	header->setSpacing(4);
 
-	// Collapse Button (Left)
-	m_collapse_btn = new QPushButton("v", headerWidget);
-	m_collapse_btn->setFixedSize(28, 16);
-	m_collapse_btn->setCursor(Qt::PointingHandCursor);
-	m_collapse_btn->setToolTip("Collapse");
-	m_collapse_btn->setObjectName("collapseBtn");
-	m_collapse_btn->setStyleSheet(
-		"#collapseBtn { border: none; background: transparent; color: #888; font-weight: bold; font-family: 'Segoe UI', sans-serif; }"
-		"#collapseBtn:hover { color: #fff; }"
-	);
+	// Collapse Button (Right)
+	m_collapse_btn = new SMixerChevron(headerWidget);
+	
 	connect(m_collapse_btn, &QPushButton::clicked, this, [this]() {
 		setExpanded(!m_is_expanded);
 	});
-	header->addWidget(m_collapse_btn);
-
-	header->addStretch();
 
 	// Title
 	m_header_label = new QLabel("SENDS", headerWidget);
-	m_header_label->setAlignment(Qt::AlignCenter);
 	m_header_label->setStyleSheet(
 		"color: #888; font-weight: bold; font-size: 10px;"
 		"font-family: 'Segoe UI', sans-serif;"
@@ -67,10 +145,8 @@ void SMixerSendsPanel::setupUi()
 
 	header->addStretch();
 
-	// Balancer for visual centering
-	auto *spacer = new QWidget(headerWidget);
-	spacer->setFixedSize(28, 16);
-	header->addWidget(spacer);
+	// Note: disabling it for now, this makes the header look chunky
+	header->addWidget(m_collapse_btn);
 
 	headerWidget->installEventFilter(this);
 
@@ -79,8 +155,8 @@ void SMixerSendsPanel::setupUi()
 	// Content Container
 	m_content_container = new QWidget(this);
 	m_items_layout = new QVBoxLayout(m_content_container);
-	m_items_layout->setContentsMargins(0, 0, 0, 0);
-	m_items_layout->setSpacing(2);
+	m_items_layout->setContentsMargins(0, 2, 0, 2);
+	m_items_layout->setSpacing(0);
 	
 	layout->addWidget(m_content_container);
 }
@@ -173,12 +249,12 @@ void SMixerSendsPanel::refresh()
 		
 		auto *row = new QWidget(this);
 		auto *rowLayout = new QHBoxLayout(row);
-		rowLayout->setContentsMargins(12, 4, 12, 4); // Clean padding: 12px sides, 4px vertical
-		rowLayout->setSpacing(0);
+		rowLayout->setContentsMargins(8, 3, 8, 3);
+		rowLayout->setSpacing(6);
 
 		// Label (Left)
 		QLabel *lbl = new QLabel(QString("Track %1").arg(track_num), row);
-		lbl->setStyleSheet("color: #aaa; font-size: 11px; font-family: 'Segoe UI', sans-serif;");
+		lbl->setStyleSheet("border: none; color: #aaa; font-size: 11px; font-family: 'Segoe UI', sans-serif;");
 		rowLayout->addWidget(lbl);
 
 		rowLayout->addStretch();
@@ -198,7 +274,7 @@ void SMixerSendsPanel::refresh()
 			uint32_t current = obs_source_get_audio_mixers(m_source);
 			uint32_t mask = (1 << i);
 			
-			// Only update if changed (to double check)
+			// Only update if changed (to double-check)
 			bool currentState = (current & mask) != 0;
 			if (currentState != checked) {
 				if (checked) current |= mask;
@@ -221,8 +297,8 @@ void SMixerSendsPanel::setExpanded(bool expanded)
 		m_content_container->setVisible(expanded);
 		
 	if (m_collapse_btn) {
-		m_collapse_btn->setText(expanded ? "v" : ">");
 		m_collapse_btn->setToolTip(expanded ? "Collapse" : "Expand");
+		m_collapse_btn->setExpanded(expanded);
 	}
 }
 

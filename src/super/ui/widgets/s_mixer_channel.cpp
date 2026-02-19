@@ -14,6 +14,7 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QTimer>
+#include <QEvent>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <cmath>
@@ -86,10 +87,32 @@ void SMixerChannel::setupUi()
 	connect(m_pan_slider, &SMixerPanSlider::panChanged, this, &SMixerChannel::onPanChanged);
 	root->addWidget(m_pan_slider);
 
-	// 5. dB value label
+	// 5. dB value label + Peak Meter Label
+	auto *labels_layout = new QHBoxLayout();
+	labels_layout->setSpacing(4);
+	labels_layout->setContentsMargins(0, 0, 0, 0);
+
+	m_peak_label = new QLabel("-inf", strip);
+	m_peak_label->setObjectName("peakLabel");
+	// Initial style - will be updated by timer
+	m_peak_label->setStyleSheet(
+		"color: #555; font-size: 10px; font-weight: bold;"
+		"background: #2b2b2b; border-radius: 2px;"
+		"font-family: 'Segoe UI', sans-serif;"
+		"border: 1px solid #333;"
+	);
+	m_peak_label->setAlignment(Qt::AlignCenter);
+	m_peak_label->setFixedHeight(18);
+	m_peak_label->setCursor(Qt::PointingHandCursor);
+	m_peak_label->installEventFilter(this);
+	m_peak_label->setToolTip("Click to reset peak hold");
+	labels_layout->addWidget(m_peak_label);
+
 	m_db_label = new SMixerDbLabel(strip);
 	connect(m_db_label, &SMixerDbLabel::resetRequested, this, &SMixerChannel::onDbResetRequested);
-	root->addWidget(m_db_label);
+	labels_layout->addWidget(m_db_label);
+
+	root->addLayout(labels_layout);
 
 	// 4. Fader section: [dB Labels + Meter L&R] [Fader + fader Labels]
 	auto *fader_area = new QHBoxLayout();
@@ -305,6 +328,40 @@ void SMixerChannel::startMeterTimer()
 		m_disp_mag_r = std::max(cur_mag_r > m_disp_mag_r ? cur_mag_r : m_disp_mag_r - decay, -60.0f);
 
 		m_meter->setLevels(m_disp_peak_l, m_disp_mag_l, m_disp_peak_r, m_disp_mag_r);
+
+		// Update Peak Label (Peak Hold)
+		// Use instantaneous peak from this interval (cur_peak_l) to track accurate max
+		float interval_peak = std::max(cur_peak_l, cur_peak_r);
+		
+		if (interval_peak > m_max_peak_hold)
+			m_max_peak_hold = interval_peak;
+			
+		// Display the held peak
+		float display_val = m_max_peak_hold;
+		
+		QString text;
+		QColor color;
+		
+		if (display_val <= -60.0f) {
+			text = "-inf";
+			color = QColor("#555555");
+		} else {
+			if (display_val > -0.05f && display_val < 0.0f) display_val = 0.0f;
+			text = QString::number(display_val, 'f', 1);
+			if (display_val > -0.5f) color = QColor("#ff4444");      // Clip
+			else if (display_val > -5.0f) color = QColor("#ffaa00"); // Warning
+			else color = QColor("#00ff00");                          // Signal
+		}
+		
+		if (m_peak_label) {
+			m_peak_label->setText(text);
+			m_peak_label->setStyleSheet(QString(
+				"color: %1; font-size: 10px; font-weight: bold;"
+				"background: #2b2b2b; border-radius: 2px;"
+				"font-family: 'Segoe UI', sans-serif;"
+				"border: 1px solid #333;"
+			).arg(color.name()));
+		}
 	});
 	timer->start(33); // ~30 fps
 }
@@ -426,6 +483,24 @@ void SMixerChannel::obsFilterRemovedCb(void *data, calldata_t *)
 		if (self->m_expanded)
 			self->m_side_panel->refresh();
 	});
+}
+
+bool SMixerChannel::eventFilter(QObject *obj, QEvent *event)
+{
+	if (obj == m_peak_label && event->type() == QEvent::MouseButtonRelease) {
+		m_max_peak_hold = -60.0f;
+		if (m_peak_label) {
+			m_peak_label->setText("-inf");
+			m_peak_label->setStyleSheet(
+				"color: #555555; font-size: 10px; font-weight: bold;"
+				"background: #2b2b2b; border-radius: 2px;"
+				"font-family: 'Segoe UI', sans-serif;"
+				"border: 1px solid #333;"
+			);
+		}
+		return true;
+	}
+	return QWidget::eventFilter(obj, event);
 }
 
 } // namespace super
