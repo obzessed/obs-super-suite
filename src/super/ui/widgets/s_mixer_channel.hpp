@@ -37,6 +37,7 @@
 #include <QMutex>
 #include <QPushButton>
 #include <obs.hpp>
+#include <QMenu>
 
 namespace super {
 
@@ -99,6 +100,10 @@ private:
 	void updateDbLabel();
 	void startMeterTimer();
 
+	// --- Context Menu ---
+	void showChannelContextMenu(const QPoint &globalPos);
+	void showColorPicker();
+
 	// OBS callbacks (called from audio/signal threads)
 	static void obsVolmeterCb(void *data, const float magnitude[MAX_AUDIO_CHANNELS],
 	                           const float peak[MAX_AUDIO_CHANNELS],
@@ -129,6 +134,8 @@ private:
 	// Layout state
 	bool m_expanded = false;
 	bool m_updating_from_source = false;
+	bool m_fader_locked = false;
+	bool m_mono = false;
 
 	// Meter data (written from audio thread, read from UI thread)
 	QMutex m_meter_mutex;
@@ -145,6 +152,7 @@ private:
 
 protected:
 	bool eventFilter(QObject *obj, QEvent *event) override;
+	void contextMenuEvent(QContextMenuEvent *event) override;
 };
 
 } // namespace super

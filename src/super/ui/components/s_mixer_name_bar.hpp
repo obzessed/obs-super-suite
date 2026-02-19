@@ -34,6 +34,9 @@ public:
 	void setEditable(bool editable);
 	bool isEditable() const { return m_editable; }
 
+	// --- Editing ---
+	void startEditing();
+
 signals:
 	void nameChanged(const QString &new_name);
 	void doubleClicked();
@@ -46,7 +49,6 @@ private slots:
 
 private:
 	void setupUi();
-	void startEditing();
 	void finishEditing();
 
 	QWidget *m_color_strip = nullptr;

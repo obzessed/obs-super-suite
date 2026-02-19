@@ -15,10 +15,15 @@
 #include <QPushButton>
 #include <QTimer>
 #include <QEvent>
+#include <QContextMenuEvent>
+#include <QMenu>
+#include <QColorDialog>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <cmath>
 #include <algorithm>
+
+#include "super/ui/components/s_mixer_effects_rack.hpp"
 
 namespace super {
 
@@ -501,6 +506,114 @@ bool SMixerChannel::eventFilter(QObject *obj, QEvent *event)
 		return true;
 	}
 	return QWidget::eventFilter(obj, event);
+}
+
+// =====================================================================
+// Channel Context Menu
+// =====================================================================
+
+static const char *kChannelMenuStyle =
+	"QMenu {"
+	"  background: #2a2a2a; border: 1px solid #444;"
+	"  color: #ddd; font-size: 11px;"
+	"  font-family: 'Segoe UI', sans-serif;"
+	"  padding: 4px 0px;"
+	"  border-radius: 4px;"
+	"}"
+	"QMenu::item {"
+	"  padding: 5px 20px 5px 12px;"
+	"}"
+	"QMenu::item:selected {"
+	"  background: #00e5ff; color: #111;"
+	"}"
+	"QMenu::item:disabled {"
+	"  color: #666;"
+	"}"
+	"QMenu::separator {"
+	"  height: 1px; background: #444; margin: 4px 8px;"
+	"}";
+
+void SMixerChannel::contextMenuEvent(QContextMenuEvent *event)
+{
+	showChannelContextMenu(event->globalPos());
+}
+
+void SMixerChannel::showChannelContextMenu(const QPoint &globalPos)
+{
+	if (!m_source) return;
+
+	QMenu menu(this);
+	menu.setStyleSheet(kChannelMenuStyle);
+
+	// Rename
+	auto *renameAct = menu.addAction("Rename");
+	connect(renameAct, &QAction::triggered, this, [this]() {
+		if (m_name_bar) m_name_bar->startEditing();
+	});
+
+	// Color
+	auto *colorAct = menu.addAction("Color...");
+	connect(colorAct, &QAction::triggered, this, &SMixerChannel::showColorPicker);
+
+	menu.addSeparator();
+
+	// Fader Lock
+	auto *faderLockAct = menu.addAction("Fader Lock");
+	faderLockAct->setCheckable(true);
+	faderLockAct->setChecked(m_fader_locked);
+	connect(faderLockAct, &QAction::triggered, this, [this](bool checked) {
+		m_fader_locked = checked;
+		if (m_fader) m_fader->setEnabled(!checked);
+	});
+
+	// Mono
+	auto *monoAct = menu.addAction("Mono");
+	monoAct->setCheckable(true);
+	monoAct->setChecked(m_mono);
+	connect(monoAct, &QAction::triggered, this, [this](bool checked) {
+		m_mono = checked;
+		uint32_t flags = obs_source_get_flags(m_source);
+		if (checked)
+			flags |= OBS_SOURCE_FLAG_FORCE_MONO;
+		else
+			flags &= ~OBS_SOURCE_FLAG_FORCE_MONO;
+		obs_source_set_flags(m_source, flags);
+	});
+
+	menu.addSeparator();
+
+	// Copy Filter(s)
+	auto *copyAct = menu.addAction("Copy Filter(s)");
+	connect(copyAct, &QAction::triggered, this, [this]() {
+		SMixerEffectsRack::copyAllFilters(m_source);
+	});
+
+	// Paste Filter(s)
+	auto *pasteAct = menu.addAction("Paste Filter(s)");
+	pasteAct->setEnabled(SMixerEffectsRack::hasClipboardFilters());
+	connect(pasteAct, &QAction::triggered, this, [this]() {
+		SMixerEffectsRack::pasteFilters(m_source);
+		if (m_expanded) m_side_panel->refresh();
+	});
+
+	menu.addSeparator();
+
+	// Properties
+	auto *propsAct = menu.addAction("Properties");
+	connect(propsAct, &QAction::triggered, this, [this]() {
+		obs_frontend_open_source_properties(m_source);
+	});
+
+	menu.exec(globalPos);
+}
+
+void SMixerChannel::showColorPicker()
+{
+	QColor current = m_name_bar ? m_name_bar->accentColor() : QColor(0x00, 0xFA, 0x9A);
+	QColor color = QColorDialog::getColor(current, this, "Channel Color");
+	if (color.isValid() && m_name_bar) {
+		m_name_bar->setAccentColor(color);
+	}
 }
 
 } // namespace super

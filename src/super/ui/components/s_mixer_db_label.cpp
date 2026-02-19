@@ -20,6 +20,8 @@ void SMixerDbLabel::setupUi()
 	m_label = new QLabel("-\xe2\x88\x9e", this);
 	m_label->setAlignment(Qt::AlignCenter);
 	m_label->setFixedHeight(18);
+	m_label->setCursor(Qt::PointingHandCursor);
+	m_label->setToolTip("Click to reset the fader");
 	m_label->setStyleSheet(
 		"color: #aaa; font-size: 10px; font-weight: bold;"
 		"background: #2b2b2b; border-radius: 2px;"
