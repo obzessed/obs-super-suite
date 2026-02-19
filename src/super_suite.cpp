@@ -38,6 +38,7 @@
 #include "docks/sourcerer/sourcerer_sources_dock.hpp"
 #include "windows/graph_editor_window.hpp"
 #include "windows/surface_editor_window.hpp"
+#include "windows/audio_matrix.hpp"
 
 #include "utils/midi/midi_router.hpp"
 #include "utils/extras/frontend_helper.hpp"
@@ -538,10 +539,31 @@ void on_plugin_loaded()
 	obs_frontend_add_tools_menu_item("Surface Editor", show_surface_editor, nullptr);
 
 	// Add Tweaks Panel menu item
-	obs_frontend_add_tools_menu_item("Super Suite Tweaks", show_tweaks_panel, nullptr);
+	auto actionTweaks = (QAction *)obs_frontend_add_tools_menu_qaction("Super Suite Tweaks");
+	QObject::connect(actionTweaks, &QAction::triggered, []() {
+		static TweaksPanel *tweaks = nullptr;
+		if (!tweaks) tweaks = new TweaksPanel(g_instances.tweaks_impl, static_cast<QWidget *>(obs_frontend_get_main_window()));
+		tweaks->show();
+		tweaks->raise();
+	});
+
+	// Add Audio Matrix Router menu item
+	auto actionMatrix = (QAction *)obs_frontend_add_tools_menu_qaction("Audio Matrix Router");
+	QObject::connect(actionMatrix, &QAction::triggered, []() {
+		static AudioMatrix *matrix = nullptr;
+		if (!matrix) matrix = new AudioMatrix(static_cast<QWidget *>(obs_frontend_get_main_window()));
+		matrix->show();
+		matrix->raise();
+	});
 
 	// Add Qt Inspector menu item
-	obs_frontend_add_tools_menu_item("Qt Inspector", show_qt_inspector, nullptr);
+	auto actionInspector = (QAction *)obs_frontend_add_tools_menu_qaction("Qt Inspector");
+	QObject::connect(actionInspector, &QAction::triggered, []() {
+		static QtInspector *inspector = nullptr;
+		if (!inspector) inspector = new QtInspector(static_cast<QWidget *>(obs_frontend_get_main_window()));
+		inspector->show();
+		inspector->raise();
+	});
 
 	obs_frontend_add_save_callback(save_callback, nullptr);
 

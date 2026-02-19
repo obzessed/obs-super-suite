@@ -42,7 +42,7 @@ TweaksImpl::TweaksImpl()
 				impl->FrontendReady();
 			}
 			if (event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
-				impl->ApplyTweaks(true);
+				// impl->ApplyTweaks(true);
 
 				// enable only when experimentation
 				return;

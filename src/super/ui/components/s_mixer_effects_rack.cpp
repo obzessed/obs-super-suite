@@ -465,7 +465,11 @@ void SMixerEffectsRack::addFilter(const QString &typeId)
 	if (filter) {
 		obs_source_filter_add(m_source, filter);
 		refresh();
-		obs_frontend_open_source_properties(filter);
+
+		auto flags = obs_source_get_output_flags(filter);
+		if ((flags & OBS_SOURCE_CAP_DONT_SHOW_PROPERTIES) == 0) {
+			obs_frontend_open_source_properties(filter);
+		}
 	}
 }
 
