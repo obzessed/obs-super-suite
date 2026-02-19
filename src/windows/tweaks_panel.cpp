@@ -41,6 +41,12 @@ void TweaksPanel::SetupUi()
 	comboPreviewLayout->addItems({"Default", "Hide", "Dock"});
 	layout->addWidget(comboPreviewLayout, 2, 1);
 
+	// Main Program Preview Layout
+	layout->addWidget(new QLabel("Main Program Preview Layout:"), 3, 0);
+	comboMainProgramPreviewLayout = new QComboBox(this);
+	comboMainProgramPreviewLayout->addItems({"Default", "Hide", "Dock"});
+	layout->addWidget(comboMainProgramPreviewLayout, 3, 1);
+
 	// Connect signals
 	// Connect signals
 	if (impl) {
@@ -53,13 +59,18 @@ void TweaksPanel::SetupUi()
 		connect(comboPreviewLayout, QOverload<int>::of(&QComboBox::currentIndexChanged),
 			[this](int index) { impl->SetPreviewLayoutState(index); });
 
+		connect(comboMainProgramPreviewLayout, QOverload<int>::of(&QComboBox::currentIndexChanged),
+			[this](int index) { impl->SetMainProgramPreviewLayoutState(index); });
+
 		// Set initial values
 		QSignalBlocker b1(comboProgramOptions);
 		QSignalBlocker b2(comboProgramLayout);
 		QSignalBlocker b3(comboPreviewLayout);
+		QSignalBlocker b4(comboMainProgramPreviewLayout);
 		comboProgramOptions->setCurrentIndex(impl->GetProgramOptionsState());
 		comboProgramLayout->setCurrentIndex(impl->GetProgramLayoutState());
 		comboPreviewLayout->setCurrentIndex(impl->GetPreviewLayoutState());
+		comboMainProgramPreviewLayout->setCurrentIndex(impl->GetMainProgramPreviewLayoutState());
 	}
 
 	mainLayout->addWidget(group);

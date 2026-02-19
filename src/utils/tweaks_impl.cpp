@@ -1,5 +1,7 @@
 #include "tweaks_impl.hpp"
 
+#include "extras/frontend_tweaks.hpp"
+
 #include <plugin-support.h>
 
 #include <obs-frontend-api.h>
@@ -40,6 +42,8 @@ TweaksImpl::TweaksImpl()
 				impl->FrontendReady();
 			}
 			if (event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED) {
+				impl->ApplyTweaks(true);
+
 				// enable only when experimentation
 				return;
 
@@ -329,11 +333,32 @@ void TweaksImpl::FrontendReady()
 	ApplyTweaks();
 }
 
-void TweaksImpl::ApplyTweaks()
+void TweaksImpl::ApplyTweaks(bool force)
 {
+	if (force || (mainProgramPreviewLayoutState.currentState != mainProgramPreviewLayoutStateVal)) {
+		// Default: 0, Hide: 1, Dock: 2
+		switch (mainProgramPreviewLayoutStateVal) {
+		case 0: OBSFrontendTweaker::CentralWidgetReset(); break;
+		case 1: OBSFrontendTweaker::CentralWidgetSetVisible(false); break;
+		case 2: OBSFrontendTweaker::CentralWidgetMakeDockable(); break;
+		default: break;
+		}
+	}
+
+	if (force || (programOptionsState.currentState != programOptionsStateVal)) {
+		// Default: 0, Hide: 1, Dock: 2
+		switch (programOptionsStateVal) {
+		case 0: OBSFrontendTweaker::ProgramOptionsReset(); break;
+		case 1: OBSFrontendTweaker::ProgramOptionsSetVisible(false); break;
+		case 2: OBSFrontendTweaker::ProgramOptionsMakeDockable(); break;
+		default: break;
+		}
+	}
+
 	SetWidgetState(programOptionsState, "programOptions", programOptionsStateVal, "Program Options");
 	SetWidgetState(programLayoutState, "programLabel", programLayoutStateVal, "Program Layout");
 	SetWidgetState(previewLayoutState, "previewLabel", previewLayoutStateVal, "Preview Layout");
+	SetWidgetState(mainProgramPreviewLayoutState, "canvasEditor", mainProgramPreviewLayoutStateVal, "Main Program Preview Layout");
 }
 
 void TweaksImpl::SetProgramOptionsState(int state)
@@ -351,6 +376,11 @@ void TweaksImpl::SetPreviewLayoutState(int state)
 	previewLayoutStateVal = state;
 }
 
+void TweaksImpl::SetMainProgramPreviewLayoutState(int state)
+{
+	mainProgramPreviewLayoutStateVal = state;
+}
+
 QWidget *TweaksImpl::FindWidget(const QString &name)
 {
 	QMainWindow *mainWin = static_cast<QMainWindow *>(obs_frontend_get_main_window());
@@ -360,6 +390,11 @@ QWidget *TweaksImpl::FindWidget(const QString &name)
 
 void TweaksImpl::SetWidgetState(WidgetState &ctx, const QString &name, int state, const QString &dockTitle)
 {
+
+	ctx.currentState = state;
+
+	return;
+
 	QWidget *w = nullptr;
 	
 	// Initial finding logic

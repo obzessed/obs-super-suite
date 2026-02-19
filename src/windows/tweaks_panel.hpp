@@ -20,4 +20,5 @@ private:
 	QComboBox *comboProgramOptions;
 	QComboBox *comboProgramLayout;
 	QComboBox *comboPreviewLayout;
+	QComboBox *comboMainProgramPreviewLayout;
 };

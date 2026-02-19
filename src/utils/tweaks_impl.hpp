@@ -20,14 +20,16 @@ public:
 	void FrontendReady();
 
 	// Tweak Operations
-	void ApplyTweaks();
+	void ApplyTweaks(bool force = false);
 	void SetProgramOptionsState(int state);
 	void SetProgramLayoutState(int state);
 	void SetPreviewLayoutState(int state);
+	void SetMainProgramPreviewLayoutState(int state);
 	
 	int GetProgramOptionsState() const { return programOptionsStateVal; }
 	int GetProgramLayoutState() const { return programLayoutStateVal; }
 	int GetPreviewLayoutState() const { return previewLayoutStateVal; }
+	int GetMainProgramPreviewLayoutState() const { return mainProgramPreviewLayoutStateVal; }
 
 private:
 	struct WidgetState {
@@ -36,15 +38,18 @@ private:
 		QPointer<QLayout> originalLayout;
 		int originalIndex = -1;
 		QPointer<QDockWidget> dock;
+		int currentState = 0;
 	};
 
 	WidgetState programOptionsState;
 	WidgetState programLayoutState;
 	WidgetState previewLayoutState;
+	WidgetState mainProgramPreviewLayoutState;
 	
 	int programOptionsStateVal = 0;
 	int programLayoutStateVal = 0;
 	int previewLayoutStateVal = 0;
+	int mainProgramPreviewLayoutStateVal = 0;
 
 	QWidget *FindWidget(const QString &name);
 	void SetWidgetState(WidgetState &ctx, const QString &name, int state, const QString &dockTitle);

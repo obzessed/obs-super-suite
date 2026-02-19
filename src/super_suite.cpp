@@ -40,6 +40,9 @@
 #include "windows/surface_editor_window.hpp"
 
 #include "utils/midi/midi_router.hpp"
+#include "utils/extras/frontend_helper.hpp"
+#include "utils/extras/frontend_tweaks.hpp"
+#include "utils/extras/libobs_tweaks.hpp"
 
 #include "super/core/control_registry.hpp"
 
@@ -55,6 +58,7 @@
 #include "windows/encoding_graph_window.h"
 
 #include "windows/tweaks_panel.hpp"
+#include "windows/qt_inspector.hpp"
 #pragma endregion
 
 static struct GlobalDialogs {
@@ -69,6 +73,7 @@ static struct GlobalDialogs {
 	QPointer<GraphEditorWindow> graph_editor;
 	QPointer<SurfaceEditorWindow> surface_editor;
 	QPointer<TweaksPanel> tweaks_panel;
+	QPointer<QtInspector> qt_inspector;
 } g_dialogs;
 
 static struct GlobalInstances {
@@ -472,18 +477,35 @@ static void show_tweaks_panel(void *)
 	g_dialogs.tweaks_panel->activateWindow();
 }
 
+static void show_qt_inspector(void *)
+{
+	if (!g_dialogs.qt_inspector)
+		g_dialogs.qt_inspector = new QtInspector(nullptr);
+	g_dialogs.qt_inspector->show();
+	g_dialogs.qt_inspector->raise();
+	g_dialogs.qt_inspector->activateWindow();
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 bool on_plugin_load()
 {
+	LibOBSTweaker::OnLoad();
+	OBSFrontendTweaker::OnLoad();
+	OBSFrontendHelper::OnLoad();
+
 	// Check if we have all the deps loaded
 	return true;
 }
 
 void on_plugin_loaded()
 {
+	LibOBSTweaker::OnLoaded();
+	OBSFrontendTweaker::OnLoaded();
+	OBSFrontendHelper::OnLoaded();
+
 	obs_frontend_add_event_callback(on_obs_evt, nullptr);
 
 	// Add Tools menu item
@@ -517,6 +539,9 @@ void on_plugin_loaded()
 
 	// Add Tweaks Panel menu item
 	obs_frontend_add_tools_menu_item("Super Suite Tweaks", show_tweaks_panel, nullptr);
+
+	// Add Qt Inspector menu item
+	obs_frontend_add_tools_menu_item("Qt Inspector", show_qt_inspector, nullptr);
 
 	obs_frontend_add_save_callback(save_callback, nullptr);
 
@@ -563,6 +588,10 @@ void on_plugin_loaded()
 
 void on_plugin_unload()
 {
+	LibOBSTweaker::OnUnload();
+	OBSFrontendTweaker::OnUnload();
+	OBSFrontendHelper::OnUnload();
+
 	obs_frontend_remove_event_callback(on_obs_evt, nullptr);
 
 	// Clean up sources FIRST - this disconnects all signal handlers
@@ -635,9 +664,9 @@ void on_plugin_unload()
 	MidiRouter::cleanup();
 	AudioChSrcConfig::cleanup();
 
-	if (g_instances.tweaks_impl) {
-		delete g_instances.tweaks_impl;
-	}
+
+	delete g_instances.tweaks_impl;
+
 
 	BrowserManager::cleanup();
 }
