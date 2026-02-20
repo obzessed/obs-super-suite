@@ -19,9 +19,13 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QMimeData>
+#include <QMap>
 #include <obs.hpp>
 
 namespace super {
+
+class SMixerFilterControls;
+class SMixerSidebarToggle;
 
 class SMixerEffectsRack : public QWidget {
 	Q_OBJECT
@@ -64,6 +68,10 @@ private:
 	void showItemContextMenu(QListWidgetItem *item, const QPoint &globalPos);
 	void showRackContextMenu(const QPoint &globalPos);
 
+	// --- Accordion Controls ---
+	void toggleFilterControls(QListWidgetItem *item);
+	void collapseAllControls();
+
 	// --- Filter Operations ---
 	obs_source_t *filterFromItem(QListWidgetItem *item);
 	void moveFilterUp(QListWidgetItem *item);
@@ -75,12 +83,16 @@ private:
 
 	QLabel *m_header_label = nullptr;
 	QPushButton *m_add_btn = nullptr;
-	QPushButton *m_collapse_btn = nullptr;
+	SMixerSidebarToggle *m_collapse_btn = nullptr;
 	QListWidget *m_list = nullptr;
 
 	obs_source_t *m_source = nullptr;
 	bool m_updating_internal = false;
 	bool m_is_expanded = true;
+
+	// --- Accordion State ---
+	QMap<QListWidgetItem*, QListWidgetItem*> m_controls_items; // filter item → controls item
+	QMap<QListWidgetItem*, SMixerFilterControls*> m_controls_map; // filter item → controls widget
 
 	// --- Static Clipboard ---
 	struct ClipboardFilter {

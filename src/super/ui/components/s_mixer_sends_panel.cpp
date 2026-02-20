@@ -29,14 +29,6 @@ SMixerChevron::SMixerChevron(QWidget *parent) : QPushButton(parent) {
 }
 
 void SMixerChevron::setExpanded(bool expanded) {
-	// Expanded: Points Up (0 deg) - "Click to collapse"
-	// Collapsed: Points Down (180 deg) - "Click to expand" (Upside-down relative to Up)
-	// Or if "upside-down" means 180 is the "Effect" state?
-	// Let's assume Expanded = 0 (Normal Up), Collapsed = 180 (Inverted).
-	// Wait, Standard chevron-up points UP.
-	// If Expanded, we see content. Button usually collapses. Icon UP is fine.
-	// If Collapsed, we don't. Button expands. Icon DOWN (180).
-
 	qreal target = expanded ? 0.0 : 180.0;
 	animateTo(target);
 }
@@ -70,7 +62,6 @@ void SMixerChevron::paintEvent(QPaintEvent *) {
 		ip.end();
 		p.drawPixmap(0, 0, pix);
 	} else {
-		// Fallback text
 		p.setPen(color);
 		p.drawText(QRect(0, 0, dim, dim), Qt::AlignCenter, "^");
 	}
@@ -163,32 +154,70 @@ void SMixerSendsPanel::setupUi()
 
 void SMixerSendsPanel::setSource(obs_source_t *source)
 {
-	if (m_source == source)
+	obs_source_t *current = getSource();
+	if (current == source) {
+		if (current) obs_source_release(current);
 		return;
+	}
 
 	disconnectSource();
-	m_source = source;
-	connectSource();
+	
+	if (m_weak_source) {
+		obs_weak_source_release(m_weak_source);
+		m_weak_source = nullptr;
+	}
+
+	if (source) {
+		m_weak_source = obs_source_get_weak_source(source);
+		connectSource();
+	}
+
+	if (current) obs_source_release(current);
+	
 	refresh();
+}
+
+obs_source_t *SMixerSendsPanel::getSource() const
+{
+	return m_weak_source ? obs_weak_source_get_source(m_weak_source) : nullptr;
 }
 
 void SMixerSendsPanel::connectSource()
 {
-	if (!m_source) return;
+	obs_source_t *source = getSource();
+	if (!source) return;
 
-	m_signal_handler = obs_source_get_signal_handler(m_source);
-	if (m_signal_handler) {
-		signal_handler_connect(m_signal_handler, "audio_mixers", audioMixersChangedCb, this);
+	signal_handler_t *sh = obs_source_get_signal_handler(source);
+	if (sh) {
+		signal_handler_connect(sh, "audio_mixers", audioMixersChangedCb, this);
+		signal_handler_connect(sh, "destroy", sourceDestroyedCb, this);
 	}
+	obs_source_release(source);
 }
 
 void SMixerSendsPanel::disconnectSource()
 {
-	if (m_signal_handler) {
-		signal_handler_disconnect(m_signal_handler, "audio_mixers", audioMixersChangedCb, this);
-		m_signal_handler = nullptr;
+	obs_source_t *source = getSource();
+	if (source) {
+		signal_handler_t *sh = obs_source_get_signal_handler(source);
+		if (sh) {
+			signal_handler_disconnect(sh, "audio_mixers", audioMixersChangedCb, this);
+			signal_handler_disconnect(sh, "destroy", sourceDestroyedCb, this);
+		}
+		obs_source_release(source);
 	}
-	m_source = nullptr;
+}
+
+void SMixerSendsPanel::sourceDestroyedCb(void *data, calldata_t *)
+{
+	auto *self = static_cast<SMixerSendsPanel *>(data);
+	QMetaObject::invokeMethod(self, [self]() {
+		if (self->m_weak_source) {
+			obs_weak_source_release(self->m_weak_source);
+			self->m_weak_source = nullptr;
+		}
+		self->refresh();
+	});
 }
 
 void SMixerSendsPanel::audioMixersChangedCb(void *data, calldata_t *cd)
@@ -234,7 +263,8 @@ void SMixerSendsPanel::refresh()
 {
 	clearItems();
 
-	if (!m_source) {
+	obs_source_t *source = getSource();
+	if (!source) {
 		auto *lbl = new QLabel("No Source", this);
 		lbl->setAlignment(Qt::AlignCenter);
 		lbl->setStyleSheet("color: #555; font-style: italic; font-size: 10px; padding: 10px;");
@@ -242,7 +272,7 @@ void SMixerSendsPanel::refresh()
 		return;
 	}
 
-	uint32_t mixers = obs_source_get_audio_mixers(m_source);
+	uint32_t mixers = obs_source_get_audio_mixers(source);
 
 	for (int i = 0; i < m_track_count; i++) {
 		int track_num = i + 1;
@@ -269,9 +299,10 @@ void SMixerSendsPanel::refresh()
 		
 		// Connect toggle -> OBS
 		connect(sw, &SMixerSwitch::toggled, this, [this, i](bool checked) {
-			if (!m_source)
+			obs_source_t *s = getSource();
+			if (!s)
 				return;
-			uint32_t current = obs_source_get_audio_mixers(m_source);
+			uint32_t current = obs_source_get_audio_mixers(s);
 			uint32_t mask = (1 << i);
 			
 			// Only update if changed (to double-check)
@@ -279,9 +310,10 @@ void SMixerSendsPanel::refresh()
 			if (currentState != checked) {
 				if (checked) current |= mask;
 				else current &= ~mask;
-				obs_source_set_audio_mixers(m_source, current);
+				obs_source_set_audio_mixers(s, current);
 				emit trackChanged(i, checked);
 			}
+			obs_source_release(s);
 		});
 
 		rowLayout->addWidget(sw);

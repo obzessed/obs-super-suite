@@ -1,4 +1,6 @@
 #include "s_mixer_effects_rack.hpp"
+#include "s_mixer_filter_controls.hpp"
+#include "s_mixer_sidebar_toggle.hpp"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -19,8 +21,9 @@
 
 #include <QListWidgetItem>
 #include <QSignalBlocker>
+#include <QStackedWidget>
 #include <obs-frontend-api.h>
-#include "s_mixer_switch.hpp"
+#include <cmath>
 
 namespace super {
 
@@ -59,34 +62,6 @@ protected:
 	}
 };
 
-// Callback for external filter enable/disable changes
-// Context for filter callbacks
-struct FilterCbCtx {
-	SMixerSwitch *sw;
-	SMixerElidedLabel *lbl;
-	bool valid;
-};
-
-// Callback for external filter enable/disable changes
-static void obs_filter_enable_change_cb(void *data, calldata_t *cd)
-{
-	auto *ctx = static_cast<FilterCbCtx *>(data);
-	bool enabled = calldata_bool(cd, "enabled");
-	QMetaObject::invokeMethod(ctx->sw, [ctx, enabled]() {
-		// Update Switch
-		if (ctx->sw->isChecked() != enabled) {
-			ctx->sw->setChecked(enabled, true);
-		}
-		// Update Label Color
-		const char *c = "#ddd";
-		if (!ctx->valid) c = "#ff4444";
-		else if (!enabled) c = "#888";
-		
-		ctx->lbl->setStyleSheet(QString(
-			"border: none; color: %1; font-size: 11px; font-family: 'Segoe UI', sans-serif;"
-		).arg(c));
-	});
-}
 
 static obs_source_t *findFilterByName(obs_source_t *source, const char *name)
 {
@@ -174,6 +149,244 @@ protected:
 		}
 	}
 };
+
+// Power icon button — paints a ⏻ power symbol with color tinting
+class SMixerFilterPowerButton : public QPushButton {
+public:
+	explicit SMixerFilterPowerButton(bool initialEnabled, QWidget *parent = nullptr)
+		: QPushButton(parent)
+	{
+		setObjectName("powerBtn");
+		setFixedSize(14, 14);
+		setCursor(Qt::PointingHandCursor);
+		setToolTip("Toggle Enable");
+		setProperty("filterEnabled", initialEnabled);
+		setStyleSheet("QPushButton { border: none; background: transparent; padding: 0; margin: 0; min-height: 0; }");
+	}
+
+protected:
+	void paintEvent(QPaintEvent *) override {
+		QPainter p(this);
+		p.setRenderHint(QPainter::Antialiasing);
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+		bool enabled = property("filterEnabled").toBool();
+		// Green (#00e676) for active, Gray (#555) for disabled
+		auto color = enabled ? QColor("#00e676") : QColor("#555");
+		
+		if (isDown()) color = QColor("#ffffff");
+		else if (underMouse()) color = enabled ? QColor("#66ffa6") : QColor("#888");
+
+		static const QIcon icon(":/super/assets/icons/super/mixer/fx-power.svg");
+		
+		int dim = 12; 
+		int x = (width() - dim) / 2;
+		int y = (height() - dim) / 2;
+
+		if (!icon.isNull()) {
+			QPixmap pix(dim, dim);
+			pix.fill(Qt::transparent);
+			QPainter ip(&pix);
+			ip.setRenderHint(QPainter::Antialiasing);
+			icon.paint(&ip, pix.rect(), Qt::AlignCenter);
+			ip.setCompositionMode(QPainter::CompositionMode_SourceIn);
+			ip.fillRect(pix.rect(), color);
+			ip.end();
+			p.drawPixmap(x, y, pix);
+		} else {
+			// Fallback if icon missing
+			p.setPen(QPen(color, 1.5));
+			QRectF r(3, 3, 8, 8);
+			p.drawArc(r, 40 * 16, 280 * 16);
+			p.drawLine(QPointF(7, 3), QPointF(7, 6));
+		}
+	}
+};
+
+
+
+// Plugin (wrench) icon button for VST filters
+class SMixerFilterPluginButton : public QPushButton {
+public:
+	explicit SMixerFilterPluginButton(QWidget *parent = nullptr)
+		: QPushButton(parent)
+	{
+		setObjectName("pluginBtn");
+		setFixedSize(14, 14);
+		setCursor(Qt::PointingHandCursor);
+		setToolTip("Open Plugin Interface");
+		setProperty("pluginOpen", false);
+		setStyleSheet("QPushButton { border: none; background: transparent; padding: 0; margin: 0; min-height: 0; }");
+	}
+
+protected:
+	void paintEvent(QPaintEvent *) override {
+		QPainter p(this);
+		p.setRenderHint(QPainter::Antialiasing);
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+		bool isOpen = property("pluginOpen").toBool();
+		auto color = isOpen ? QColor("#00e5ff") : QColor("#888");
+
+		if (!isEnabled()) color = QColor("#444");
+		else if (isDown()) color = QColor("#ffffff");
+		else if (underMouse()) color = isOpen ? QColor("#66ffa6") : QColor("#aaa");
+
+		static const QIcon icon(":/super/assets/icons/super/mixer/fx-wrench.svg");
+
+		int dim = 12;
+		int x = (width() - dim) / 2;
+		int y = (height() - dim) / 2;
+
+		if (!icon.isNull()) {
+			QPixmap pix(dim, dim);
+			pix.fill(Qt::transparent);
+			QPainter ip(&pix);
+			ip.setRenderHint(QPainter::Antialiasing);
+			icon.paint(&ip, pix.rect(), Qt::AlignCenter);
+			ip.setCompositionMode(QPainter::CompositionMode_SourceIn);
+			ip.fillRect(pix.rect(), color);
+			ip.end();
+			p.drawPixmap(x, y, pix);
+		} else {
+			p.setPen(QPen(color, 1.5));
+			p.drawRect(3, 3, 8, 8);
+		}
+	}
+};
+
+// Settings (gear) icon button for accordion expand
+class SMixerFilterSettingsButton : public QPushButton {
+public:
+	explicit SMixerFilterSettingsButton(QWidget *parent = nullptr)
+		: QPushButton(parent)
+	{
+		setObjectName("settingsBtn");
+		setFixedSize(14, 14);
+		setCursor(Qt::PointingHandCursor);
+		setToolTip("Toggle Controls");
+		setProperty("expanded", false);
+		setStyleSheet("QPushButton { border: none; background: transparent; padding: 0; margin: 0; min-height: 0; }");
+	}
+
+protected:
+	void paintEvent(QPaintEvent *) override {
+		QPainter p(this);
+		p.setRenderHint(QPainter::Antialiasing);
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+		bool expanded = property("expanded").toBool();
+		auto color = expanded ? QColor("#00cccc") : QColor("#888");
+		
+		if (!isEnabled()) {
+			color = QColor("#444");
+		} else {
+			if (isDown()) color = QColor("#ffffff");
+			else if (underMouse()) color = QColor("#00e5ff");
+		}
+
+		static const QIcon icon(":/super/assets/icons/super/mixer/fx-controls.svg");
+
+		int dim = 12;
+		int x = (width() - dim) / 2;
+		int y = (height() - dim) / 2;
+
+		if (!icon.isNull()) {
+			QPixmap pix(dim, dim);
+			pix.fill(Qt::transparent);
+			QPainter ip(&pix);
+			ip.setRenderHint(QPainter::Antialiasing);
+			icon.paint(&ip, pix.rect(), Qt::AlignCenter);
+			ip.setCompositionMode(QPainter::CompositionMode_SourceIn);
+			ip.fillRect(pix.rect(), color);
+			ip.end();
+			p.drawPixmap(x, y, pix);
+		} else {
+			// Fallback
+			p.setPen(QPen(color, 1.2));
+			QPointF center(7, 7);
+			double outerR = 5.5, innerR = 3.5;
+			p.drawEllipse(center, innerR - 1.0, innerR - 1.0);
+			for (int i = 0; i < 6; i++) {
+				double angle = i * 60.0 * M_PI / 180.0;
+				QPointF from(center.x() + innerR * cos(angle), center.y() + innerR * sin(angle));
+				QPointF to(center.x() + outerR * cos(angle), center.y() + outerR * sin(angle));
+				p.drawLine(from, to);
+			}
+		}
+	}
+};
+
+// Callback for external filter enable/disable changes
+// Context for filter callbacks
+struct FilterCbCtx {
+	QPushButton *powerBtn;
+	SMixerElidedLabel *lbl;
+	bool valid;
+	SMixerFilterPluginButton *pluginBtn; // For VST filters
+};
+
+// Callback for external filter enable/disable changes
+static void obs_filter_enable_change_cb(void *data, calldata_t *cd)
+{
+	auto *ctx = static_cast<FilterCbCtx *>(data);
+	bool enabled = calldata_bool(cd, "enabled");
+	QMetaObject::invokeMethod(ctx->powerBtn, [ctx, enabled]() {
+		// Update Power Button visual
+		ctx->powerBtn->setProperty("filterEnabled", enabled);
+		ctx->powerBtn->setStyleSheet(ctx->powerBtn->styleSheet()); // force repaint
+		ctx->powerBtn->update();
+		// Update Label Color
+		const char *c = "#ddd";
+		if (!ctx->valid) c = "#ff4444";
+		else if (!enabled) c = "#888";
+
+		ctx->lbl->setStyleSheet(QString(
+			"border: none; color: %1; font-size: 11px; font-family: 'Segoe UI', sans-serif;"
+		).arg(c));
+	});
+}
+
+// Callback for external filter property updates (specifically for VST UI state)
+static void obs_filter_update_cb(void *data, calldata_t *cd)
+{
+	auto *ctx = static_cast<FilterCbCtx *>(data);
+	if (!ctx->pluginBtn) return;
+
+	obs_source_t *source = (obs_source_t*)calldata_ptr(cd, "source");
+	if (!source) return;
+
+	obs_properties_t *props = obs_source_properties(source);
+	if (!props) return;
+
+	obs_property_t *closeProp = obs_properties_get(props, "close_vst_settings");
+	obs_property_t *openProp = obs_properties_get(props, "open_vst_settings");
+	
+	bool isOpen = closeProp && obs_property_visible(closeProp);
+	bool hasUI = isOpen || (openProp && obs_property_visible(openProp));
+	obs_properties_destroy(props);
+
+	QMetaObject::invokeMethod(ctx->pluginBtn, [ctx, hasUI, isOpen]() {
+		ctx->pluginBtn->setProperty("vstHasUI", hasUI);
+		ctx->pluginBtn->setProperty("pluginOpen", isOpen);
+		
+		// If multiselected, checking selection logic is tricky here without rack context.
+		// However, a simple update to setEnabled will be correct if it's single selected,
+		// and the itemSelectionChanged handler will correct it next time selection shifts.
+		// For safety, we just update the tooltip and redraw properties.
+		if (!hasUI) {
+			ctx->pluginBtn->setToolTip("Please select a VST plugin from the settings");
+			ctx->pluginBtn->setEnabled(hasUI); // We force disable if no UI
+		} else {
+			ctx->pluginBtn->setToolTip("Open Plugin Interface");
+			// We ideally shouldn't force-enable here in case of multi-selection, 
+			// but we can let itemSelectionChanged manage the enabled state if needed later.
+		}
+		
+		ctx->pluginBtn->setStyleSheet(ctx->pluginBtn->styleSheet());
+		ctx->pluginBtn->update();
+	});
+}
 
 // ============================================================================
 // Menu Style (shared)
@@ -276,6 +489,25 @@ static int getFilterCount(obs_source_t *source)
 	return count;
 }
 
+// Helper: Check if a filter has visible properties
+static bool filterHasVisibleProperties(obs_source_t *filter)
+{
+	bool hasProperties = false;
+	obs_properties_t *props = obs_source_properties(filter);
+	if (props) {
+		obs_property_t *prop = obs_properties_first(props);
+		while (prop) {
+			if (obs_property_visible(prop)) {
+				hasProperties = true;
+				break;
+			}
+			obs_property_next(&prop);
+		}
+		obs_properties_destroy(props);
+	}
+	return hasProperties;
+}
+
 // ============================================================================
 // SMixerEffectsRack Implementation
 // ============================================================================
@@ -327,10 +559,12 @@ void SMixerEffectsRack::setupUi()
 	m_list->setFrameShape(QFrame::NoFrame);
 	m_list->setStyleSheet(
 		"QListWidget { background: transparent; border: none; outline: none; }"
-		"QListWidget::item { border: none; padding: 1px 0px; }"
-		"QListWidget::item:selected { background: rgba(0, 229, 255, 15); }"
-		"QListWidget::item:hover { background: rgba(255,255,255,8); }"
+		"QListWidget::item { background: rgba(255, 255, 255, 4); border-radius: 4px; margin: 0px 2px; padding: 0px; border: none; }"
+		"QListWidget::item:selected { background: rgba(255, 255, 255, 12); border: none; outline: none; }"
+		"QListWidget::item:hover { background: rgba(255, 255, 255, 8); }"
+		"QListWidget::item:focus { outline: none; border: none; }"
 	);
+	m_list->setSpacing(2);
 	m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	m_list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -338,19 +572,22 @@ void SMixerEffectsRack::setupUi()
 	// Drag & Drop Config
 	m_list->setDragDropMode(QAbstractItemView::InternalMove);
 	m_list->setDefaultDropAction(Qt::MoveAction);
-	m_list->setSelectionMode(QAbstractItemView::SingleSelection);
+	m_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	
 	// Allow keyboard focus
 	m_list->installEventFilter(this);
 	
 	connect(m_list->model(), &QAbstractItemModel::rowsMoved, this, &SMixerEffectsRack::onReorder);
 	
-	// Double-click to open properties
-	connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+	// Ctrl+Click to open properties dialog (replaces double-click)
+	// (Handled in eventFilter instead)
+
+	// Single click emits filterClicked signal
+	connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
 		if (!m_source || !item) return;
 		obs_source_t *filter = filterFromItem(item);
 		if (filter) {
-			obs_frontend_open_source_properties(filter);
+			emit filterClicked(filter);
 		}
 	});
 	
@@ -362,6 +599,25 @@ void SMixerEffectsRack::setupUi()
 			showItemContextMenu(item, m_list->viewport()->mapToGlobal(pos));
 		} else {
 			showRackContextMenu(m_list->viewport()->mapToGlobal(pos));
+		}
+	});
+
+	// Multi-select updates
+	connect(m_list, &QListWidget::itemSelectionChanged, this, [this]() {
+		auto selected = m_list->selectedItems();
+		bool multi = selected.size() > 1;
+		
+		for (int i = 0; i < m_list->count(); ++i) {
+			auto *item = m_list->item(i);
+			QWidget *container = m_list->itemWidget(item);
+			if (container) {
+				if (auto *p = container->findChild<QPushButton *>("pluginBtn"))
+					p->setEnabled(!multi && p->property("vstHasUI").toBool());
+				if (auto *s = container->findChild<QPushButton *>("settingsBtn")) {
+					obs_source_t *f = filterFromItem(item);
+					s->setEnabled(!multi && f && filterHasVisibleProperties(f));
+				}
+			}
 		}
 	});
 
@@ -467,7 +723,7 @@ void SMixerEffectsRack::addFilter(const QString &typeId)
 		refresh();
 
 		auto flags = obs_source_get_output_flags(filter);
-		if ((flags & OBS_SOURCE_CAP_DONT_SHOW_PROPERTIES) == 0) {
+		if ((flags & OBS_SOURCE_CAP_DONT_SHOW_PROPERTIES) == 0 && filterHasVisibleProperties(filter)) {
 			obs_frontend_open_source_properties(filter);
 		}
 	}
@@ -496,6 +752,15 @@ void SMixerEffectsRack::showItemContextMenu(QListWidgetItem *item, const QPoint 
 	toggleAct->setShortcut(QKeySequence("Alt+Click"));
 	connect(toggleAct, &QAction::triggered, this, [this, item]() {
 		toggleFilterEnabled(item);
+	});
+
+	menu.addSeparator();
+
+	// Rename
+	auto *renameAct = menu.addAction("Rename");
+	renameAct->setShortcut(QKeySequence("F2"));
+	connect(renameAct, &QAction::triggered, this, [this, item]() {
+		renameFilter(item);
 	});
 
 	menu.addSeparator();
@@ -543,9 +808,27 @@ void SMixerEffectsRack::showItemContextMenu(QListWidgetItem *item, const QPoint 
 	// Delete
 	auto *deleteAct = menu.addAction("Delete");
 	deleteAct->setShortcut(QKeySequence::Delete);
-	connect(deleteAct, &QAction::triggered, this, [this, item]() {
+	connect(deleteAct, &QAction::triggered, this, [this]() {
 		bool shiftHeld = QApplication::keyboardModifiers() & Qt::ShiftModifier;
-		deleteFilter(item, !shiftHeld);
+		auto items = m_list->selectedItems();
+		if (items.isEmpty()) return;
+
+		if (!shiftHeld) {
+			QString msg;
+			if (items.size() == 1) {
+				obs_source_t *f = filterFromItem(items.first());
+				const char *n = f ? obs_source_get_name(f) : "(unnamed)";
+				msg = QString("Delete filter \"%1\"?").arg(n ? n : "(unnamed)");
+			} else {
+				msg = QString("Delete %1 filters?").arg(items.size());
+			}
+			auto result = QMessageBox::question(this, "Delete Filter", msg, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+			if (result != QMessageBox::Yes) return;
+		}
+
+		for (auto *i : items) {
+			deleteFilter(i, false);
+		}
 	});
 
 	menu.addSeparator();
@@ -649,54 +932,18 @@ void SMixerEffectsRack::renameFilter(QListWidgetItem *item)
 	obs_source_t *filter = filterFromItem(item);
 	if (!filter || !m_source) return;
 
+	QWidget *container = m_list->itemWidget(item);
+	if (!container) return;
+
+	QStackedWidget *stack = container->findChild<QStackedWidget*>();
+	QLineEdit *edit = container->findChild<QLineEdit*>();
+	if (!stack || !edit) return;
+
 	const char *currentName = obs_source_get_name(filter);
-
-	// Find the row widget and its label
-	QWidget *row = m_list->itemWidget(item);
-	if (!row) return;
-
-	// Find the SMixerElidedLabel by checking children
-	SMixerElidedLabel *label = nullptr;
-	for (auto *child : row->children()) {
-		label = dynamic_cast<SMixerElidedLabel*>(child);
-		if (label) break;
-	}
-	if (!label) return;
-
-	// Create inline QLineEdit for renaming
-	auto *edit = new QLineEdit(row);
 	edit->setText(currentName ? currentName : "");
-	edit->setStyleSheet(
-		"background: #1a3a4a; color: #00e5ff;"
-		"font-size: 11px; font-family: 'Segoe UI', sans-serif;"
-		"border: 1px solid #00e5ff; border-radius: 2px;"
-		"padding: 0 4px;"
-		"selection-background-color: #00e5ff; selection-color: #1a1a1a;"
-	);
-	edit->setFixedHeight(label->height());
-	edit->selectAll();
-	
-	// Replace the label in the layout
-	auto *layout = qobject_cast<QHBoxLayout*>(row->layout());
-	if (!layout) { delete edit; return; }
-	
-	label->setVisible(false);
-	layout->insertWidget(0, edit);
+	stack->setCurrentIndex(1);
 	edit->setFocus();
-
-	auto finishRename = [this, filter, edit, label, layout]() {
-		QString newName = edit->text().trimmed();
-		if (!newName.isEmpty()) {
-			obs_source_set_name(filter, newName.toUtf8().constData());
-			label->setText(newName);
-		}
-		label->setVisible(true);
-		layout->removeWidget(edit);
-		edit->deleteLater();
-		m_list->setFocus();
-	};
-
-	connect(edit, &QLineEdit::editingFinished, this, finishRename);
+	edit->selectAll();
 }
 
 void SMixerEffectsRack::toggleFilterEnabled(QListWidgetItem *item)
@@ -825,6 +1072,10 @@ void SMixerEffectsRack::refresh()
 		return;
 
 	QSignalBlocker blocker(m_list->model());
+	// Reset accordion state
+	m_controls_items.clear();
+	m_controls_map.clear();
+
 	clearItems();
 
 	if (!m_source) {
@@ -859,74 +1110,219 @@ void SMixerEffectsRack::refresh()
 		if (uuid)
 			item->setData(Qt::UserRole + 1, QString::fromUtf8(uuid));
 		
+		// Capture Refs early
+		obs_source_t *filter_ref = obs_source_get_ref(filter);
+
+		// Create Container Widget
+		auto *container = new QFrame();
+		container->setObjectName("filterContainer");
+		container->setStyleSheet("#filterContainer { border: 1px solid transparent; border-radius: 4px; }");
+		auto *vbox = new QVBoxLayout(container);
+		vbox->setContentsMargins(0, 0, 0, 0);
+		vbox->setSpacing(0);
+
 		// Create Row Widget
-		auto *row = new QWidget();
+		auto *row = new QFrame(container);
+		row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+		row->setObjectName("filterRow");
+		row->setStyleSheet("#filterRow { border-bottom: 1px solid transparent; border-radius: 4px; }");
 		auto *h = new QHBoxLayout(row);
-		h->setContentsMargins(8, 3, 8, 3); 
-		h->setSpacing(6);
+		h->setContentsMargins(8, 2, 8, 2); 
+		h->setSpacing(8);
 
 		// Determine Logic
 		// Invalid/Missing Plugin (Red) vs Disabled (Gray) vs Enabled (Normal)
 		const char *typeId = obs_source_get_id(filter);
 		bool valid = obs_source_get_display_name(typeId) != nullptr;
 
-		// Filter name (Left) - Using Elided Label
-		auto *lbl = new SMixerElidedLabel(name ? name : "(Unnamed)", row);
+		// Power Button (Left) — Enable/Disable toggle
+		auto *powerBtn = new SMixerFilterPowerButton(enabled, row);
+
+		// Name Stack (Label vs Edit)
+		auto *nameStack = new QStackedWidget(row);
+		nameStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		nameStack->setFixedHeight(18); // Prevent height jumping
+
+		// Filter name - Using Elided Label
+		auto *lbl = new SMixerElidedLabel(name ? name : "(Unnamed)", nameStack);
 		const char *color = "#ddd";
 		if (!valid) color = "#ff4444";
 		else if (!enabled) color = "#888";
-		
+
 		lbl->setStyleSheet(QString(
 			"border: none; color: %1; font-size: 11px; font-family: 'Segoe UI', sans-serif;"
 		).arg(color));
 		lbl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-		h->addWidget(lbl);
 
-		// Enable Switch (Right)
-		auto *sw = new SMixerSwitch(row);
-		sw->setFixedSize(26, 14);
-		sw->setChecked(enabled, false);
+		// Edit box for rename
+		auto *edit = new QLineEdit(nameStack);
+		edit->setText(name ? name : "");
+		edit->setStyleSheet(
+			"background: #1a3a4a; color: #00e5ff;"
+			"font-size: 11px; font-family: 'Segoe UI', sans-serif;"
+			"border: 1px solid #00e5ff; border-radius: 3px;"
+			"padding: 0 4px;"
+			"selection-background-color: #00e5ff; selection-color: #1a1a1a;"
+		);
+		edit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
-		// Capture Refs
-		obs_source_t *filter_ref = obs_source_get_ref(filter);
-		signal_handler_t *sh = obs_source_get_signal_handler(filter);
+		nameStack->addWidget(lbl);
+		nameStack->addWidget(edit);
+		nameStack->setCurrentIndex(0);
+
+		auto finishRename = [rack, filter_ref, edit, nameStack, lbl]() {
+			if (nameStack->currentIndex() != 1) return;
+			nameStack->setCurrentIndex(0);
+
+			QString newName = edit->text().trimmed();
+			if (!newName.isEmpty() && filter_ref) {
+				obs_source_set_name(filter_ref, newName.toUtf8().constData());
+				lbl->setText(newName);
+			}
+			rack->m_list->setFocus();
+		};
+		QObject::connect(edit, &QLineEdit::editingFinished, rack, finishRename);
+
+		// Settings Button (Right) — Accordion expand
+		auto *settingsBtn = new SMixerFilterSettingsButton(row);
+		settingsBtn->setObjectName("settingsBtn");
 		
+		// Check if filter has properties
+		bool hasProperties = filterHasVisibleProperties(filter);
+		
+		settingsBtn->setEnabled(hasProperties);
+		if (!hasProperties) {
+			settingsBtn->setToolTip("No configurable properties");
+		}
+		
+		h->addWidget(powerBtn);
+		h->addWidget(nameStack);
+
+		bool isVst = (strcmp(typeId, "vst_filter") == 0);
+		SMixerFilterPluginButton *pluginBtn = nullptr;
+		if (isVst) {
+			pluginBtn = new SMixerFilterPluginButton(row);
+			bool hasUI = false;
+			obs_properties_t *props = obs_source_properties(filter);
+			if (props) {
+				obs_property_t *closeProp = obs_properties_get(props, "close_vst_settings");
+				obs_property_t *openProp = obs_properties_get(props, "open_vst_settings");
+				pluginBtn->setProperty("pluginOpen", closeProp && obs_property_visible(closeProp));
+				hasUI = (closeProp && obs_property_visible(closeProp)) || (openProp && obs_property_visible(openProp));
+				obs_properties_destroy(props);
+			}
+			pluginBtn->setProperty("vstHasUI", hasUI);
+			pluginBtn->setEnabled(hasUI);
+			if (!hasUI) {
+				pluginBtn->setToolTip("Please select a VST plugin from the settings");
+			}
+			h->addWidget(pluginBtn);
+		}
+
+		h->addWidget(settingsBtn);
+
+		vbox->addWidget(row);
+
+		// Create Controls Body (Hidden initially)
+		auto *body = new QFrame(container);
+		body->setObjectName("filterBody");
+		body->setVisible(false);
+		auto *bodyLayout = new QVBoxLayout(body);
+		bodyLayout->setContentsMargins(4, 4, 4, 4);
+		bodyLayout->setSpacing(0);
+		vbox->addWidget(body);
+
 		// Context for callback
-		auto *ctx = new FilterCbCtx{sw, lbl, valid};
+		auto *ctx = new FilterCbCtx{powerBtn, lbl, valid, pluginBtn};
 
-		QObject::connect(sw, &SMixerSwitch::toggled, rack, [filter_ref](bool checked) {
-			if (filter_ref)
-				obs_source_set_enabled(filter_ref, checked);
+		// Power button toggles filter enabled state
+		QObject::connect(powerBtn, &QPushButton::clicked, rack, [rack, item, filter_ref, valid]() {
+			if (!filter_ref) return;
+			
+			bool targetEnabled = !obs_source_enabled(filter_ref);
+			bool isSelected = item->isSelected();
+			
+			if (isSelected) {
+				auto items = rack->m_list->selectedItems();
+				for (auto *i : items) {
+					obs_source_t *f = rack->filterFromItem(i);
+					if (f) obs_source_set_enabled(f, targetEnabled);
+				}
+			} else {
+				obs_source_set_enabled(filter_ref, targetEnabled);
+			}
 		});
-		
-		QObject::connect(sw, &SMixerSwitch::toggled, lbl, [lbl, valid](bool checked) {
-			const char *c = "#ddd";
-			if (!valid) c = "#ff4444";
-			else if (!checked) c = "#888";
-			lbl->setStyleSheet(QString(
-				"border: none; color: %1; font-size: 11px; font-family: 'Segoe UI', sans-serif;"
-			).arg(c));
+
+		// Settings button toggles accordion
+		QObject::connect(settingsBtn, &QPushButton::clicked, rack, [rack, item, settingsBtn]() {
+			rack->toggleFilterControls(item);
+			bool expanded = rack->m_controls_items.contains(item);
+			settingsBtn->setProperty("expanded", expanded);
+			settingsBtn->update();
 		});
+
+		if (isVst && pluginBtn) {
+			QObject::connect(pluginBtn, &QPushButton::clicked, rack, [filter_ref, pluginBtn]() {
+				if (!filter_ref) return;
+				obs_properties_t *props = obs_source_properties(filter_ref);
+				if (props) {
+					obs_property_t *closeProp = obs_properties_get(props, "close_vst_settings");
+					bool isOpen = closeProp && obs_property_visible(closeProp);
+					if (isOpen) {
+						obs_property_button_clicked(closeProp, filter_ref);
+					} else {
+						obs_property_t *openProp = obs_properties_get(props, "open_vst_settings");
+						if (openProp) {
+							obs_property_button_clicked(openProp, filter_ref);
+						}
+					}
+					// Update state
+					obs_properties_t *newProps = obs_source_properties(filter_ref);
+					if (newProps) {
+						obs_property_t *newClose = obs_properties_get(newProps, "close_vst_settings");
+						pluginBtn->setProperty("pluginOpen", newClose && obs_property_visible(newClose));
+						obs_properties_destroy(newProps);
+					}
+					pluginBtn->update();
+					obs_properties_destroy(props);
+				}
+			});
+		}
 
 		// Listen for external changes
-		signal_handler_connect(sh, "enable", obs_filter_enable_change_cb, ctx);
+		if (obs_source_t *f = obs_source_get_ref(filter)) {
+			signal_handler_t *sh = obs_source_get_signal_handler(f);
+			if (sh) {
+				signal_handler_connect(sh, "enable", obs_filter_enable_change_cb, ctx);
+				if (pluginBtn) {
+					signal_handler_connect(sh, "update", obs_filter_update_cb, ctx);
+				}
+			}
+			obs_source_release(f);
+		}
 
 		// Cleanup
-		QObject::connect(row, &QObject::destroyed, [filter_ref, sh, ctx]() {
-			signal_handler_disconnect(sh, "enable", obs_filter_enable_change_cb, ctx);
-			if (filter_ref) obs_source_release(filter_ref);
+		QObject::connect(row, &QObject::destroyed, [filter_ref, ctx, pluginBtn]() {
+			if (filter_ref) {
+				signal_handler_t *sh = obs_source_get_signal_handler(filter_ref);
+				if (sh) {
+					signal_handler_disconnect(sh, "enable", obs_filter_enable_change_cb, ctx);
+					if (pluginBtn) {
+						signal_handler_disconnect(sh, "update", obs_filter_update_cb, ctx);
+					}
+				}
+				obs_source_release(filter_ref);
+			}
 			delete ctx;
 		});
 
-		h->addWidget(sw);
-
-		QSize hint = row->sizeHint();
+		QSize hint = container->sizeHint();
 		hint.setWidth(0); 
 		item->setSizeHint(hint);
-		
+
 		rack->m_list->addItem(item);
-		rack->m_list->setItemWidget(item, row);
-		
+		rack->m_list->setItemWidget(item, container);
+
 	}, &data);
 
 	if (data.empty) {
@@ -966,8 +1362,7 @@ void SMixerEffectsRack::setExpanded(bool expanded)
 	m_is_expanded = expanded;
 	m_list->setVisible(expanded);
 	if (m_collapse_btn) {
-		m_collapse_btn->setText(expanded ? "v" : ">");
-		m_collapse_btn->setToolTip(expanded ? "Collapse" : "Expand");
+		m_collapse_btn->setExpanded(expanded);
 	}
 }
 
@@ -977,14 +1372,45 @@ void SMixerEffectsRack::setExpanded(bool expanded)
 
 bool SMixerEffectsRack::eventFilter(QObject *obj, QEvent *event)
 {
-	// Alt+Click on list items to toggle enable/disable
 	if (obj == m_list && event->type() == QEvent::MouseButtonPress) {
 		auto *mouseEvent = static_cast<QMouseEvent*>(event);
-		if (mouseEvent->modifiers() & Qt::AltModifier) {
-			QListWidgetItem *item = m_list->itemAt(mouseEvent->pos());
-			if (item && (item->flags() & Qt::ItemIsSelectable)) {
+		QListWidgetItem *item = m_list->itemAt(mouseEvent->pos());
+		if (!item) {
+			m_list->clearSelection();
+		}
+
+		// Alt+Click on list items to toggle enable/disable
+		if (item && mouseEvent->modifiers() & Qt::AltModifier) {
+			if (item->flags() & Qt::ItemIsSelectable) {
 				toggleFilterEnabled(item);
-				return true; // Consume event
+				return true;
+			}
+		}
+
+		// Ctrl+Click opens OBS properties dialog
+		if (item && mouseEvent->modifiers() & Qt::ControlModifier) {
+			if (item->flags() & Qt::ItemIsSelectable) {
+				obs_source_t *filter = filterFromItem(item);
+				if (filter)
+					obs_frontend_open_source_properties(filter);
+				return true;
+			}
+		}
+	}
+
+	// Item double-click to toggle accordion
+	if (obj == m_list->viewport() && event->type() == QEvent::MouseButtonDblClick) {
+		auto *mouseEvent = static_cast<QMouseEvent*>(event);
+		QListWidgetItem *item = m_list->itemAt(mouseEvent->pos());
+		if (item && (item->flags() & Qt::ItemIsSelectable)) {
+			// Toggle accordion
+			QWidget *container = m_list->itemWidget(item);
+			if (container) {
+				auto *settingsBtn = container->findChild<QPushButton*>("settingsBtn");
+				if (settingsBtn) {
+					settingsBtn->click();
+					return true;
+				}
 			}
 		}
 	}
@@ -1015,13 +1441,32 @@ void SMixerEffectsRack::keyPressEvent(QKeyEvent *event)
 		break;
 
 	case Qt::Key_Delete:
-		// Delete selected filter
-		if (item && (item->flags() & Qt::ItemIsSelectable)) {
+	{
+		// Delete selected filter(s)
+		auto items = m_list->selectedItems();
+		if (!items.isEmpty()) {
 			bool shiftHeld = event->modifiers() & Qt::ShiftModifier;
-			deleteFilter(item, !shiftHeld);
+			
+			if (!shiftHeld) {
+				QString msg;
+				if (items.size() == 1) {
+					obs_source_t *f = filterFromItem(items.first());
+					const char *n = f ? obs_source_get_name(f) : "(unnamed)";
+					msg = QString("Delete filter \"%1\"?").arg(n ? n : "(unnamed)");
+				} else {
+					msg = QString("Delete %1 filters?").arg(items.size());
+				}
+				auto result = QMessageBox::question(this, "Delete Filter", msg, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+				if (result != QMessageBox::Yes) return;
+			}
+			
+			for (auto *i : items) {
+				deleteFilter(i, false);
+			}
 			return;
 		}
 		break;
+	}
 
 	default:
 		break;
@@ -1048,6 +1493,103 @@ void SMixerEffectsRack::wheelEvent(QWheelEvent *event)
 	}
 
 	QWidget::wheelEvent(event);
+}
+
+// ============================================================================
+// Accordion Controls
+// ============================================================================
+
+void SMixerEffectsRack::toggleFilterControls(QListWidgetItem *item)
+{
+	if (!m_source || !item) return;
+
+	bool isExpanded = m_controls_items.contains(item);
+
+	collapseAllControls();
+
+	if (isExpanded) return;
+
+	obs_source_t *filter = filterFromItem(item);
+	if (!filter) return;
+
+	QWidget *container = m_list->itemWidget(item);
+	if (!container) return;
+
+	QWidget *row = container->findChild<QWidget*>("filterRow");
+	QWidget *body = container->findChild<QWidget*>("filterBody");
+	if (!row || !body) return;
+
+	// Fill body with controls
+	auto *controls = new SMixerFilterControls(filter, body);
+	body->layout()->addWidget(controls);
+	body->setVisible(true);
+
+	// Dynamically resize when controls rebuild (e.g. property visibility changes)
+	connect(controls, &SMixerFilterControls::heightChanged, this, [this, item, container]() {
+		container->adjustSize();
+		QSize hint = container->sizeHint();
+		hint.setWidth(0);
+		item->setSizeHint(hint);
+	});
+
+	// Style container and row
+	container->setStyleSheet("#filterContainer { border: 1px solid #00cccc; border-radius: 4px; }");
+	row->setStyleSheet("#filterRow { background: #252525; border-bottom: 1px solid #333; border-top-left-radius: 3px; border-top-right-radius: 3px; border-bottom-left-radius: 0px; border-bottom-right-radius: 0px; }");
+	body->setStyleSheet("#filterBody { background: #202020; border-bottom-left-radius: 3px; border-bottom-right-radius: 3px; }");
+
+	// Defer initial size calculation so layout settles first
+	QTimer::singleShot(0, this, [this, item, container]() {
+		container->adjustSize();
+		QSize hint = container->sizeHint();
+		hint.setWidth(0);
+		item->setSizeHint(hint);
+	});
+
+	// Track state
+	m_controls_items.insert(item, nullptr); 
+}
+
+void SMixerEffectsRack::collapseAllControls()
+{
+	for (auto it = m_controls_items.begin(); it != m_controls_items.end(); ++it) {
+		QListWidgetItem *filterItem = it.key();
+
+		QWidget *container = m_list->itemWidget(filterItem);
+		if (container) {
+			QWidget *row = container->findChild<QWidget*>("filterRow");
+			QWidget *body = container->findChild<QWidget*>("filterBody");
+			
+			if (body) {
+				body->setVisible(false);
+				QLayoutItem *child;
+				while ((child = body->layout()->takeAt(0)) != nullptr) {
+					delete child->widget();
+					delete child;
+				}
+			}
+
+			if (row) {
+				row->setStyleSheet("#filterRow { border-bottom: 1px solid transparent; border-radius: 4px; }");
+				auto *settingsBtn = row->findChild<QPushButton*>("settingsBtn");
+				if (settingsBtn) {
+					settingsBtn->setProperty("expanded", false);
+					settingsBtn->update();
+				}
+			}
+
+			if (container) {
+				container->setStyleSheet("#filterContainer { border: 1px solid transparent; border-radius: 4px; }");
+				container->adjustSize();
+			}
+
+			QSize hint = container ? container->sizeHint() : QSize(0, 0);
+			hint.setWidth(0);
+			filterItem->setSizeHint(hint);
+		}
+	}
+
+	m_controls_items.clear();
+	m_controls_map.clear();
 }
 
 } // namespace super

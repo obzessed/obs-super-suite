@@ -79,8 +79,10 @@ private:
 	SMixerChevron *m_collapse_btn = nullptr;
 	QVBoxLayout *m_items_layout = nullptr;
 
-	obs_source_t *m_source = nullptr;
-	signal_handler_t *m_signal_handler = nullptr; // Cached handler
+	obs_source_t *getSource() const;
+	static void sourceDestroyedCb(void *data, calldata_t *cd);
+
+	obs_weak_source_t *m_weak_source = nullptr;
 	int m_track_count = 6;
 	bool m_is_expanded = true;
 

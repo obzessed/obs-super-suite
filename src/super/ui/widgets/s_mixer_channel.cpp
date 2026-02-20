@@ -9,6 +9,7 @@
 #include "super/ui/components/s_mixer_props_selector.hpp"
 #include "super/ui/components/s_mixer_db_label.hpp"
 #include "super/ui/components/s_mixer_side_panel.hpp"
+#include "super/ui/components/s_mixer_sidebar_toggle.hpp"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -134,18 +135,13 @@ void SMixerChannel::setupUi()
 	root->addLayout(fader_area, 1); // Stretch
 
 	// 7. Expand button
-	m_expand_btn = new QPushButton(">", strip);
-	m_expand_btn->setFixedHeight(14);
-	m_expand_btn->setFlat(true);
-	m_expand_btn->setStyleSheet(
-		"QPushButton {"
-		"  color: #666; font-size: 10px; border: none; font-weight: bold;"
-		"  font-family: 'Segoe UI', sans-serif;"
-		"}"
-		"QPushButton:hover { color: #00e5ff; }"
-	);
+	auto *expand_lyt = new QHBoxLayout();
+	expand_lyt->setContentsMargins(0, 0, 0, 0);
+	m_expand_btn = new SMixerSidebarToggle(strip);
 	connect(m_expand_btn, &QPushButton::clicked, this, &SMixerChannel::toggleExpand);
-	root->addWidget(m_expand_btn);
+	expand_lyt->addStretch();
+	expand_lyt->addWidget(m_expand_btn);
+	root->addLayout(expand_lyt);
 
 	main_layout->addWidget(strip);
 
@@ -172,9 +168,17 @@ void SMixerChannel::setSource(obs_source_t *source)
 		return;
 
 	disconnectSource();
+	
+	if (m_weak_source) {
+		obs_weak_source_release(m_weak_source);
+		m_weak_source = nullptr;
+	}
+
 	m_source = source;
 
 	if (m_source) {
+		m_weak_source = obs_source_get_weak_source(m_source);
+
 		const char *name = obs_source_get_name(m_source);
 		m_name_bar->setName(name ? QString::fromUtf8(name) : "Channel");
 
@@ -233,7 +237,7 @@ void SMixerChannel::setExpanded(bool expanded)
 	m_expanded = expanded;
 	m_side_panel->setVisible(expanded);
 	m_side_panel_sep->setVisible(expanded);
-	m_expand_btn->setText(expanded ? "<" : ">");
+	m_expand_btn->setExpanded(expanded);
 
 	int w = STRIP_WIDTH + (expanded ? SIDE_PANEL_WIDTH : 0);
 	setFixedWidth(w);
@@ -377,10 +381,11 @@ void SMixerChannel::startMeterTimer()
 
 void SMixerChannel::connectSource()
 {
-	if (!m_source)
+	obs_source_t *source = getSource();
+	if (!source)
 		return;
 
-	signal_handler_t *sh = obs_source_get_signal_handler(m_source);
+	signal_handler_t *sh = obs_source_get_signal_handler(source);
 	if (sh) {
 		signal_handler_connect(sh, "volume", obsVolumeChangedCb, this);
 		signal_handler_connect(sh, "mute", obsMuteChangedCb, this);
@@ -388,11 +393,14 @@ void SMixerChannel::connectSource()
 		signal_handler_connect(sh, "filter_add", obsFilterAddedCb, this);
 		signal_handler_connect(sh, "filter_remove", obsFilterRemovedCb, this);
 		signal_handler_connect(sh, "reorder_filters", obsFilterAddedCb, this);
+		signal_handler_connect(sh, "destroy", obsDestroyedCb, this);
 	}
 
 	m_volmeter = obs_volmeter_create(OBS_FADER_LOG);
-	obs_volmeter_attach_source(m_volmeter, m_source);
+	obs_volmeter_attach_source(m_volmeter, source);
 	obs_volmeter_add_callback(m_volmeter, obsVolmeterCb, this);
+
+	obs_source_release(source);
 }
 
 void SMixerChannel::disconnectSource()
@@ -404,8 +412,9 @@ void SMixerChannel::disconnectSource()
 		m_volmeter = nullptr;
 	}
 
-	if (m_source) {
-		signal_handler_t *sh = obs_source_get_signal_handler(m_source);
+	obs_source_t *source = getSource();
+	if (source) {
+		signal_handler_t *sh = obs_source_get_signal_handler(source);
 		if (sh) {
 			signal_handler_disconnect(sh, "volume", obsVolumeChangedCb, this);
 			signal_handler_disconnect(sh, "mute", obsMuteChangedCb, this);
@@ -413,7 +422,9 @@ void SMixerChannel::disconnectSource()
 			signal_handler_disconnect(sh, "filter_add", obsFilterAddedCb, this);
 			signal_handler_disconnect(sh, "filter_remove", obsFilterRemovedCb, this);
 			signal_handler_disconnect(sh, "reorder_filters", obsFilterAddedCb, this);
+			signal_handler_disconnect(sh, "destroy", obsDestroyedCb, this);
 		}
+		obs_source_release(source);
 	}
 }
 
@@ -487,6 +498,18 @@ void SMixerChannel::obsFilterRemovedCb(void *data, calldata_t *)
 	QMetaObject::invokeMethod(self, [self]() {
 		if (self->m_expanded)
 			self->m_side_panel->refresh();
+	});
+}
+
+void SMixerChannel::obsDestroyedCb(void *data, calldata_t *)
+{
+	auto *self = static_cast<SMixerChannel *>(data);
+	QMetaObject::invokeMethod(self, [self]() {
+		if (self->m_weak_source) {
+			obs_weak_source_release(self->m_weak_source);
+			self->m_weak_source = nullptr;
+		}
+		self->m_source = nullptr;
 	});
 }
 

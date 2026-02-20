@@ -180,7 +180,7 @@ void AudioMatrix::FullRefresh()
             item->setText(2, typeStr);
             item->setExpanded(true); // Default to expanded
             
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
                 item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsSelectable);
                 bool active = (mixers & (1 << i));
                 item->setCheckState(i + 3, active ? Qt::Checked : Qt::Unchecked);
@@ -205,7 +205,7 @@ void AudioMatrix::FullRefresh()
                 fItem->setText(1, fId);
                 fItem->setText(2, "Filter");
                 
-                for (int j = 0; j < 6; j++) {
+                for (int j = 0; j < MAX_AUDIO_MIXES; j++) {
                     fItem->setFlags(fItem->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsSelectable);
                     bool fActive = (fMixers & (1 << j));
                     fItem->setCheckState(j + 3, fActive ? Qt::Checked : Qt::Unchecked);
@@ -252,7 +252,7 @@ void AudioMatrix::SourceMixersChanged(const QString &name, uint32_t mixers)
     auto items = m_tree->findItems(name, Qt::MatchExactly | Qt::MatchRecursive, 0);
     for (auto *item : items) {
          if (item->data(0, Qt::UserRole).toString() == name) {
-             for (int i = 0; i < 6; i++) {
+             for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
                  bool active = (mixers & (1 << i));
                  Qt::CheckState target = active ? Qt::Checked : Qt::Unchecked;
                  if (item->checkState(i + 3) != target)

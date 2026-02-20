@@ -39,6 +39,8 @@
 #include <obs.hpp>
 #include <QMenu>
 
+#define MIXER_CHANNEL_SIDE_PANEL_WIDTH 220
+
 namespace super {
 
 // Forward declare components
@@ -51,6 +53,7 @@ class SMixerControlBar;
 class SMixerPropsSelector;
 class SMixerDbLabel;
 class SMixerSidePanel;
+class SMixerSidebarToggle;
 
 class SMixerChannel : public QWidget {
 	Q_OBJECT
@@ -113,9 +116,15 @@ private:
 	static void obsRenamedCb(void *data, calldata_t *cd);
 	static void obsFilterAddedCb(void *data, calldata_t *cd);
 	static void obsFilterRemovedCb(void *data, calldata_t *cd);
+	static void obsDestroyedCb(void *data, calldata_t *cd);
+
+	obs_source_t *getSource() const {
+		return m_weak_source ? obs_weak_source_get_source(m_weak_source) : nullptr;
+	}
 
 	// OBS state
-	obs_source_t *m_source = nullptr;
+	obs_source_t *m_source = nullptr; // Reference identifier, but use weak_source for callbacks
+	obs_weak_source_t *m_weak_source = nullptr;
 	obs_volmeter_t *m_volmeter = nullptr;
 
 	// Components
@@ -129,7 +138,7 @@ private:
 	SMixerPanSlider *m_pan_slider = nullptr;
 	SMixerSidePanel *m_side_panel = nullptr;
 	QWidget *m_side_panel_sep = nullptr;
-	QPushButton *m_expand_btn = nullptr;
+	SMixerSidebarToggle *m_expand_btn = nullptr;
 
 	// Layout state
 	bool m_expanded = false;
@@ -148,7 +157,7 @@ private:
 	float m_max_peak_hold = -60.0f;
 
 	static constexpr int STRIP_WIDTH = 96;
-	static constexpr int SIDE_PANEL_WIDTH = 160;
+	static constexpr int SIDE_PANEL_WIDTH = MIXER_CHANNEL_SIDE_PANEL_WIDTH;
 
 protected:
 	bool eventFilter(QObject *obj, QEvent *event) override;

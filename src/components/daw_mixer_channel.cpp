@@ -373,7 +373,7 @@ void DawMixerChannel::paintEvent(QPaintEvent *event)
 	f.setFamily("Segoe UI");
 	p.setFont(f);
 	p.setPen(QColor(0x88, 0x88, 0x88));
-
+	QFontMetrics metrics(f);
 	for (int i = 0; i < DB_MARKS_COUNT; i++) {
 		int db = DB_MARKS[i];
 		// Map (needs to match fader mapping logic approximately)
@@ -407,7 +407,8 @@ void DawMixerChannel::paintEvent(QPaintEvent *event)
 		if (y > bottom) y = bottom;
 
 		QString text = (db > 0) ? QString("+%1").arg(db) : QString::number(db);
-		p.drawText(QRect(left, y - 6, 20, 12), Qt::AlignRight | Qt::AlignVCenter, text);
+		int textW = metrics.horizontalAdvance(text);
+		p.drawText(left + 20 - textW, y + metrics.capHeight() / 2, text);
 		
 		// Tick
 		p.drawLine(fr.left() - 4, y, fr.left() - 2, y);
@@ -568,7 +569,7 @@ void DawMixerChannel::refresh_tracks()
 	
 	uint32_t mixers = obs_source_get_audio_mixers(source);
 	
-	for (int i = 0; i < 6; i++) {
+	for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
 		int track = i + 1;
 		auto *chk = new QCheckBox(QString("Track %1").arg(track), side_panel);
 		chk->setStyleSheet("QCheckBox { color: #aaa; font-size: 11px; } QCheckBox::indicator { width: 10px; height: 10px; }");

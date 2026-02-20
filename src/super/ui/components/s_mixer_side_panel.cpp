@@ -1,6 +1,7 @@
 #include "s_mixer_side_panel.hpp"
 #include "s_mixer_effects_rack.hpp"
 #include "s_mixer_sends_panel.hpp"
+#include "../widgets/s_mixer_channel.hpp"
 
 #include <QVBoxLayout>
 
@@ -13,8 +14,10 @@ SMixerSidePanel::SMixerSidePanel(QWidget *parent) : QWidget(parent)
 
 void SMixerSidePanel::setupUi()
 {
-	setFixedWidth(160); // Matches the requested side panel width
+	setFixedWidth(MIXER_CHANNEL_SIDE_PANEL_WIDTH); // Matches the requested side panel width
 	setObjectName("sidePanel");
+
+	// FIXME: the left border steals 1px from the content area
 	setStyleSheet(
 		"#sidePanel { background: #1e1e1e; border-left: 1px solid #333; }"
 	);

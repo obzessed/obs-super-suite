@@ -132,6 +132,7 @@ void SMixerFader::paintEvent(QPaintEvent *event)
 	f.setPixelSize(9);
 	f.setFamily("Segoe UI");
 	p.setFont(f);
+	QFontMetrics metrics(f);
 	int trackH = bottom - top;
 	for (int i = 0; i < DB_MARKS_COUNT; i++) {
 		int db = DB_MARKS[i];
@@ -153,7 +154,7 @@ void SMixerFader::paintEvent(QPaintEvent *event)
 		
 		// Text (Align Left, towards fader)
 		QString text = (db > 0) ? QString("+%1").arg(db) : QString::number(db);
-		p.drawText(QRect(labelX, y - 6, labelWidth, 12), Qt::AlignLeft | Qt::AlignVCenter, text);
+		p.drawText(labelX + 2, y + metrics.capHeight() / 2, text);
 		
 		// Tick (Left of label area)
 		p.drawLine(labelX - 2, y, labelX, y);
