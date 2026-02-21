@@ -320,6 +320,8 @@ void SMixerSendsPanel::refresh()
 
 		m_items_layout->addWidget(row);
 	}
+
+	obs_source_release(source);
 }
 
 void SMixerSendsPanel::setExpanded(bool expanded)

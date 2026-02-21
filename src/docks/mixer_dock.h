@@ -15,6 +15,7 @@ public:
 	~MixerDock() override;
 
 	void refresh();
+	void clearChannels();
 
 	// Update methods for signal handlers
 	void updateSourceVolume(const QString &sourceUuid, float volume);
@@ -26,7 +27,6 @@ protected:
 
 private:
 	void setupUi();
-	void clearChannels();
 	MixerChannel *findChannelByUuid(const QString &uuid);
 
 	QHBoxLayout *m_channelsLayout;

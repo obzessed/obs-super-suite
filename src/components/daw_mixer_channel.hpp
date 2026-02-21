@@ -52,6 +52,7 @@ private:
 	static void obs_source_rename_cb(void *data, calldata_t *cd);
 	static void obs_source_filter_add_cb(void *data, calldata_t *cd);
 	static void obs_source_filter_remove_cb(void *data, calldata_t *cd);
+	static void obs_source_destroyed_cb(void *data, calldata_t *cd);
 
 	obs_source_t *source = nullptr;
 	obs_volmeter_t *volmeter = nullptr;

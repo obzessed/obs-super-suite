@@ -19,6 +19,7 @@ public:
 	~DawMixerDemoDock() override;
 
 	void populateSourceComboBox();
+	void clearChannels();
 	static bool enumAudioSources(void *param, obs_source_t *source);
 
 private slots:

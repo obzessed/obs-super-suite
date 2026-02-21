@@ -40,7 +40,10 @@ SMixerChannel::SMixerChannel(QWidget *parent) : QWidget(parent)
 
 SMixerChannel::~SMixerChannel()
 {
+	blog(LOG_INFO, "[SMixerChannel] ~SMixerChannel() start (source='%s')",
+	     m_source ? obs_source_get_name(m_source) : "(null)");
 	disconnectSource();
+	blog(LOG_INFO, "[SMixerChannel] ~SMixerChannel() done");
 }
 
 // =====================================================================
@@ -405,16 +408,39 @@ void SMixerChannel::connectSource()
 
 void SMixerChannel::disconnectSource()
 {
+	blog(LOG_INFO, "[SMixerChannel] disconnectSource() start (source='%s' m_volmeter=%p)",
+	     m_source ? obs_source_get_name(m_source) : "(null)", m_volmeter);
+
+	// Detach volmeter FIRST — this stops the audio thread from calling
+	// our obsVolmeterCb, which would race with destruction.
 	if (m_volmeter) {
+		blog(LOG_INFO, "[SMixerChannel]   removing volmeter callback...");
 		obs_volmeter_remove_callback(m_volmeter, obsVolmeterCb, this);
+		blog(LOG_INFO, "[SMixerChannel]   detaching volmeter from source...");
 		obs_volmeter_detach_source(m_volmeter);
+		blog(LOG_INFO, "[SMixerChannel]   destroying volmeter...");
 		obs_volmeter_destroy(m_volmeter);
 		m_volmeter = nullptr;
+		blog(LOG_INFO, "[SMixerChannel]   volmeter cleanup done");
 	}
 
-	obs_source_t *source = getSource();
-	if (source) {
-		signal_handler_t *sh = obs_source_get_signal_handler(source);
+	// Tell sub-components to release their source references BEFORE
+	// we null m_source. They need the source to still be valid so they
+	// can disconnect their own signal handlers.
+	if (m_side_panel) {
+		blog(LOG_INFO, "[SMixerChannel]   clearing side_panel source...");
+		m_side_panel->setSource(nullptr);
+	}
+	if (m_props_selector) {
+		blog(LOG_INFO, "[SMixerChannel]   clearing props_selector source...");
+		m_props_selector->setSource(nullptr);
+	}
+
+	// Disconnect signal handlers.
+	if (m_source) {
+		blog(LOG_INFO, "[SMixerChannel]   disconnecting signal handlers from '%s'...",
+		     obs_source_get_name(m_source));
+		signal_handler_t *sh = obs_source_get_signal_handler(m_source);
 		if (sh) {
 			signal_handler_disconnect(sh, "volume", obsVolumeChangedCb, this);
 			signal_handler_disconnect(sh, "mute", obsMuteChangedCb, this);
@@ -424,8 +450,16 @@ void SMixerChannel::disconnectSource()
 			signal_handler_disconnect(sh, "reorder_filters", obsFilterAddedCb, this);
 			signal_handler_disconnect(sh, "destroy", obsDestroyedCb, this);
 		}
-		obs_source_release(source);
+		blog(LOG_INFO, "[SMixerChannel]   signal handlers disconnected");
 	}
+
+	if (m_weak_source) {
+		blog(LOG_INFO, "[SMixerChannel]   releasing weak source ref...");
+		obs_weak_source_release(m_weak_source);
+		m_weak_source = nullptr;
+	}
+	m_source = nullptr;
+	blog(LOG_INFO, "[SMixerChannel] disconnectSource() done");
 }
 
 // =====================================================================
@@ -504,12 +538,32 @@ void SMixerChannel::obsFilterRemovedCb(void *data, calldata_t *)
 void SMixerChannel::obsDestroyedCb(void *data, calldata_t *)
 {
 	auto *self = static_cast<SMixerChannel *>(data);
+
+	blog(LOG_INFO, "[SMixerChannel] obsDestroyedCb() — source is being destroyed (source='%s')",
+	     self->m_source ? obs_source_get_name(self->m_source) : "(null)");
+
+	// SYNCHRONOUSLY detach the volmeter right here in the signal thread.
+	if (self->m_volmeter) {
+		blog(LOG_INFO, "[SMixerChannel]   sync volmeter detach in destroy callback...");
+		obs_volmeter_remove_callback(self->m_volmeter, obsVolmeterCb, self);
+		obs_volmeter_detach_source(self->m_volmeter);
+		obs_volmeter_destroy(self->m_volmeter);
+		self->m_volmeter = nullptr;
+	}
+
+	if (self->m_weak_source) {
+		obs_weak_source_release(self->m_weak_source);
+		self->m_weak_source = nullptr;
+	}
+	self->m_source = nullptr;
+
+	blog(LOG_INFO, "[SMixerChannel]   obsDestroyedCb() done, deferring UI update");
+
+	// Defer UI updates to the Qt event loop
 	QMetaObject::invokeMethod(self, [self]() {
-		if (self->m_weak_source) {
-			obs_weak_source_release(self->m_weak_source);
-			self->m_weak_source = nullptr;
-		}
-		self->m_source = nullptr;
+		self->m_name_bar->setName("---");
+		self->m_side_panel->setSource(nullptr);
+		self->m_props_selector->setSource(nullptr);
 	});
 }
 

@@ -79,13 +79,18 @@ VolumeMeterDemoDock::VolumeMeterDemoDock(QWidget *parent) : QWidget(parent)
 VolumeMeterDemoDock::~VolumeMeterDemoDock()
 {
 	obs_frontend_remove_event_callback(refreshSources, this);
+	clearMeters();
+}
 
-	// Clean up meters
+void VolumeMeterDemoDock::clearMeters()
+{
 	for (auto &meter : volumeMeters) {
 		if (meter) {
+			metersLayout->removeWidget(meter);
 			delete meter;
 		}
 	}
+	volumeMeters.clear();
 }
 
 void VolumeMeterDemoDock::populateSourceComboBox()

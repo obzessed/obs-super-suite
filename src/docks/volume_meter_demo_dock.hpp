@@ -22,6 +22,7 @@ public:
 	void setSelectedStyleIndex(int index);
 
 	void populateSourceComboBox();
+	void clearMeters();
 	static bool enumAudioSources(void *param, obs_source_t *source);
 
 private slots:

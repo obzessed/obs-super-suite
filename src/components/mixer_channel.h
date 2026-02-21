@@ -84,6 +84,7 @@ private:
 	static void SourceFilterRemove(void *data, calldata_t *cd);
 	static void SourceFilterReorder(void *data, calldata_t *cd);
 	static void FilterEnabled(void *data, calldata_t *cd); // To update bypass dot
+	static void SourceDestroyed(void *data, calldata_t *cd);
 
 	obs_source_t *m_source = nullptr;
 	obs_volmeter_t *m_volmeter = nullptr;

@@ -542,6 +542,16 @@ SMixerFilterPropertyButton::SMixerFilterPropertyButton(obs_source_t *filter, obs
 
 	m_button = new QPushButton(QString::fromUtf8(desc), this);
 	m_button->setEnabled(obs_property_enabled(prop));
+	m_button->setStyleSheet(
+		"QPushButton {"
+		"  background: #2a2a2a; color: #ccc; border: 1px solid #444;"
+		"  border-radius: 3px; padding: 2px 8px; font-size: 10px;"
+		"  min-height: 20px; margin: 0px;"
+		"}"
+		"QPushButton:hover { background: #333; border-color: #555; }"
+		"QPushButton:pressed { background: #222; }"
+		"QPushButton:disabled { color: #555; border-color: #333; }"
+	);
 
 	connect(m_button, &QPushButton::clicked, this, [this]() {
 		obs_button_type type = obs_property_button_type(m_prop);
@@ -636,10 +646,15 @@ SMixerFilterPropertyFallback::SMixerFilterPropertyFallback(obs_source_t *filter,
 {
 	m_button = new QPushButton("Open Properties...", this);
 	m_button->setStyleSheet(
-		"QPushButton { background: #2a2a2a; color: #888; border: 1px solid #444;"
-		"  border-radius: 3px; padding: 4px 10px; font-size: 10px;"
-		"  font-family: 'Segoe UI', sans-serif; }"
-		"QPushButton:hover { color: #ddd; border-color: #00cccc; }"
+		"QPushButton {"
+		"  background: #2a2a2a; color: #ccc; border: 1px solid #444;"
+		"  border-radius: 3px; padding: 2px 8px; font-size: 10px;"
+		"  min-height: 20px; margin: 0px;"
+		"  font-family: 'Segoe UI', sans-serif;"
+		"}"
+		"QPushButton:hover { background: #333; border-color: #555; }"
+		"QPushButton:pressed { background: #222; }"
+		"QPushButton:disabled { color: #555; border-color: #333; }"
 	);
 
 	connect(m_button, &QPushButton::clicked, this, [this]() {

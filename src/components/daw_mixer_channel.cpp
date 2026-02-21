@@ -474,6 +474,7 @@ void DawMixerChannel::connect_source()
 		signal_handler_connect(sh, "filter_add", obs_source_filter_add_cb, this);
 		signal_handler_connect(sh, "filter_remove", obs_source_filter_remove_cb, this);
 		signal_handler_connect(sh, "reorder_filters", obs_source_filter_add_cb, this); // Re-use refresh
+		signal_handler_connect(sh, "destroy", obs_source_destroyed_cb, this);
 	}
 
 	volmeter = obs_volmeter_create(OBS_FADER_LOG);
@@ -499,6 +500,7 @@ void DawMixerChannel::disconnect_source()
 			signal_handler_disconnect(sh, "filter_add", obs_source_filter_add_cb, this);
 			signal_handler_disconnect(sh, "filter_remove", obs_source_filter_remove_cb, this);
 			signal_handler_disconnect(sh, "reorder_filters", obs_source_filter_add_cb, this);
+			signal_handler_disconnect(sh, "destroy", obs_source_destroyed_cb, this);
 		}
 	}
 }
@@ -696,4 +698,20 @@ void DawMixerChannel::obs_source_filter_remove_cb(void *data, calldata_t *)
 {
 	DawMixerChannel *self = static_cast<DawMixerChannel *>(data);
 	QMetaObject::invokeMethod(self, [self]() { self->refresh_filters(); });
+}
+
+void DawMixerChannel::obs_source_destroyed_cb(void *data, calldata_t *)
+{
+	DawMixerChannel *self = static_cast<DawMixerChannel *>(data);
+	QMetaObject::invokeMethod(self, [self]() {
+		// Detach volmeter before the source finishes destroying
+		if (self->volmeter) {
+			obs_volmeter_remove_callback(self->volmeter, obs_volmeter_cb, self);
+			obs_volmeter_detach_source(self->volmeter);
+			obs_volmeter_destroy(self->volmeter);
+			self->volmeter = nullptr;
+		}
+		self->source = nullptr;
+		self->name_label->setText("---");
+	});
 }

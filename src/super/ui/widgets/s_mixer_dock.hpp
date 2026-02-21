@@ -56,6 +56,9 @@ public:
 	int channelCount() const;
 	SMixerChannel *channelAt(int index) const;
 
+	// --- Shutdown ---
+	void prepareForShutdown();
+
 	// --- Auto-populate ---
 	void populateSources();
 	void autoPopulateAudioSources();
@@ -71,6 +74,7 @@ private slots:
 
 private:
 	void setupUi();
+	void releaseComboWeakRefs();
 
 	// OBS event handler
 	static void obsEventCallback(obs_frontend_event event, void *data);

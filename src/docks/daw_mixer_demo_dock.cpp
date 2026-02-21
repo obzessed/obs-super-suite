@@ -68,13 +68,18 @@ DawMixerDemoDock::DawMixerDemoDock(QWidget *parent) : QWidget(parent)
 DawMixerDemoDock::~DawMixerDemoDock()
 {
 	obs_frontend_remove_event_callback(refreshSources, this);
+	clearChannels();
+}
 
-	// Clean up channels
+void DawMixerDemoDock::clearChannels()
+{
 	for (auto &channel : mixerChannels) {
 		if (channel) {
+			channelsLayout->removeWidget(channel);
 			delete channel;
 		}
 	}
+	mixerChannels.clear();
 }
 
 void DawMixerDemoDock::populateSourceComboBox()

@@ -58,6 +58,11 @@ VolumeMeter::VolumeMeter(QWidget *parent, obs_source_t *source, Style style)
 		weakSource = obs_source_get_weak_source(source);
 		obs_volmeter_add_callback(obsVolumeMeter, obsVolMeterChanged, this);
 		obs_volmeter_attach_source(obsVolumeMeter, source);
+		
+		signal_handler_t *sh = obs_source_get_signal_handler(source);
+		if (sh) {
+			signal_handler_connect(sh, "destroy", obsSourceDestroyed, this);
+		}
 	}
 
 	resetLevels();
@@ -151,13 +156,22 @@ void VolumeMeter::setStyle(Style s)
 
 VolumeMeter::~VolumeMeter()
 {
+	if (weakSource) {
+		obs_source_t *source = obs_weak_source_get_source(weakSource);
+		if (source) {
+			signal_handler_t *sh = obs_source_get_signal_handler(source);
+			if (sh) {
+				signal_handler_disconnect(sh, "destroy", obsSourceDestroyed, this);
+			}
+			obs_source_release(source);
+		}
+		obs_weak_source_release(weakSource);
+	}
+
 	if (obsVolumeMeter) {
 		obs_volmeter_remove_callback(obsVolumeMeter, obsVolMeterChanged, this);
 		obs_volmeter_detach_source(obsVolumeMeter);
 		obs_volmeter_destroy(obsVolumeMeter);
-	}
-	if (weakSource) {
-		obs_weak_source_release(weakSource);
 	}
 }
 
@@ -188,11 +202,23 @@ void VolumeMeter::obsVolMeterChanged(void *data, const float magnitude[MAX_AUDIO
 void VolumeMeter::obsSourceDestroyed(void *data, calldata_t *)
 {
 	VolumeMeter *self = static_cast<VolumeMeter *>(data);
-	QMetaObject::invokeMethod(self, "handleSourceDestroyed", Qt::QueuedConnection);
+	QMetaObject::invokeMethod(self, "handleSourceDestroyed");
 }
 
 void VolumeMeter::handleSourceDestroyed()
 {
+	if (obsVolumeMeter) {
+		obs_volmeter_remove_callback(obsVolumeMeter, obsVolMeterChanged, this);
+		obs_volmeter_detach_source(obsVolumeMeter);
+		obs_volmeter_destroy(obsVolumeMeter);
+		obsVolumeMeter = nullptr;
+	}
+
+	if (weakSource) {
+		obs_weak_source_release(weakSource);
+		weakSource = nullptr;
+	}
+
 	// Handle source destruction - perhaps emit signal or reset
 	resetLevels();
 	update();

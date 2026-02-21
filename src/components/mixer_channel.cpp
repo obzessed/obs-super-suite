@@ -350,11 +350,7 @@ void MixerChannel::connectSource()
 		signal_handler_connect(sh, "filter_add", SourceFilterAdd, this);
 		signal_handler_connect(sh, "filter_remove", SourceFilterRemove, this);
 		signal_handler_connect(sh, "reorder_filters", SourceFilterReorder, this);
-		// "enable" signal on filters? Or source? 
-		// For filters, the signal is on the filter source itself or the parent?
-		// "item_visible" / "enable"? 
-		// Actually, standard sources have "enable".
-		// We'd need to connect to EACH filter's "enable" signal to update the dot.
+		signal_handler_connect(sh, "destroy", SourceDestroyed, this);
 	}
 
 	// Meter
@@ -381,6 +377,10 @@ void MixerChannel::disconnectSource()
 			signal_handler_disconnect(sh, "rename", SourceRename, this);
 			signal_handler_disconnect(sh, "volume", SourceVolume, this);
 			signal_handler_disconnect(sh, "mute", SourceMute, this);
+			signal_handler_disconnect(sh, "filter_add", SourceFilterAdd, this);
+			signal_handler_disconnect(sh, "filter_remove", SourceFilterRemove, this);
+			signal_handler_disconnect(sh, "reorder_filters", SourceFilterReorder, this);
+			signal_handler_disconnect(sh, "destroy", SourceDestroyed, this);
 		}
 	}
 }
@@ -435,11 +435,25 @@ void MixerChannel::SourceFilterReorder(void *data, calldata_t *cd)
 
 void MixerChannel::FilterEnabled(void *data, calldata_t *cd)
 {
-	// This is a bit trickier, we need to find the specific row.
-	// But rebuild is fast enough for now?
 	MixerChannel *channel = static_cast<MixerChannel*>(data);
 	QMetaObject::invokeMethod(channel, [channel] {
 		channel->rebuildFiltersList();
+	});
+}
+
+void MixerChannel::SourceDestroyed(void *data, calldata_t *)
+{
+	MixerChannel *channel = static_cast<MixerChannel*>(data);
+	QMetaObject::invokeMethod(channel, [channel] {
+		// Detach volmeter before the source finishes destroying
+		if (channel->m_volmeter) {
+			obs_volmeter_remove_callback(channel->m_volmeter, VolmeterCallback, channel);
+			obs_volmeter_detach_source(channel->m_volmeter);
+			obs_volmeter_destroy(channel->m_volmeter);
+			channel->m_volmeter = nullptr;
+		}
+		channel->m_source = nullptr;
+		channel->m_nameLabel->setText("---");
 	});
 }
 
