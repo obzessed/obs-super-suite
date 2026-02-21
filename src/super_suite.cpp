@@ -34,6 +34,7 @@
 #include "docks/volume_meter_demo_dock.hpp"
 #include "docks/daw_mixer_demo_dock.hpp"
 #include "docks/s_mixer_demo_dock.hpp"
+#include "docks/advanced_monitoring_dock.hpp"
 #include "docks/sourcerer/sourcerer_scenes_dock.hpp"
 #include "docks/sourcerer/sourcerer_sources_dock.hpp"
 #include "windows/graph_editor_window.hpp"
@@ -138,6 +139,9 @@ static struct GlobalDocks {
 #endif
 #if ENABLE_S_MIXER_DOCK
 	QPointer<SMixerDemoDock> s_mixer_demo;
+#endif
+#if ENABLE_ADVANCED_MONITORING
+	QPointer<AdvancedMonitoringDock> advanced_monitoring;
 #endif
 } g_docks;
 
@@ -446,6 +450,10 @@ void on_obs_evt(obs_frontend_event event, void *data)
 		if (g_docks.volume_meter_demo)
 			g_docks.volume_meter_demo->clearMeters();
 #endif
+#if ENABLE_ADVANCED_MONITORING
+		if (g_docks.advanced_monitoring)
+			g_docks.advanced_monitoring->disconnectAll();
+#endif
 
 		blog(LOG_INFO, "[super_suite] calling audio_sources_cleanup()...");
 		audio_sources_cleanup();
@@ -613,6 +621,8 @@ static void show_qt_inspector(void *)
 	g_dialogs.qt_inspector->activateWindow();
 }
 
+extern "C" void register_hidden_monitor_filter();
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -622,6 +632,10 @@ bool on_plugin_load()
 	LibOBSTweaker::OnLoad();
 	OBSFrontendTweaker::OnLoad();
 	OBSFrontendHelper::OnLoad();
+
+#if ENABLE_ADVANCED_MONITORING
+	register_hidden_monitor_filter();
+#endif
 
 	// Check if we have all the deps loaded
 	return true;
@@ -761,6 +775,11 @@ void on_plugin_loaded()
 	obs_frontend_add_dock_by_id("SMixerDemoDock", "Super Mixer Demo", g_docks.s_mixer_demo);
 #endif
 
+#if ENABLE_ADVANCED_MONITORING
+	g_docks.advanced_monitoring = new AdvancedMonitoringDock(mainWindow);
+	obs_frontend_add_dock_by_id("AdvancedMonitoringDock", "Advanced Monitoring", g_docks.advanced_monitoring);
+#endif
+
 #if ENABLE_VOLUME_METER_DOCK
 	// Restore style
 	if (VolumeMeterDemoDock::s_volumeMeterDemoStyle >= 0 && VolumeMeterDemoDock::s_volumeMeterDemoStyle < 4)
@@ -864,6 +883,13 @@ void on_plugin_unload()
 		if (g_docks.s_mixer_demo) {
 			obs_frontend_remove_dock("SMixerDemoDock");
 			delete g_docks.s_mixer_demo;
+		}
+#endif
+
+#if ENABLE_ADVANCED_MONITORING
+		if (g_docks.advanced_monitoring) {
+			obs_frontend_remove_dock("AdvancedMonitoringDock");
+			delete g_docks.advanced_monitoring;
 		}
 #endif
 	}

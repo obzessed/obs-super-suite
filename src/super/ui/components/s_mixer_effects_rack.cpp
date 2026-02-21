@@ -584,7 +584,8 @@ void SMixerEffectsRack::setupUi()
 
 	// Single click emits filterClicked signal
 	connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
-		if (!m_source || !item) return;
+		OBSSource source = getSource();
+		if (!source || !item) return;
 		obs_source_t *filter = filterFromItem(item);
 		if (filter) {
 			emit filterClicked(filter);
@@ -630,18 +631,19 @@ void SMixerEffectsRack::setupUi()
 
 obs_source_t *SMixerEffectsRack::filterFromItem(QListWidgetItem *item)
 {
-	if (!m_source || !item) return nullptr;
+	OBSSource source = getSource();
+	if (!source || !item) return nullptr;
 
 	QString uuid = item->data(Qt::UserRole + 1).toString();
 	if (!uuid.isEmpty()) {
-		obs_source_t *f = findFilterByUuid(m_source, uuid.toUtf8().constData());
+		obs_source_t *f = findFilterByUuid(source, uuid.toUtf8().constData());
 		if (f) return f;
 	}
 	
 	// Fallback to name
 	QString name = item->data(Qt::UserRole).toString();
 	if (!name.isEmpty())
-		return findFilterByName(m_source, name.toUtf8().constData());
+		return findFilterByName(source, name.toUtf8().constData());
 
 	return nullptr;
 }
@@ -652,7 +654,8 @@ obs_source_t *SMixerEffectsRack::filterFromItem(QListWidgetItem *item)
 
 void SMixerEffectsRack::showAddFilterMenu()
 {
-	if (!m_source) return;
+	OBSSource source = getSource();
+	if (!source) return;
 	
 	QMenu menu(this);
 	menu.setStyleSheet(kMenuStyleSheet);
@@ -691,7 +694,7 @@ void SMixerEffectsRack::showAddFilterMenu()
 		menu.addSeparator();
 		auto *openDialog = menu.addAction("Open Filters Dialog...");
 		connect(openDialog, &QAction::triggered, this, [this]() {
-			if (m_source) obs_frontend_open_source_filters(m_source);
+			if (OBSSource source = getSource()) obs_frontend_open_source_filters(source);
 		});
 	}
 	
@@ -706,11 +709,12 @@ void SMixerEffectsRack::showAddFilterMenu()
 
 void SMixerEffectsRack::addFilter(const QString &typeId)
 {
-	if (!m_source) return;
+	OBSSource source = getSource();
+	if (!source) return;
 	
 	const char *displayName = obs_source_get_display_name(typeId.toUtf8().constData());
 	QString baseName = displayName ? QString::fromUtf8(displayName) : typeId;
-	QString filterName = generateUniqueFilterName(m_source, baseName);
+	QString filterName = generateUniqueFilterName(source, baseName);
 	
 	OBSSourceAutoRelease filter = obs_source_create(
 		typeId.toUtf8().constData(),
@@ -719,7 +723,7 @@ void SMixerEffectsRack::addFilter(const QString &typeId)
 	);
 	
 	if (filter) {
-		obs_source_filter_add(m_source, filter);
+		obs_source_filter_add(source, filter);
 		refresh();
 
 		auto flags = obs_source_get_output_flags(filter);
@@ -735,14 +739,15 @@ void SMixerEffectsRack::addFilter(const QString &typeId)
 
 void SMixerEffectsRack::showItemContextMenu(QListWidgetItem *item, const QPoint &globalPos)
 {
-	if (!m_source || !item) return;
+	OBSSource source = getSource();
+	if (!source || !item) return;
 
 	obs_source_t *filter = filterFromItem(item);
 	if (!filter) return;
 
 	bool enabled = obs_source_enabled(filter);
-	int idx = getFilterIndex(m_source, filter);
-	int count = getFilterCount(m_source);
+	int idx = getFilterIndex(source, filter);
+	int count = getFilterCount(source);
 
 	QMenu menu(this);
 	menu.setStyleSheet(kMenuStyleSheet);
@@ -783,7 +788,7 @@ void SMixerEffectsRack::showItemContextMenu(QListWidgetItem *item, const QPoint 
 	// Copy
 	auto *copyAct = menu.addAction("Copy");
 	connect(copyAct, &QAction::triggered, this, [this, filter]() {
-		copyFilter(m_source, filter);
+		if (OBSSource source = getSource()) copyFilter(source, filter);
 	});
 
 	// Paste submenu
@@ -793,13 +798,13 @@ void SMixerEffectsRack::showItemContextMenu(QListWidgetItem *item, const QPoint 
 
 	auto *pasteAbove = pasteMenu->addAction("Above");
 	connect(pasteAbove, &QAction::triggered, this, [this, idx]() {
-		pasteFilters(m_source, idx);
+		if (OBSSource source = getSource()) pasteFilters(source, idx);
 		refresh();
 	});
 
 	auto *pasteBelow = pasteMenu->addAction("Below");
 	connect(pasteBelow, &QAction::triggered, this, [this, idx]() {
-		pasteFilters(m_source, idx + 1);
+		if (OBSSource source = getSource()) pasteFilters(source, idx + 1);
 		refresh();
 	});
 
@@ -848,7 +853,8 @@ void SMixerEffectsRack::showItemContextMenu(QListWidgetItem *item, const QPoint 
 
 void SMixerEffectsRack::showRackContextMenu(const QPoint &globalPos)
 {
-	if (!m_source) return;
+	OBSSource source = getSource();
+	if (!source) return;
 
 	QMenu menu(this);
 	menu.setStyleSheet(kMenuStyleSheet);
@@ -861,16 +867,16 @@ void SMixerEffectsRack::showRackContextMenu(const QPoint &globalPos)
 
 	// Copy Filter(s)
 	auto *copyAct = menu.addAction("Copy Filter(s)");
-	copyAct->setEnabled(getFilterCount(m_source) > 0);
+	copyAct->setEnabled(getFilterCount(source) > 0);
 	connect(copyAct, &QAction::triggered, this, [this]() {
-		copyAllFilters(m_source);
+		if (OBSSource source = getSource()) copyAllFilters(source);
 	});
 
 	// Paste Filter(s)
 	auto *pasteAct = menu.addAction("Paste Filter(s)");
 	pasteAct->setEnabled(hasClipboardFilters());
 	connect(pasteAct, &QAction::triggered, this, [this]() {
-		pasteFilters(m_source);
+		if (OBSSource source = getSource()) pasteFilters(source);
 		refresh();
 	});
 
@@ -878,7 +884,7 @@ void SMixerEffectsRack::showRackContextMenu(const QPoint &globalPos)
 
 	// Clear All
 	auto *clearAct = menu.addAction("Clear All");
-	clearAct->setEnabled(getFilterCount(m_source) > 0);
+	clearAct->setEnabled(getFilterCount(source) > 0);
 	connect(clearAct, &QAction::triggered, this, [this]() {
 		clearAllFilters();
 	});
@@ -892,24 +898,27 @@ void SMixerEffectsRack::showRackContextMenu(const QPoint &globalPos)
 
 void SMixerEffectsRack::moveFilterUp(QListWidgetItem *item)
 {
+	OBSSource source = getSource();
 	obs_source_t *filter = filterFromItem(item);
-	if (!filter || !m_source) return;
-	obs_source_filter_set_order(m_source, filter, OBS_ORDER_MOVE_UP);
+	if (!filter || !source) return;
+	obs_source_filter_set_order(source, filter, OBS_ORDER_MOVE_UP);
 	refresh();
 }
 
 void SMixerEffectsRack::moveFilterDown(QListWidgetItem *item)
 {
+	OBSSource source = getSource();
 	obs_source_t *filter = filterFromItem(item);
-	if (!filter || !m_source) return;
-	obs_source_filter_set_order(m_source, filter, OBS_ORDER_MOVE_DOWN);
+	if (!filter || !source) return;
+	obs_source_filter_set_order(source, filter, OBS_ORDER_MOVE_DOWN);
 	refresh();
 }
 
 void SMixerEffectsRack::deleteFilter(QListWidgetItem *item, bool confirm)
 {
+	OBSSource source = getSource();
 	obs_source_t *filter = filterFromItem(item);
-	if (!filter || !m_source) return;
+	if (!filter || !source) return;
 
 	const char *name = obs_source_get_name(filter);
 
@@ -923,14 +932,15 @@ void SMixerEffectsRack::deleteFilter(QListWidgetItem *item, bool confirm)
 		if (result != QMessageBox::Yes) return;
 	}
 
-	obs_source_filter_remove(m_source, filter);
+	obs_source_filter_remove(source, filter);
 	refresh();
 }
 
 void SMixerEffectsRack::renameFilter(QListWidgetItem *item)
 {
+	OBSSource source = getSource();
 	obs_source_t *filter = filterFromItem(item);
-	if (!filter || !m_source) return;
+	if (!filter || !source) return;
 
 	QWidget *container = m_list->itemWidget(item);
 	if (!container) return;
@@ -956,7 +966,8 @@ void SMixerEffectsRack::toggleFilterEnabled(QListWidgetItem *item)
 
 void SMixerEffectsRack::clearAllFilters()
 {
-	if (!m_source) return;
+	OBSSource source = getSource();
+	if (!source) return;
 
 	auto result = QMessageBox::question(
 		this, "Clear All Filters",
@@ -968,13 +979,13 @@ void SMixerEffectsRack::clearAllFilters()
 
 	// Collect all filters first (can't modify while enumerating)
 	QList<obs_source_t*> filters;
-	obs_source_enum_filters(m_source, [](obs_source_t *, obs_source_t *filter, void *param) {
+	obs_source_enum_filters(source, [](obs_source_t *, obs_source_t *filter, void *param) {
 		auto *list = static_cast<QList<obs_source_t*>*>(param);
 		list->append(obs_source_get_ref(filter));
 	}, &filters);
 
 	for (obs_source_t *f : filters) {
-		obs_source_filter_remove(m_source, f);
+		obs_source_filter_remove(source, f);
 		obs_source_release(f);
 	}
 	
@@ -1057,8 +1068,13 @@ static void obs_filter_enable_change_cb(void *data, calldata_t *cd);
 
 void SMixerEffectsRack::setSource(obs_source_t *source)
 {
-	m_source = source;
+	m_weak_source = OBSGetWeakRef(source);
 	refresh();
+}
+
+OBSSource SMixerEffectsRack::getSource() const
+{
+	return OBSGetStrongRef(m_weak_source);
 }
 
 void SMixerEffectsRack::clearItems()
@@ -1078,7 +1094,8 @@ void SMixerEffectsRack::refresh()
 
 	clearItems();
 
-	if (!m_source) {
+	OBSSource source = getSource();
+	if (!source) {
 		auto *item = new QListWidgetItem(m_list);
 		auto *lbl = new QLabel("No Source", m_list);
 		lbl->setAlignment(Qt::AlignCenter);
@@ -1096,7 +1113,7 @@ void SMixerEffectsRack::refresh()
 		bool empty;
 	} data = {this, true};
 
-	obs_source_enum_filters(m_source, [](obs_source_t *, obs_source_t *filter, void *param) {
+	obs_source_enum_filters(source, [](obs_source_t *, obs_source_t *filter, void *param) {
 		auto *d = static_cast<EnumData *>(param);
 		d->empty = false;
 		auto *rack = d->rack;
@@ -1290,29 +1307,37 @@ void SMixerEffectsRack::refresh()
 		}
 
 		// Listen for external changes
-		if (obs_source_t *f = obs_source_get_ref(filter)) {
-			signal_handler_t *sh = obs_source_get_signal_handler(f);
+		// We capture a weak source ref, but we don't hold a strong ref in the UI widget lifetimes 
+		// because of cycle dependencies. The QObject destructor receives the disconnect.
+		obs_weak_source_t *weak_filter = obs_source_get_weak_source(filter);
+
+		if (filter_ref) {
+			signal_handler_t *sh = obs_source_get_signal_handler(filter_ref);
 			if (sh) {
 				signal_handler_connect(sh, "enable", obs_filter_enable_change_cb, ctx);
 				if (pluginBtn) {
 					signal_handler_connect(sh, "update", obs_filter_update_cb, ctx);
 				}
 			}
-			obs_source_release(f);
 		}
 
 		// Cleanup
-		QObject::connect(row, &QObject::destroyed, [filter_ref, ctx, pluginBtn]() {
-			if (filter_ref) {
-				signal_handler_t *sh = obs_source_get_signal_handler(filter_ref);
+		QObject::connect(row, &QObject::destroyed, [weak_filter, filter_ref, ctx, pluginBtn]() {
+			obs_source_t* live_filter = obs_weak_source_get_source(weak_filter);
+			if (live_filter) {
+				signal_handler_t *sh = obs_source_get_signal_handler(live_filter);
 				if (sh) {
 					signal_handler_disconnect(sh, "enable", obs_filter_enable_change_cb, ctx);
 					if (pluginBtn) {
 						signal_handler_disconnect(sh, "update", obs_filter_update_cb, ctx);
 					}
 				}
+				obs_source_release(live_filter);
+			}
+			if (filter_ref) {
 				obs_source_release(filter_ref);
 			}
+			obs_weak_source_release(weak_filter);
 			delete ctx;
 		});
 
@@ -1339,7 +1364,11 @@ void SMixerEffectsRack::refresh()
 
 void SMixerEffectsRack::onReorder()
 {
-	if (!m_source || m_updating_internal)
+	if (m_updating_internal)
+		return;
+
+	OBSSource source = getSource();
+	if (!source)
 		return;
 
 	m_updating_internal = true;
@@ -1349,7 +1378,7 @@ void SMixerEffectsRack::onReorder()
 		QListWidgetItem *item = m_list->item(i);
 		obs_source_t *filter = filterFromItem(item);
 		if (filter) {
-			obs_source_filter_set_order(m_source, filter, OBS_ORDER_MOVE_TOP);
+			obs_source_filter_set_order(source, filter, OBS_ORDER_MOVE_TOP);
 		}
 	}
 
@@ -1501,7 +1530,8 @@ void SMixerEffectsRack::wheelEvent(QWheelEvent *event)
 
 void SMixerEffectsRack::toggleFilterControls(QListWidgetItem *item)
 {
-	if (!m_source || !item) return;
+	OBSSource source = getSource();
+	if (!source || !item) return;
 
 	bool isExpanded = m_controls_items.contains(item);
 

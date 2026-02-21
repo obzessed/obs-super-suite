@@ -35,6 +35,7 @@ public:
 
 	// --- Source Binding ---
 	void setSource(obs_source_t *source);
+	OBSSource getSource() const;
 	void refresh();
 
 	// --- Filter Clipboard (static, shared across channels) ---
@@ -86,7 +87,7 @@ private:
 	SMixerSidebarToggle *m_collapse_btn = nullptr;
 	QListWidget *m_list = nullptr;
 
-	obs_source_t *m_source = nullptr;
+	OBSWeakSource m_weak_source;
 	bool m_updating_internal = false;
 	bool m_is_expanded = true;
 
