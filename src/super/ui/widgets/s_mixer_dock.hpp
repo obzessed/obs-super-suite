@@ -36,6 +36,7 @@
 #include <QPointer>
 #include <vector>
 #include <obs.h>
+#include <obs.hpp>
 #include <obs-frontend-api.h>
 
 namespace super {
@@ -56,9 +57,6 @@ public:
 	int channelCount() const;
 	SMixerChannel *channelAt(int index) const;
 
-	// --- Shutdown ---
-	void prepareForShutdown();
-
 	// --- Auto-populate ---
 	void populateSources();
 	void autoPopulateAudioSources();
@@ -74,7 +72,6 @@ private slots:
 
 private:
 	void setupUi();
-	void releaseComboWeakRefs();
 
 	// OBS event handler
 	static void obsEventCallback(obs_frontend_event event, void *data);
@@ -82,6 +79,8 @@ private:
 
 	// UI
 	QComboBox *m_source_combo = nullptr;
+	std::vector<OBSWeakSource> m_combo_sources;
+
 	QPushButton *m_add_btn = nullptr;
 	QPushButton *m_refresh_btn = nullptr;
 	QPushButton *m_auto_btn = nullptr;

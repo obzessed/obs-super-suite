@@ -64,7 +64,7 @@ public:
 
 	// --- Source Binding ---
 	void setSource(obs_source_t *source);
-	obs_source_t *source() const { return m_source; }
+	OBSSource source() const { return getSource(); }
 	QString sourceName() const;
 
 	// --- Component Access ---
@@ -98,7 +98,7 @@ private slots:
 
 private:
 	void setupUi();
-	void connectSource();
+	void connectSource(obs_source_t *source);
 	void disconnectSource();
 	void updateDbLabel();
 	void startMeterTimer();
@@ -118,14 +118,22 @@ private:
 	static void obsFilterRemovedCb(void *data, calldata_t *cd);
 	static void obsDestroyedCb(void *data, calldata_t *cd);
 
-	obs_source_t *getSource() const {
-		return m_weak_source ? obs_weak_source_get_source(m_weak_source) : nullptr;
+	OBSSource getSource() const {
+		return OBSGetStrongRef(m_weak_source);
 	}
 
 	// OBS state
-	obs_source_t *m_source = nullptr; // Reference identifier, but use weak_source for callbacks
-	obs_weak_source_t *m_weak_source = nullptr;
-	obs_volmeter_t *m_volmeter = nullptr;
+	OBSWeakSource m_weak_source;
+	OBSVolMeter m_volmeter;
+
+	// OBS Signals
+	OBSSignal m_sig_volume;
+	OBSSignal m_sig_mute;
+	OBSSignal m_sig_rename;
+	OBSSignal m_sig_filter_add;
+	OBSSignal m_sig_filter_remove;
+	OBSSignal m_sig_filter_reorder;
+	OBSSignal m_sig_destroy;
 
 	// Components
 	SMixerNameBar *m_name_bar = nullptr;

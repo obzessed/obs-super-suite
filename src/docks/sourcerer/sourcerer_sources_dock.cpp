@@ -1,4 +1,5 @@
 #include "sourcerer_sources_dock.hpp"
+#include "plugin-support.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QEvent>
@@ -57,8 +58,8 @@ SourcererSourcesDock::SourcererSourcesDock(QWidget *parent) : QWidget(parent)
 	obs_frontend_add_event_callback(FrontendEvent, this);
 
 	signal_handler_t *sh = obs_get_signal_handler();
-	signal_handler_connect(sh, "source_create", SourceCreate, this);
-	signal_handler_connect(sh, "source_remove", SourceRemove, this);
+	m_sig_source_create.Connect(sh, "source_create", SourceCreate, this);
+	m_sig_source_remove.Connect(sh, "source_remove", SourceRemove, this);
 
 	rubberBand = new QRubberBand(QRubberBand::Rectangle, containerWidget);
 	containerWidget->installEventFilter(this);
@@ -66,24 +67,9 @@ SourcererSourcesDock::SourcererSourcesDock(QWidget *parent) : QWidget(parent)
 
 SourcererSourcesDock::~SourcererSourcesDock()
 {
-	if (connectedScene) {
-		signal_handler_t *sh = obs_source_get_signal_handler(connectedScene);
-		signal_handler_disconnect(sh, "item_select", SceneItemSelect, this);
-		signal_handler_disconnect(sh, "item_deselect", SceneItemDeselect, this);
-		signal_handler_disconnect(sh, "item_visible", SceneItemVisible, this);
-		signal_handler_disconnect(sh, "item_locked", SceneItemLocked, this);
-		signal_handler_disconnect(sh, "item_add", SceneItemAdd, this);
-		signal_handler_disconnect(sh, "item_remove", SceneItemRemove, this);
-		signal_handler_disconnect(sh, "reorder", SceneItemReorder, this);
-		obs_source_release(connectedScene);
-	}
 	DisconnectAllScenes();
+	connectedScene = nullptr;
 	obs_frontend_remove_event_callback(FrontendEvent, this);
-
-	signal_handler_t *sh = obs_get_signal_handler();
-	signal_handler_disconnect(sh, "source_create", SourceCreate, this);
-	signal_handler_disconnect(sh, "source_remove", SourceRemove, this);
-
 	Clear();
 }
 
@@ -297,7 +283,7 @@ void SourcererSourcesDock::OnItemDoubleClicked(SourcererItem *item)
 {
 	if (!item)
 		return;
-	obs_source_t *source = item->GetSource();
+	OBSSource source = item->GetSource();
 	if (source) {
 		obs_frontend_open_source_properties(source);
 	}
@@ -309,7 +295,7 @@ void SourcererSourcesDock::OnItemMenuRequested(SourcererItem *item, QMenu *menu)
 		return;
 
 	// Check if we can offer "Show/Hide in Current Scene"
-	obs_source_t *sceneSource = nullptr;
+	OBSSourceAutoRelease sceneSource;
 	if (obs_frontend_preview_program_mode_active()) {
 		sceneSource = obs_frontend_get_current_preview_scene();
 	} else {
@@ -318,7 +304,7 @@ void SourcererSourcesDock::OnItemMenuRequested(SourcererItem *item, QMenu *menu)
 
 	if (sceneSource) {
 		obs_scene_t *scene = obs_scene_from_source(sceneSource);
-		obs_source_t *itemSource = item->GetSource();
+		OBSSource itemSource = item->GetSource();
 		if (scene && itemSource) {
 			// If we have a direct scene item, use it
 			obs_sceneitem_t *sceneItem = item->GetSceneItem();
@@ -349,7 +335,6 @@ void SourcererSourcesDock::OnItemMenuRequested(SourcererItem *item, QMenu *menu)
 					[sceneItem](bool checked) { obs_sceneitem_set_visible(sceneItem, checked); });
 			}
 		}
-		obs_source_release(sceneSource);
 	}
 }
 
@@ -367,7 +352,7 @@ void SourcererSourcesDock::OnToggleVisibilityRequested(SourcererItem *item)
 	}
 
 	// Fallback
-	obs_source_t *source = item->GetSource();
+	OBSSource source = item->GetSource();
 	if (!source)
 		return;
 
@@ -398,7 +383,7 @@ void SourcererSourcesDock::OnToggleLockRequested(SourcererItem *item)
 	}
 
 	// Fallback
-	obs_source_t *source = item->GetSource();
+	OBSSource source = item->GetSource();
 	if (!source)
 		return;
 
@@ -436,7 +421,7 @@ void SourcererSourcesDock::mousePressEvent(QMouseEvent *event)
 					obs_sceneitem_select(si, false);
 				} else {
 					// Fallback for global sources (try to find in root scene)
-					obs_source_t *source = item->GetSource();
+					OBSSource source = item->GetSource();
 					if (source) {
 						obs_scene_t *scene = obs_scene_from_source(connectedScene);
 						if (scene) {
@@ -511,7 +496,7 @@ void SourcererSourcesDock::Refresh()
 {
 	Clear();
 	if (filterByCurrentScene) {
-		obs_source_t *scene_source = nullptr;
+		OBSSourceAutoRelease scene_source;
 		if (obs_frontend_preview_program_mode_active()) {
 			scene_source = obs_frontend_get_current_preview_scene();
 		} else {
@@ -523,7 +508,6 @@ void SourcererSourcesDock::Refresh()
 			if (scene) {
 				obs_scene_enum_items(scene, EnumSceneItems, this);
 			}
-			obs_source_release(scene_source);
 		}
 	} else {
 		obs_enum_sources(EnumSources, this);
@@ -673,7 +657,7 @@ void SourcererSourcesDock::SceneItemReorder(void *data, calldata_t *cd)
 
 void SourcererSourcesDock::UpdateSceneConnection()
 {
-	obs_source_t *scene_source = nullptr;
+	OBSSourceAutoRelease scene_source;
 	if (obs_frontend_preview_program_mode_active()) {
 		scene_source = obs_frontend_get_current_preview_scene();
 	} else {
@@ -682,25 +666,14 @@ void SourcererSourcesDock::UpdateSceneConnection()
 
 	if (scene_source != connectedScene) {
 		if (connectedScene) {
-			// Instead of manually disconnecting just the root, use DisconnectAllScenes
-			// to ensure we clean up all group connections that were added to monitoredScenes.
-			// This prevents stale or duplicate connections when switching back and forth.
 			DisconnectAllScenes();
-			// DisconnectAllScenes releases the monitored references.
-			// We still hold the 'connectedScene' reference which we must release.
-			obs_source_release(connectedScene);
 			connectedScene = nullptr;
 		}
 
 		if (scene_source) {
-			connectedScene = scene_source;
-			// We keep the reference (don't release yet, done in destructor or disconnect)
+			connectedScene = OBSSource(scene_source);
 			ConnectSceneSignals(connectedScene);
 		}
-	} else {
-		// Same scene, just release the temp reference we got
-		if (scene_source)
-			obs_source_release(scene_source);
 	}
 
 	// Always sync selection when checking connection
@@ -713,13 +686,12 @@ void SourcererSourcesDock::ConnectSceneSignals(obs_source_t *source)
 		return;
 
 	// Check if already connected
-	for (obs_source_t *s : monitoredScenes) {
+	for (const OBSSource &s : monitoredScenes) {
 		if (s == source)
 			return;
 	}
 
-	obs_source_get_ref(source);
-	monitoredScenes.push_back(source);
+	monitoredScenes.push_back(OBSSource(source));
 
 	signal_handler_t *sh = obs_source_get_signal_handler(source);
 
@@ -739,7 +711,6 @@ void SourcererSourcesDock::ConnectSceneSignals(obs_source_t *source)
 			[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
 				if (obs_sceneitem_is_group(item)) {
 					obs_source_t *groupSource = obs_sceneitem_get_source(item);
-					// The group source itself has the scene
 					SourcererSourcesDock *dock = static_cast<SourcererSourcesDock *>(param);
 					dock->ConnectSceneSignals(groupSource);
 				}
@@ -751,7 +722,7 @@ void SourcererSourcesDock::ConnectSceneSignals(obs_source_t *source)
 
 void SourcererSourcesDock::DisconnectAllScenes()
 {
-	for (obs_source_t *source : monitoredScenes) {
+	for (const OBSSource &source : monitoredScenes) {
 		signal_handler_t *sh = obs_source_get_signal_handler(source);
 		signal_handler_disconnect(sh, "item_select", SceneItemSelect, this);
 		signal_handler_disconnect(sh, "item_deselect", SceneItemDeselect, this);
@@ -760,7 +731,6 @@ void SourcererSourcesDock::DisconnectAllScenes()
 		signal_handler_disconnect(sh, "item_add", SceneItemAdd, this);
 		signal_handler_disconnect(sh, "item_remove", SceneItemRemove, this);
 		signal_handler_disconnect(sh, "reorder", SceneItemReorder, this);
-		obs_source_release(source);
 	}
 	monitoredScenes.clear();
 }
@@ -810,7 +780,7 @@ void SourcererSourcesDock::ApplySelectionToOBS()
 			}
 		} else {
 			// Fallback for global sources or lost references
-			obs_source_t *source = widget->GetSource();
+			OBSSource source = widget->GetSource();
 			if (source) {
 				const char *name = obs_source_get_name(source);
 				obs_sceneitem_t *found = obs_scene_find_source_recursive(scene, name);
@@ -853,7 +823,7 @@ void SourcererSourcesDock::SceneItemSelect(void *data, calldata_t *cd)
 	// Find in dock items
 	for (SourcererItem *widget : dock->items) {
 		if (widget->GetSceneItem() == nullptr) {
-			obs_source_t *wSource = widget->GetSource();
+			OBSSource wSource = widget->GetSource();
 			if (wSource) {
 				const char *wName = obs_source_get_name(wSource);
 				if (strcmp(name, wName) == 0) {
@@ -894,7 +864,7 @@ void SourcererSourcesDock::SceneItemDeselect(void *data, calldata_t *cd)
 
 	for (SourcererItem *widget : dock->items) {
 		if (widget->GetSceneItem() == nullptr) {
-			obs_source_t *wSource = widget->GetSource();
+			OBSSource wSource = widget->GetSource();
 			if (wSource) {
 				const char *wName = obs_source_get_name(wSource);
 				if (strcmp(name, wName) == 0) {

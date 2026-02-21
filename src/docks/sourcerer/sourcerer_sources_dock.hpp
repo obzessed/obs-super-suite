@@ -57,9 +57,12 @@ private:
 
 	bool filterByCurrentScene = true;
 	bool hideBadges = false;
-	obs_source_t *connectedScene = nullptr;
-	std::vector<obs_source_t *> monitoredScenes;
+	OBSSource connectedScene;
+	std::vector<OBSSource> monitoredScenes;
 	SourcererItem *selectedItem = nullptr;
+
+	OBSSignal m_sig_source_create;
+	OBSSignal m_sig_source_remove;
 
 	void UpdateSceneConnection();
 	void ConnectSceneSignals(obs_source_t *source);

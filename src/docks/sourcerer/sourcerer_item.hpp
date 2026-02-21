@@ -54,7 +54,7 @@ public:
 
 	void UpdateName();
 	void SetItemWidth(int width);
-	obs_source_t *GetSource() const { return source; }
+	OBSSource GetSource() const { return OBSGetStrongRef(m_weak_source); }
 	void SetSelected(bool selected);
 	bool IsSelected() const { return isSelected; }
 	void SetProgram(bool program);
@@ -108,7 +108,12 @@ protected:
 	bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
-	obs_source_t *source = nullptr;
+	OBSWeakSource m_weak_source;
+	OBSSignal m_sig_rename;
+	OBSSignal m_sig_enable;
+	OBSSignal m_sig_disable;
+	OBSSignal m_sig_item_add;
+	OBSSignal m_sig_item_remove;
 	obs_sceneitem_t *sceneItem = nullptr;
 	OBSQTDisplay *display = nullptr;
 	QLabel *label = nullptr;

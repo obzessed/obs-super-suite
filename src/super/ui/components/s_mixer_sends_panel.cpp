@@ -97,7 +97,6 @@ SMixerSendsPanel::SMixerSendsPanel(QWidget *parent) : QWidget(parent)
 
 SMixerSendsPanel::~SMixerSendsPanel()
 {
-	disconnectSource();
 }
 
 void SMixerSendsPanel::setupUi()
@@ -154,68 +153,38 @@ void SMixerSendsPanel::setupUi()
 
 void SMixerSendsPanel::setSource(obs_source_t *source)
 {
-	obs_source_t *current = getSource();
-	if (current == source) {
-		if (current) obs_source_release(current);
+	if (getSource() == source) {
 		return;
 	}
 
-	disconnectSource();
-	
-	if (m_weak_source) {
-		obs_weak_source_release(m_weak_source);
-		m_weak_source = nullptr;
-	}
+	m_sig_audio_mixers.Disconnect();
+	m_sig_destroy.Disconnect();
 
-	if (source) {
-		m_weak_source = obs_source_get_weak_source(source);
-		connectSource();
-	}
+	m_weak_source = OBSGetWeakRef(source);
 
-	if (current) obs_source_release(current);
-	
-	refresh();
-}
-
-obs_source_t *SMixerSendsPanel::getSource() const
-{
-	return m_weak_source ? obs_weak_source_get_source(m_weak_source) : nullptr;
-}
-
-void SMixerSendsPanel::connectSource()
-{
-	obs_source_t *source = getSource();
-	if (!source) return;
-
-	signal_handler_t *sh = obs_source_get_signal_handler(source);
-	if (sh) {
-		signal_handler_connect(sh, "audio_mixers", audioMixersChangedCb, this);
-		signal_handler_connect(sh, "destroy", sourceDestroyedCb, this);
-	}
-	obs_source_release(source);
-}
-
-void SMixerSendsPanel::disconnectSource()
-{
-	obs_source_t *source = getSource();
 	if (source) {
 		signal_handler_t *sh = obs_source_get_signal_handler(source);
 		if (sh) {
-			signal_handler_disconnect(sh, "audio_mixers", audioMixersChangedCb, this);
-			signal_handler_disconnect(sh, "destroy", sourceDestroyedCb, this);
+			m_sig_audio_mixers.Connect(sh, "audio_mixers", audioMixersChangedCb, this);
+			m_sig_destroy.Connect(sh, "destroy", sourceDestroyedCb, this);
 		}
-		obs_source_release(source);
 	}
+
+	refresh();
+}
+
+OBSSource SMixerSendsPanel::getSource() const
+{
+	return OBSGetStrongRef(m_weak_source);
 }
 
 void SMixerSendsPanel::sourceDestroyedCb(void *data, calldata_t *)
 {
 	auto *self = static_cast<SMixerSendsPanel *>(data);
+	self->m_sig_audio_mixers.Disconnect();
+	self->m_sig_destroy.Disconnect();
 	QMetaObject::invokeMethod(self, [self]() {
-		if (self->m_weak_source) {
-			obs_weak_source_release(self->m_weak_source);
-			self->m_weak_source = nullptr;
-		}
+		self->m_weak_source = nullptr;
 		self->refresh();
 	});
 }
@@ -263,7 +232,7 @@ void SMixerSendsPanel::refresh()
 {
 	clearItems();
 
-	obs_source_t *source = getSource();
+	OBSSource source = getSource();
 	if (!source) {
 		auto *lbl = new QLabel("No Source", this);
 		lbl->setAlignment(Qt::AlignCenter);
@@ -299,7 +268,7 @@ void SMixerSendsPanel::refresh()
 		
 		// Connect toggle -> OBS
 		connect(sw, &SMixerSwitch::toggled, this, [this, i](bool checked) {
-			obs_source_t *s = getSource();
+			OBSSource s = getSource();
 			if (!s)
 				return;
 			uint32_t current = obs_source_get_audio_mixers(s);
@@ -313,15 +282,12 @@ void SMixerSendsPanel::refresh()
 				obs_source_set_audio_mixers(s, current);
 				emit trackChanged(i, checked);
 			}
-			obs_source_release(s);
 		});
 
 		rowLayout->addWidget(sw);
 
 		m_items_layout->addWidget(row);
 	}
-
-	obs_source_release(source);
 }
 
 void SMixerSendsPanel::setExpanded(bool expanded)

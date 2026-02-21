@@ -141,10 +141,6 @@ static struct GlobalDocks {
 #endif
 } g_docks;
 
-#if ENABLE_VOLUME_METER_DOCK
-int volumeMeterDemoStyle = -1;
-#endif
-
 static void save_callback(obs_data_t *save_data, bool saving, void *)
 {
 	if (saving) {
@@ -345,9 +341,11 @@ static void save_callback(obs_data_t *save_data, bool saving, void *)
 				obs_data_get_int(save_data, "TweaksPreviewLayout"));
 			g_instances.tweaks_impl->ApplyTweaks();
 		}
+#endif
 
+#if ENABLE_VOLUME_METER_DOCK
 		// Volume Meter Demo style
-		volumeMeterDemoStyle = obs_data_get_int(save_data, "VolumeMeterDemoStyle");
+		VolumeMeterDemoDock::s_volumeMeterDemoStyle = obs_data_get_int(save_data, "VolumeMeterDemoStyle");
 #endif
 	}
 }
@@ -439,12 +437,6 @@ void on_obs_evt(obs_frontend_event event, void *data)
 #if ENABLE_SUPER_MIXER_DOCK
 		if (g_docks.super_mixer)
 			g_docks.super_mixer->clearChannels();
-#endif
-#if ENABLE_S_MIXER_DOCK
-		blog(LOG_INFO, "[super_suite] calling s_mixer_demo->prepareForShutdown()...");
-		if (g_docks.s_mixer_demo)
-			g_docks.s_mixer_demo->prepareForShutdown();
-		blog(LOG_INFO, "[super_suite] s_mixer_demo->prepareForShutdown() done");
 #endif
 #if ENABLE_DAW_MIXER_DOCK
 		if (g_docks.daw_mixer_demo)
@@ -771,8 +763,8 @@ void on_plugin_loaded()
 
 #if ENABLE_VOLUME_METER_DOCK
 	// Restore style
-	if (volumeMeterDemoStyle >= 0 && volumeMeterDemoStyle < 4)
-		g_docks.volume_meter_demo->setSelectedStyleIndex(volumeMeterDemoStyle);
+	if (VolumeMeterDemoDock::s_volumeMeterDemoStyle >= 0 && VolumeMeterDemoDock::s_volumeMeterDemoStyle < 4)
+		g_docks.volume_meter_demo->setSelectedStyleIndex(VolumeMeterDemoDock::s_volumeMeterDemoStyle);
 #endif
 
 	// Create Global Instances

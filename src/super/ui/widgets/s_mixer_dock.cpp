@@ -25,27 +25,11 @@ SMixerDock::SMixerDock(QWidget *parent) : QWidget(parent)
 
 SMixerDock::~SMixerDock()
 {
-	prepareForShutdown();
-}
-
-void SMixerDock::prepareForShutdown()
-{
-	blog(LOG_INFO, "[SMixerDock] prepareForShutdown() START — %d channels",
-	     (int)m_channels.size());
-
-	// Remove our event callback immediately so we don't receive
-	// any more OBS events during the rest of the shutdown sequence.
 	obs_frontend_remove_event_callback(obsEventCallback, this);
-
-	// Clear all channels — destroys volmeters, signal handlers, sub-component refs
 	clearChannels();
-
-	// Release leaked weak source refs from the combo box
-	releaseComboWeakRefs();
+	m_combo_sources.clear();
 	if (m_source_combo)
 		m_source_combo->clear();
-
-	blog(LOG_INFO, "[SMixerDock] prepareForShutdown() DONE");
 }
 
 // =====================================================================
@@ -269,19 +253,9 @@ SMixerChannel *SMixerDock::channelAt(int index) const
 // Source Population
 // =====================================================================
 
-void SMixerDock::releaseComboWeakRefs()
-{
-	for (int i = 0; i < m_source_combo->count(); i++) {
-		auto *weak = static_cast<obs_weak_source_t *>(
-			m_source_combo->itemData(i).value<void *>());
-		if (weak)
-			obs_weak_source_release(weak);
-	}
-}
-
 void SMixerDock::populateSources()
 {
-	releaseComboWeakRefs();
+	m_combo_sources.clear();
 	m_source_combo->clear();
 	m_source_combo->addItem("Select Source", QVariant());
 	obs_enum_sources(enumAudioSourcesCb, this);
@@ -304,8 +278,9 @@ bool SMixerDock::enumAudioSourcesCb(void *param, obs_source_t *source)
 	}
 
 	const char *name = obs_source_get_name(source);
-	dock->m_source_combo->addItem(
-		name, QVariant::fromValue(static_cast<void *>(obs_source_get_weak_source(source))));
+	dock->m_combo_sources.push_back(OBSGetWeakRef(source));
+	int vecIndex = static_cast<int>(dock->m_combo_sources.size()) - 1;
+	dock->m_source_combo->addItem(name, QVariant::fromValue(vecIndex));
 
 	return true;
 }
@@ -343,15 +318,16 @@ void SMixerDock::onAddChannelClicked()
 	if (index <= 0)
 		return;
 
-	auto *weak = static_cast<obs_weak_source_t *>(
-		m_source_combo->itemData(index).value<void *>());
-	obs_source_t *source = obs_weak_source_get_source(weak);
+	int vecIndex = m_source_combo->itemData(index).toInt();
+	if (vecIndex < 0 || vecIndex >= static_cast<int>(m_combo_sources.size()))
+		return;
+
+	OBSSource source = OBSGetStrongRef(m_combo_sources[vecIndex]);
 	if (!source)
 		return;
 
 	uint32_t flags = obs_source_get_output_flags(source);
 	if ((flags & OBS_SOURCE_AUDIO) == 0) {
-		obs_source_release(source);
 		return;
 	}
 
@@ -361,7 +337,6 @@ void SMixerDock::onAddChannelClicked()
 	}
 
 	addChannel(source);
-	obs_source_release(source);
 }
 
 void SMixerDock::onRefreshClicked()

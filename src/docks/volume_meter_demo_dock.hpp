@@ -18,6 +18,8 @@ public:
 	explicit VolumeMeterDemoDock(QWidget *parent = nullptr);
 	~VolumeMeterDemoDock() override;
 
+	static int s_volumeMeterDemoStyle;
+
 	int getSelectedStyleIndex() const;
 	void setSelectedStyleIndex(int index);
 

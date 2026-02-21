@@ -44,7 +44,10 @@ private:
 	static void onFilterUpdated(void *data, calldata_t *cd);
 	static void onFilterDestroyed(void *data, calldata_t *cd);
 
-	obs_weak_source_t *m_weak_filter = nullptr;
+	OBSWeakSource m_weak_filter;
+	OBSSignal m_sig_update;
+	OBSSignal m_sig_destroy;
+
 	OBSData m_settings;
 	QWidget *m_content = nullptr;
 	QList<SMixerFilterPropertyWidget*> m_widgets;

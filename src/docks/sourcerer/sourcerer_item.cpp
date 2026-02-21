@@ -212,10 +212,10 @@ void SourcererItemOverlay::mousePressEvent(QMouseEvent *event)
 
 // --- SourcererItem ---
 
-SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(parent), source(source)
+SourcererItem::SourcererItem(obs_source_t *s, QWidget *parent) : QWidget(parent)
 {
-	obs_source_get_ref(source);
-	obs_source_inc_showing(source);
+	m_weak_source = OBSGetWeakRef(s);
+	obs_source_inc_showing(s);
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(4, 4, 4, 4);
@@ -287,15 +287,14 @@ SourcererItem::SourcererItem(obs_source_t *source, QWidget *parent) : QWidget(pa
 	connect(display, &OBSQTDisplay::DisplayCreated, this, OnDisplayCreated);
 	display->CreateDisplay();
 
-	signal_handler_t *sh = obs_source_get_signal_handler(source);
-	signal_handler_connect(sh, "rename", SourceRenamed, this);
-	signal_handler_connect(sh, "enable", SourceEnabled, this);
-	// FIXME: might not be a valid signal
-	signal_handler_connect(sh, "disable", SourceDisabled, this);
+	signal_handler_t *sh = obs_source_get_signal_handler(s);
+	m_sig_rename.Connect(sh, "rename", SourceRenamed, this);
+	m_sig_enable.Connect(sh, "enable", SourceEnabled, this);
+	m_sig_disable.Connect(sh, "disable", SourceDisabled, this);
 
-	if (obs_scene_from_source(source)) {
-		signal_handler_connect(sh, "item_add", SceneItemAdded, this);
-		signal_handler_connect(sh, "item_remove", SceneItemRemoved, this);
+	if (obs_scene_from_source(s)) {
+		m_sig_item_add.Connect(sh, "item_add", SceneItemAdded, this);
+		m_sig_item_remove.Connect(sh, "item_remove", SceneItemRemoved, this);
 	}
 
 	// Enable mouse tracking for hover events
@@ -309,21 +308,11 @@ SourcererItem::~SourcererItem()
 	}
 
 	if (!isPreviewDisabled) {
-		obs_source_dec_showing(source);
+		OBSSource source = GetSource();
+		if (source) {
+			obs_source_dec_showing(source);
+		}
 	}
-
-	signal_handler_t *sh = obs_source_get_signal_handler(source);
-	signal_handler_disconnect(sh, "rename", SourceRenamed, this);
-	signal_handler_disconnect(sh, "enable", SourceEnabled, this);
-	// FIXME: might not be a valid signal
-	signal_handler_disconnect(sh, "disable", SourceDisabled, this);
-
-	if (obs_scene_from_source(source)) {
-		signal_handler_disconnect(sh, "item_add", SceneItemAdded, this);
-		signal_handler_disconnect(sh, "item_remove", SceneItemRemoved, this);
-	}
-
-	obs_source_release(source);
 }
 
 void SourcererItem::SetupOverlayConnections()
@@ -340,6 +329,7 @@ void SourcererItem::SetupOverlayConnections()
 	connect(overlay->btnLock, &QPushButton::clicked, [this]() { emit ToggleLockRequested(this); });
 
 	connect(overlay->btnActive, &QPushButton::clicked, [this]() {
+		OBSSource source = GetSource();
 		if (source) {
 			bool enabled = obs_source_enabled(source);
 			obs_source_set_enabled(source, !enabled);
@@ -348,12 +338,14 @@ void SourcererItem::SetupOverlayConnections()
 	});
 
 	connect(overlay->btnInteract, &QPushButton::clicked, [this]() {
+		OBSSource source = GetSource();
 		if (source) {
 			obs_frontend_open_source_interaction(source);
 		}
 	});
 
 	connect(overlay->btnPlayPause, &QPushButton::clicked, [this]() {
+		OBSSource source = GetSource();
 		if (source) {
 			auto state = obs_source_media_get_state(source);
 			obs_source_media_play_pause(source, state == OBS_MEDIA_STATE_PLAYING);
@@ -361,12 +353,14 @@ void SourcererItem::SetupOverlayConnections()
 	});
 
 	connect(overlay->btnProperties, &QPushButton::clicked, [this]() {
+		OBSSource source = GetSource();
 		if (source) {
 			obs_frontend_open_source_properties(source);
 		}
 	});
 
 	connect(overlay->btnFilters, &QPushButton::clicked, [this]() {
+		OBSSource source = GetSource();
 		if (source) {
 			obs_frontend_open_source_filters(source);
 		}
@@ -376,6 +370,7 @@ void SourcererItem::SetupOverlayConnections()
 		[this]() { SetPreviewDisabled(!isPreviewDisabled); });
 
 	connect(overlay->btnProjector, &QPushButton::clicked, [this]() {
+		OBSSource source = GetSource();
 		if (source) {
 			const char *name = obs_source_get_name(source);
 			obs_frontend_open_projector("Source", -1, nullptr, name);
@@ -443,6 +438,7 @@ void SourcererItem::UpdateOverlayButtonState()
 	uint32_t flags = 0;
 	bool configurable = false;
 
+	OBSSource source = GetSource();
 	if (source) {
 		flags = obs_source_get_output_flags(source);
 		configurable = obs_source_configurable(source);
@@ -637,6 +633,7 @@ void SourcererItem::SetItemWidth(int width)
 
 void SourcererItem::UpdateName()
 {
+	OBSSource source = GetSource();
 	if (source) {
 		const char *name = obs_source_get_name(source);
 		label->setText(QString::fromUtf8(name));
@@ -720,6 +717,7 @@ void SourcererItem::UpdateIconLayout()
 
 void SourcererItem::UpdateSceneItemCount()
 {
+	OBSSource source = GetSource();
 	if (!source || !sceneItemCountLabel)
 		return;
 
@@ -758,9 +756,11 @@ void SourcererItem::SetPreviewDisabled(bool disabled)
 	isPreviewDisabled = disabled;
 
 	if (disabled) {
-		obs_source_dec_showing(source);
+		OBSSource source = GetSource();
+		if (source) obs_source_dec_showing(source);
 	} else {
-		obs_source_inc_showing(source);
+		OBSSource source = GetSource();
+		if (source) obs_source_inc_showing(source);
 	}
 
 	if (enablePreviewButton) {
@@ -907,6 +907,7 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 
 	QAction *renameAction = menu.addAction(tr("Rename"));
 	connect(renameAction, &QAction::triggered, [this]() {
+		OBSSource source = GetSource();
 		if (!source)
 			return;
 		const char *oldName = obs_source_get_name(source);
@@ -921,6 +922,7 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 
 	QAction *deleteAction = menu.addAction(tr("Delete"));
 	connect(deleteAction, &QAction::triggered, [this]() {
+		OBSSource source = GetSource();
 		if (!source)
 			return;
 
@@ -938,12 +940,14 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 
 	QAction *filtersAction = menu.addAction(tr("Filters"));
 	connect(filtersAction, &QAction::triggered, [this]() {
+		OBSSource source = GetSource();
 		if (source)
 			obs_frontend_open_source_filters(source);
 	});
 
 	QAction *propsAction = menu.addAction(tr("Properties"));
 	connect(propsAction, &QAction::triggered, [this]() {
+		OBSSource source = GetSource();
 		if (source)
 			obs_frontend_open_source_properties(source);
 	});
@@ -952,6 +956,7 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 
 	QAction *windowedProjAction = menu.addAction(tr("Windowed Projector (Source)"));
 	connect(windowedProjAction, &QAction::triggered, [this]() {
+		OBSSource source = GetSource();
 		if (source) {
 			const char *name = obs_source_get_name(source);
 			obs_frontend_open_projector("Source", -1, nullptr, name);
@@ -966,6 +971,7 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 
 		QAction *action = fsProjMenu->addAction(label);
 		connect(action, &QAction::triggered, [this, i]() {
+			OBSSource source = GetSource();
 			if (source) {
 				const char *name = obs_source_get_name(source);
 				obs_frontend_open_projector("Source", i, nullptr, name);
@@ -975,6 +981,7 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 
 	QAction *screenshotAction = menu.addAction(tr("Screenshot (Source)"));
 	connect(screenshotAction, &QAction::triggered, [this]() {
+		OBSSource source = GetSource();
 		if (source)
 			obs_frontend_take_source_screenshot(source);
 	});
@@ -994,14 +1001,17 @@ void SourcererItem::contextMenuEvent(QContextMenuEvent *event)
 void SourcererItem::DrawPreview(void *data, uint32_t cx, uint32_t cy)
 {
 	SourcererItem *item = static_cast<SourcererItem *>(data);
-	if (!item || !item->source)
+	if (!item)
+		return;
+
+	OBSSource source = item->GetSource();
+	if (!source)
 		return;
 
 	if (item->isPreviewDisabled) {
 		return;
 	}
 
-	obs_source_t *source = item->source;
 	uint32_t sourceCX = obs_source_get_width(source);
 	uint32_t sourceCY = obs_source_get_height(source);
 

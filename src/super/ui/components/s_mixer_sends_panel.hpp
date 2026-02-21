@@ -67,8 +67,6 @@ protected:
 private:
 	void setupUi();
 	void clearItems();
-	void connectSource();
-	void disconnectSource();
 	void updateSwitches(uint32_t mixers);
 
 	// Static callback for OBS signal
@@ -79,10 +77,12 @@ private:
 	SMixerChevron *m_collapse_btn = nullptr;
 	QVBoxLayout *m_items_layout = nullptr;
 
-	obs_source_t *getSource() const;
+	OBSSource getSource() const;
 	static void sourceDestroyedCb(void *data, calldata_t *cd);
 
-	obs_weak_source_t *m_weak_source = nullptr;
+	OBSWeakSource m_weak_source;
+	OBSSignal m_sig_audio_mixers;
+	OBSSignal m_sig_destroy;
 	int m_track_count = 6;
 	bool m_is_expanded = true;
 

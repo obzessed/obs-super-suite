@@ -14,6 +14,8 @@
 #include <obs-frontend-api.h>
 #include <algorithm>
 
+int VolumeMeterDemoDock::s_volumeMeterDemoStyle = -1;
+
 static void refreshSources(obs_frontend_event event, void *data)
 {
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING || event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED) {

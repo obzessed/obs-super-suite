@@ -99,14 +99,14 @@ SMixerFilterControls::SMixerFilterControls(obs_source_t *filter, QWidget *parent
 	outerLayout->setSpacing(0);
 
 	if (filter) {
-		m_weak_filter = obs_source_get_weak_source(filter);
+		m_weak_filter = OBSGetWeakRef(filter);
 
 		// Get current settings
 		m_settings = OBSData(obs_source_get_settings(filter));
 
 		signal_handler_t *sh = obs_source_get_signal_handler(filter);
-		signal_handler_connect(sh, "update", onFilterUpdated, this);
-		signal_handler_connect(sh, "destroy", onFilterDestroyed, this);
+		m_sig_update.Connect(sh, "update", onFilterUpdated, this);
+		m_sig_destroy.Connect(sh, "destroy", onFilterDestroyed, this);
 	}
 
 	rebuild();
@@ -114,16 +114,8 @@ SMixerFilterControls::SMixerFilterControls(obs_source_t *filter, QWidget *parent
 
 SMixerFilterControls::~SMixerFilterControls()
 {
-	if (m_weak_filter) {
-		obs_source_t *filter = obs_weak_source_get_source(m_weak_filter);
-		if (filter) {
-			signal_handler_t *sh = obs_source_get_signal_handler(filter);
-			signal_handler_disconnect(sh, "update", onFilterUpdated, this);
-			signal_handler_disconnect(sh, "destroy", onFilterDestroyed, this);
-			obs_source_release(filter);
-		}
-		obs_weak_source_release(m_weak_filter);
-	}
+	m_sig_update.Disconnect();
+	m_sig_destroy.Disconnect();
 
 	if (m_props) {
 		obs_properties_destroy(m_props);
@@ -133,11 +125,11 @@ SMixerFilterControls::~SMixerFilterControls()
 void SMixerFilterControls::onFilterDestroyed(void *data, calldata_t *)
 {
 	auto *controls = static_cast<SMixerFilterControls*>(data);
+	controls->m_sig_update.Disconnect();
+	controls->m_sig_destroy.Disconnect();
+
 	QMetaObject::invokeMethod(controls, [controls]() {
-		if (controls->m_weak_filter) {
-			obs_weak_source_release(controls->m_weak_filter);
-			controls->m_weak_filter = nullptr;
-		}
+		controls->m_weak_filter = nullptr;
 		// Optionally trigger rebuild or hide
 		controls->rebuild();
 	}, Qt::QueuedConnection);
@@ -174,10 +166,7 @@ void SMixerFilterControls::rebuild()
 	formLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 	formLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-	obs_source_t *filter = nullptr;
-	if (m_weak_filter) {
-		filter = obs_weak_source_get_source(m_weak_filter);
-	}
+	OBSSource filter = OBSGetStrongRef(m_weak_filter);
 
 	if (!filter) {
 		auto *lbl = new QLabel("Filter destroyed", m_content);
@@ -213,7 +202,6 @@ void SMixerFilterControls::rebuild()
 				formLayout->addRow(lbl);
 			}
 		}
-		obs_source_release(filter);
 	}
 
 	layout()->addWidget(m_content);
@@ -230,12 +218,10 @@ void SMixerFilterControls::rebuild()
 
 void SMixerFilterControls::applySettings()
 {
-	if (!m_weak_filter) return;
-	obs_source_t *filter = obs_weak_source_get_source(m_weak_filter);
+	OBSSource filter = OBSGetStrongRef(m_weak_filter);
 	if (!filter) return;
 	
 	obs_source_update(filter, m_settings);
-	obs_source_release(filter);
 }
 
 // ============================================================================

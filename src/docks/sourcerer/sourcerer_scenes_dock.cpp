@@ -234,15 +234,13 @@ void SourcererScenesDock::SetupTBar()
 	tbarSlider->installEventFilter(this);
 
 	if (obs_frontend_preview_program_mode_active()) {
-		obs_source_t *transition = obs_frontend_get_current_transition();
+		OBSSourceAutoRelease transition = obs_frontend_get_current_transition();
 		if (IsValidTBarTransition(transition)) {
 			tbarSlider->setEnabled(true);
 		} else {
 			tbarSlider->setEnabled(false);
 			tbarSlider->setToolTip("Transition T-Bar (Disabled - Unsupported Transition)");
 		}
-		if (transition)
-			obs_source_release(transition);
 	} else {
 		tbarSlider->setEnabled(false);
 		tbarSlider->setToolTip("Transition T-Bar (Disabled - Not in Studio Mode)");
@@ -535,7 +533,7 @@ void SourcererScenesDock::OnItemClicked(SourcererItem *item)
 	if (isReadOnly || !item)
 		return;
 
-	obs_source_t *source = item->GetSource();
+	OBSSource source = item->GetSource();
 	if (!source)
 		return;
 
@@ -559,7 +557,7 @@ void SourcererScenesDock::OnItemDoubleClicked(SourcererItem *item)
 	if (isReadOnly || !item || !doubleClickToProgram)
 		return;
 
-	obs_source_t *source = item->GetSource();
+	OBSSource source = item->GetSource();
 	if (!source)
 		return;
 
@@ -731,24 +729,21 @@ void SourcererScenesDock::FrontendEvent(obs_frontend_event event, void *data)
 	const auto dock = static_cast<SourcererScenesDock *>(data);
 
 	if (event == OBS_FRONTEND_EVENT_SCENE_CHANGED) {
-		if (obs_source_t *scene = obs_frontend_get_current_scene()) {
-			const char *name = obs_source_get_name(scene);
-			obs_log(LOG_INFO, "Scene Switched (Program): %s", name);
-			obs_source_release(scene);
+		OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
+		if (scene) {
+			obs_log(LOG_INFO, "Scene Switched (Program): %s", obs_source_get_name(scene));
 		}
 	} else if (event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED) {
-		if (obs_source_t *scene = obs_frontend_get_current_preview_scene()) {
-			const char *name = obs_source_get_name(scene);
-			obs_log(LOG_INFO, "Scene Switched (Preview): %s", name);
-			obs_source_release(scene);
+		OBSSourceAutoRelease scene = obs_frontend_get_current_preview_scene();
+		if (scene) {
+			obs_log(LOG_INFO, "Scene Switched (Preview): %s", obs_source_get_name(scene));
 		}
 	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_STOPPED) {
 		obs_log(LOG_INFO, "Transition Stopped");
 	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_CHANGED) {
-		if (obs_source_t *transition = obs_frontend_get_current_transition()) {
-			const char *name = obs_source_get_name(transition);
-			obs_log(LOG_INFO, "Transition Changed to: %s", name);
-			obs_source_release(transition);
+		OBSSourceAutoRelease transition = obs_frontend_get_current_transition();
+		if (transition) {
+			obs_log(LOG_INFO, "Transition Changed to: %s", obs_source_get_name(transition));
 		}
 	} else if (event == OBS_FRONTEND_EVENT_TRANSITION_DURATION_CHANGED) {
 		obs_log(LOG_INFO, "Transition Duration Changed");
@@ -799,53 +794,32 @@ void SourcererScenesDock::HandleTBarRelease()
 
 void SourcererScenesDock::HighlightCurrentScene() const
 {
-	obs_source_t *programScene = nullptr;
-	obs_source_t *previewScene = nullptr;
+	OBSSourceAutoRelease programScene = obs_frontend_get_current_scene();
+	OBSSourceAutoRelease previewScene;
 
-	programScene = obs_frontend_get_current_scene();
 	if (obs_frontend_preview_program_mode_active()) {
-		// Studio Mode
 		previewScene = obs_frontend_get_current_preview_scene();
-	} else {
-		// Standard Mode
-		previewScene = nullptr; // Or same as program
 	}
 
 	// FTB Detection
-	obs_source_t *transition = obs_frontend_get_current_transition();
+	OBSSourceAutoRelease transition = obs_frontend_get_current_transition();
 	bool ftbActive = false;
 	if (transition) {
-		obs_source_t *activeSource = obs_transition_get_active_source(transition);
-		if (activeSource == nullptr) {
+		OBSSourceAutoRelease activeSource = obs_transition_get_active_source(transition);
+		if (!activeSource) {
 			ftbActive = true;
-			obs_log(LOG_INFO, "FTB Active (No active source in transition)");
 		}
-		obs_source_release(transition);
 	}
 
 	const char *programName = programScene ? obs_source_get_name(programScene) : "";
 	const char *previewName = previewScene ? obs_source_get_name(previewScene) : "";
 
 	for (SourcererItem *item : items) {
-		obs_source_t *source = item->GetSource();
-		const char *name = obs_source_get_name(source);
+		OBSSource source = item->GetSource();
+		const char *name = source ? obs_source_get_name(source) : "";
 
 		bool isProg = programScene && (strcmp(programName, name) == 0);
 		bool isPrev = previewScene && (strcmp(previewName, name) == 0);
-
-		// If FTB is active, maybe we shouldn't show program selection?
-		// Or maybe show it but differently?
-		// For now, let's just log it as requested, but if FTB is active,
-		// technically the program scene is still "current" in OBS logic usually,
-		// but the audience sees black.
-		// Let's mark it Program ONLY if not FTB?
-		// The user instruction was "detect ftb... make it aware".
-		// I'll leave the selection logic as is for now but log the FTB state.
-
-		// Standard mode: Program is Red.
-		// Studio mode: Program is Red, Preview is Blue.
-		// If same scene is both, Program Red takes precedence (handled in paintEvent usually,
-		// but let's set both flags).
 
 		item->SetFTB(ftbActive && liveMode);
 		item->SetProgram(isProg && liveMode);
@@ -859,11 +833,6 @@ void SourcererScenesDock::HighlightCurrentScene() const
 			scrollArea->ensureWidgetVisible(item);
 		}
 	}
-
-	if (programScene)
-		obs_source_release(programScene);
-	if (previewScene)
-		obs_source_release(previewScene);
 }
 
 QJsonObject SourcererScenesDock::Save() const

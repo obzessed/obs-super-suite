@@ -40,10 +40,7 @@ SMixerChannel::SMixerChannel(QWidget *parent) : QWidget(parent)
 
 SMixerChannel::~SMixerChannel()
 {
-	blog(LOG_INFO, "[SMixerChannel] ~SMixerChannel() start (source='%s')",
-	     m_source ? obs_source_get_name(m_source) : "(null)");
 	disconnectSource();
-	blog(LOG_INFO, "[SMixerChannel] ~SMixerChannel() done");
 }
 
 // =====================================================================
@@ -73,8 +70,8 @@ void SMixerChannel::setupUi()
 	// 1. Color strip + Name bar
 	m_name_bar = new SMixerNameBar(strip);
 	connect(m_name_bar, &SMixerNameBar::nameChanged, this, [this](const QString &name) {
-		if (m_source)
-			obs_source_set_name(m_source, name.toUtf8().constData());
+		if (OBSSource source = getSource())
+			obs_source_set_name(source, name.toUtf8().constData());
 	});
 	root->addWidget(m_name_bar);
 
@@ -167,64 +164,60 @@ void SMixerChannel::setupUi()
 
 void SMixerChannel::setSource(obs_source_t *source)
 {
-	if (m_source == source)
+	if (getSource() == source)
 		return;
 
 	disconnectSource();
-	
-	if (m_weak_source) {
-		obs_weak_source_release(m_weak_source);
-		m_weak_source = nullptr;
-	}
 
-	m_source = source;
-
-	if (m_source) {
-		m_weak_source = obs_source_get_weak_source(m_source);
-
-		const char *name = obs_source_get_name(m_source);
-		m_name_bar->setName(name ? QString::fromUtf8(name) : "Channel");
-
-		// Sync volume
-		m_updating_from_source = true;
-		float vol = obs_source_get_volume(m_source);
-		m_fader->setVolume(vol);
-		updateDbLabel();
-
-		// Sync pan
-		float bal = obs_source_get_balance_value(m_source);
-		m_pan_slider->setBalance(bal);
-
-		// Sync mute
-		bool muted = obs_source_muted(m_source);
-		m_control_bar->setMuted(muted);
-		if (m_meter) m_meter->setMuted(muted);
-
-		// Sync mono
-		if (m_meter) {
-			speaker_layout layout = obs_source_get_speaker_layout(m_source);
-			m_meter->setMono(layout == SPEAKERS_MONO);
-		}
-
-		m_updating_from_source = false;
-
-		// Bind sub-components
-		m_props_selector->setSource(m_source);
-		m_side_panel->setSource(m_source);
-
-		connectSource();
-	} else {
+	if (!source) {
 		m_name_bar->setName("---");
+		onDbResetRequested();
+		return;
 	}
 
-	emit sourceChanged(m_source);
+	m_weak_source = OBSGetWeakRef(source);
+
+	const char *name = obs_source_get_name(source);
+	m_name_bar->setName(name ? QString::fromUtf8(name) : "Channel");
+
+	// Sync volume
+	m_updating_from_source = true;
+	float vol = obs_source_get_volume(source);
+	m_fader->setVolume(vol);
+	updateDbLabel();
+
+	// Sync pan
+	float bal = obs_source_get_balance_value(source);
+	m_pan_slider->setBalance(bal);
+
+	// Sync mute
+	bool muted = obs_source_muted(source);
+	m_control_bar->setMuted(muted);
+	if (m_meter) m_meter->setMuted(muted);
+
+	// Sync mono
+	if (m_meter) {
+		speaker_layout layout = obs_source_get_speaker_layout(source);
+		m_meter->setMono(layout == SPEAKERS_MONO);
+	}
+
+	m_updating_from_source = false;
+
+	// Bind sub-components
+	m_props_selector->setSource(source);
+	m_side_panel->setSource(source);
+
+	connectSource(source);
+
+	emit sourceChanged(source);
 }
 
 QString SMixerChannel::sourceName() const
 {
-	if (!m_source)
+	OBSSource source = getSource();
+	if (!source)
 		return {};
-	const char *n = obs_source_get_name(m_source);
+	const char *n = obs_source_get_name(source);
 	return n ? QString::fromUtf8(n) : QString();
 }
 
@@ -262,37 +255,41 @@ void SMixerChannel::toggleExpand()
 
 void SMixerChannel::onFaderChanged(float volume)
 {
-	if (m_updating_from_source || !m_source)
+	OBSSource source = getSource();
+	if (m_updating_from_source || !source)
 		return;
 
-	obs_source_set_volume(m_source, volume);
+	obs_source_set_volume(source, volume);
 	updateDbLabel();
 	emit volumeChanged(volume);
 }
 
 void SMixerChannel::onMuteToggled(bool muted)
 {
-	if (!m_source)
+	OBSSource source = getSource();
+	if (!source)
 		return;
-	obs_source_set_muted(m_source, muted);
+	obs_source_set_muted(source, muted);
 	emit muteChanged(muted);
 }
 
 void SMixerChannel::onPanChanged(int pan)
 {
-	if (m_updating_from_source || !m_source)
+	OBSSource source = getSource();
+	if (m_updating_from_source || !source)
 		return;
 	float bal = (static_cast<float>(pan) + 100.0f) / 200.0f;
-	obs_source_set_balance_value(m_source, bal);
+	obs_source_set_balance_value(source, bal);
 	emit panChanged(pan);
 }
 
 void SMixerChannel::onDbResetRequested()
 {
-	if (!m_source)
+	OBSSource source = getSource();
+	if (!source)
 		return;
 	// Reset to 0 dB (unity gain)
-	obs_source_set_volume(m_source, 1.0f);
+	obs_source_set_volume(source, 1.0f);
 	m_updating_from_source = true;
 	m_fader->setVolume(1.0f);
 	updateDbLabel();
@@ -301,9 +298,10 @@ void SMixerChannel::onDbResetRequested()
 
 void SMixerChannel::updateDbLabel()
 {
-	if (!m_source)
+	OBSSource source = getSource();
+	if (!source)
 		return;
-	float vol = obs_source_get_volume(m_source);
+	float vol = obs_source_get_volume(source);
 	float db = 20.0f * log10f(fmaxf(vol, 0.0001f));
 	m_db_label->setDb(db);
 }
@@ -382,84 +380,56 @@ void SMixerChannel::startMeterTimer()
 // OBS Source Connection
 // =====================================================================
 
-void SMixerChannel::connectSource()
+void SMixerChannel::connectSource(obs_source_t *source)
 {
-	obs_source_t *source = getSource();
 	if (!source)
 		return;
 
 	signal_handler_t *sh = obs_source_get_signal_handler(source);
 	if (sh) {
-		signal_handler_connect(sh, "volume", obsVolumeChangedCb, this);
-		signal_handler_connect(sh, "mute", obsMuteChangedCb, this);
-		signal_handler_connect(sh, "rename", obsRenamedCb, this);
-		signal_handler_connect(sh, "filter_add", obsFilterAddedCb, this);
-		signal_handler_connect(sh, "filter_remove", obsFilterRemovedCb, this);
-		signal_handler_connect(sh, "reorder_filters", obsFilterAddedCb, this);
-		signal_handler_connect(sh, "destroy", obsDestroyedCb, this);
+		m_sig_volume.Connect(sh, "volume", obsVolumeChangedCb, this);
+		m_sig_mute.Connect(sh, "mute", obsMuteChangedCb, this);
+		m_sig_rename.Connect(sh, "rename", obsRenamedCb, this);
+		m_sig_filter_add.Connect(sh, "filter_add", obsFilterAddedCb, this);
+		m_sig_filter_remove.Connect(sh, "filter_remove", obsFilterRemovedCb, this);
+		m_sig_filter_reorder.Connect(sh, "reorder_filters", obsFilterAddedCb, this);
+		m_sig_destroy.Connect(sh, "destroy", obsDestroyedCb, this);
 	}
 
 	m_volmeter = obs_volmeter_create(OBS_FADER_LOG);
 	obs_volmeter_attach_source(m_volmeter, source);
 	obs_volmeter_add_callback(m_volmeter, obsVolmeterCb, this);
-
-	obs_source_release(source);
 }
 
 void SMixerChannel::disconnectSource()
 {
-	blog(LOG_INFO, "[SMixerChannel] disconnectSource() start (source='%s' m_volmeter=%p)",
-	     m_source ? obs_source_get_name(m_source) : "(null)", m_volmeter);
-
 	// Detach volmeter FIRST — this stops the audio thread from calling
 	// our obsVolmeterCb, which would race with destruction.
 	if (m_volmeter) {
-		blog(LOG_INFO, "[SMixerChannel]   removing volmeter callback...");
 		obs_volmeter_remove_callback(m_volmeter, obsVolmeterCb, this);
-		blog(LOG_INFO, "[SMixerChannel]   detaching volmeter from source...");
 		obs_volmeter_detach_source(m_volmeter);
-		blog(LOG_INFO, "[SMixerChannel]   destroying volmeter...");
-		obs_volmeter_destroy(m_volmeter);
-		m_volmeter = nullptr;
-		blog(LOG_INFO, "[SMixerChannel]   volmeter cleanup done");
+		m_volmeter = nullptr; // RAII destroy
 	}
 
 	// Tell sub-components to release their source references BEFORE
-	// we null m_source. They need the source to still be valid so they
-	// can disconnect their own signal handlers.
+	// we disconnect.
 	if (m_side_panel) {
-		blog(LOG_INFO, "[SMixerChannel]   clearing side_panel source...");
 		m_side_panel->setSource(nullptr);
 	}
 	if (m_props_selector) {
-		blog(LOG_INFO, "[SMixerChannel]   clearing props_selector source...");
 		m_props_selector->setSource(nullptr);
 	}
 
 	// Disconnect signal handlers.
-	if (m_source) {
-		blog(LOG_INFO, "[SMixerChannel]   disconnecting signal handlers from '%s'...",
-		     obs_source_get_name(m_source));
-		signal_handler_t *sh = obs_source_get_signal_handler(m_source);
-		if (sh) {
-			signal_handler_disconnect(sh, "volume", obsVolumeChangedCb, this);
-			signal_handler_disconnect(sh, "mute", obsMuteChangedCb, this);
-			signal_handler_disconnect(sh, "rename", obsRenamedCb, this);
-			signal_handler_disconnect(sh, "filter_add", obsFilterAddedCb, this);
-			signal_handler_disconnect(sh, "filter_remove", obsFilterRemovedCb, this);
-			signal_handler_disconnect(sh, "reorder_filters", obsFilterAddedCb, this);
-			signal_handler_disconnect(sh, "destroy", obsDestroyedCb, this);
-		}
-		blog(LOG_INFO, "[SMixerChannel]   signal handlers disconnected");
-	}
+	m_sig_volume.Disconnect();
+	m_sig_mute.Disconnect();
+	m_sig_rename.Disconnect();
+	m_sig_filter_add.Disconnect();
+	m_sig_filter_remove.Disconnect();
+	m_sig_filter_reorder.Disconnect();
+	m_sig_destroy.Disconnect();
 
-	if (m_weak_source) {
-		blog(LOG_INFO, "[SMixerChannel]   releasing weak source ref...");
-		obs_weak_source_release(m_weak_source);
-		m_weak_source = nullptr;
-	}
-	m_source = nullptr;
-	blog(LOG_INFO, "[SMixerChannel] disconnectSource() done");
+	m_weak_source = nullptr; // RAII release
 }
 
 // =====================================================================
@@ -491,7 +461,7 @@ void SMixerChannel::obsVolumeChangedCb(void *data, calldata_t *cd)
 	double vol = calldata_float(cd, "volume");
 	QMetaObject::invokeMethod(self, [self, vol]() {
 		self->m_updating_from_source = true;
-		self->m_fader->setVolume(static_cast<float>(vol));
+		if (self->m_fader) self->m_fader->setVolume(static_cast<float>(vol));
 		self->updateDbLabel();
 		self->m_updating_from_source = false;
 	});
@@ -539,31 +509,27 @@ void SMixerChannel::obsDestroyedCb(void *data, calldata_t *)
 {
 	auto *self = static_cast<SMixerChannel *>(data);
 
-	blog(LOG_INFO, "[SMixerChannel] obsDestroyedCb() — source is being destroyed (source='%s')",
-	     self->m_source ? obs_source_get_name(self->m_source) : "(null)");
-
 	// SYNCHRONOUSLY detach the volmeter right here in the signal thread.
 	if (self->m_volmeter) {
-		blog(LOG_INFO, "[SMixerChannel]   sync volmeter detach in destroy callback...");
 		obs_volmeter_remove_callback(self->m_volmeter, obsVolmeterCb, self);
 		obs_volmeter_detach_source(self->m_volmeter);
-		obs_volmeter_destroy(self->m_volmeter);
-		self->m_volmeter = nullptr;
+		self->m_volmeter = nullptr; // RAII destroy
 	}
 
-	if (self->m_weak_source) {
-		obs_weak_source_release(self->m_weak_source);
-		self->m_weak_source = nullptr;
-	}
-	self->m_source = nullptr;
-
-	blog(LOG_INFO, "[SMixerChannel]   obsDestroyedCb() done, deferring UI update");
+	self->m_weak_source = nullptr; // RAII release
+	
+	self->m_sig_volume.Disconnect();
+	self->m_sig_mute.Disconnect();
+	self->m_sig_rename.Disconnect();
+	self->m_sig_filter_add.Disconnect();
+	self->m_sig_filter_remove.Disconnect();
+	self->m_sig_filter_reorder.Disconnect();
 
 	// Defer UI updates to the Qt event loop
 	QMetaObject::invokeMethod(self, [self]() {
 		self->m_name_bar->setName("---");
-		self->m_side_panel->setSource(nullptr);
-		self->m_props_selector->setSource(nullptr);
+		if (self->m_side_panel) self->m_side_panel->setSource(nullptr);
+		if (self->m_props_selector) self->m_props_selector->setSource(nullptr);
 	});
 }
 
@@ -617,7 +583,8 @@ void SMixerChannel::contextMenuEvent(QContextMenuEvent *event)
 
 void SMixerChannel::showChannelContextMenu(const QPoint &globalPos)
 {
-	if (!m_source) return;
+	OBSSource source = getSource();
+	if (!source) return;
 
 	QMenu menu(this);
 	menu.setStyleSheet(kChannelMenuStyle);
@@ -649,12 +616,14 @@ void SMixerChannel::showChannelContextMenu(const QPoint &globalPos)
 	monoAct->setChecked(m_mono);
 	connect(monoAct, &QAction::triggered, this, [this](bool checked) {
 		m_mono = checked;
-		uint32_t flags = obs_source_get_flags(m_source);
+		OBSSource source = getSource();
+		if (!source) return;
+		uint32_t flags = obs_source_get_flags(source);
 		if (checked)
 			flags |= OBS_SOURCE_FLAG_FORCE_MONO;
 		else
 			flags &= ~OBS_SOURCE_FLAG_FORCE_MONO;
-		obs_source_set_flags(m_source, flags);
+		obs_source_set_flags(source, flags);
 	});
 
 	menu.addSeparator();
@@ -662,15 +631,20 @@ void SMixerChannel::showChannelContextMenu(const QPoint &globalPos)
 	// Copy Filter(s)
 	auto *copyAct = menu.addAction("Copy Filter(s)");
 	connect(copyAct, &QAction::triggered, this, [this]() {
-		SMixerEffectsRack::copyAllFilters(m_source);
+		OBSSource source = getSource();
+		if (source)
+			SMixerEffectsRack::copyAllFilters(source);
 	});
 
 	// Paste Filter(s)
 	auto *pasteAct = menu.addAction("Paste Filter(s)");
 	pasteAct->setEnabled(SMixerEffectsRack::hasClipboardFilters());
 	connect(pasteAct, &QAction::triggered, this, [this]() {
-		SMixerEffectsRack::pasteFilters(m_source);
-		if (m_expanded) m_side_panel->refresh();
+		OBSSource source = getSource();
+		if (source) {
+			SMixerEffectsRack::pasteFilters(source);
+			if (m_expanded) m_side_panel->refresh();
+		}
 	});
 
 	menu.addSeparator();
@@ -678,7 +652,9 @@ void SMixerChannel::showChannelContextMenu(const QPoint &globalPos)
 	// Properties
 	auto *propsAct = menu.addAction("Properties");
 	connect(propsAct, &QAction::triggered, this, [this]() {
-		obs_frontend_open_source_properties(m_source);
+		OBSSource source = getSource();
+		if (source)
+			obs_frontend_open_source_properties(source);
 	});
 
 	menu.exec(globalPos);
